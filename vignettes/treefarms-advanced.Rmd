@@ -1,0 +1,455 @@
+---
+title: "TreeFARMS Advanced Usage and Performance"
+author: "TreeFARMS Development Team"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{TreeFARMS Advanced Usage and Performance}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Advanced TreeFARMS Usage
+
+This vignette covers advanced usage patterns, performance optimization, and real-world applications of the TreeFARMS R package.
+
+# Performance Optimization
+
+## Large Dataset Handling
+
+```{r large-dataset}
+library(treefarms)
+
+# Create larger dataset for performance testing
+set.seed(42)
+n <- 1000
+X_large <- data.frame(
+  feature_1 = sample(0:1, n, replace = TRUE),
+  feature_2 = sample(0:1, n, replace = TRUE),
+  feature_3 = sample(0:1, n, replace = TRUE),
+  feature_4 = sample(0:1, n, replace = TRUE),
+  feature_5 = sample(0:1, n, replace = TRUE)
+)
+
+# Create target with complex pattern
+y_large <- as.numeric((X_large$feature_1 == 1 & X_large$feature_2 == 1) | 
+                      (X_large$feature_3 == 1 & X_large$feature_4 == 1))
+
+# Time the training
+start_time <- Sys.time()
+model_large <- treefarms(X_large, y_large, 
+                        loss_function = "misclassification", 
+                        regularization = 0.01,
+                        verbose = FALSE)
+end_time <- Sys.time()
+
+cat("Training time:", round(as.numeric(end_time - start_time, units = "secs"), 3), "seconds\n")
+cat("Number of trees found:", model_large$n_trees, "\n")
+cat("Training accuracy:", round(model_large$accuracy, 3), "\n")
+```
+
+## Memory Usage Optimization
+
+```{r memory-optimization}
+# Monitor memory usage
+library(pryr)
+
+# Check memory before training
+mem_before <- mem_used()
+
+# Train model
+model_mem <- treefarms(X_large, y_large, 
+                      loss_function = "misclassification", 
+                      regularization = 0.01,
+                      verbose = FALSE)
+
+# Check memory after training
+mem_after <- mem_used()
+mem_increase <- mem_after - mem_before
+
+cat("Memory increase:", round(mem_increase / 1024^2, 2), "MB\n")
+cat("Model size:", round(object_size(model_mem) / 1024^2, 2), "MB\n")
+```
+
+# Advanced Cross-Fitted Rashomon Analysis
+
+## Multi-Fold Analysis
+
+```{r multi-fold-analysis}
+# Analyze different K values
+K_values <- c(2, 3, 5, 10)
+results <- list()
+
+for (K in K_values) {
+  cat("Analyzing K =", K, "...\n")
+  result <- cross_fitted_rashomon(X_large, y_large, 
+                                 K = K,
+                                 loss_function = "misclassification", 
+                                 regularization = 0.01,
+                                 verbose = FALSE)
+  results[[as.character(K)]] <- result
+}
+
+# Compare results
+comparison_df <- data.frame(
+  K = K_values,
+  n_intersecting = sapply(results, function(r) r$n_intersecting),
+  avg_rashomon_size = sapply(results, function(r) mean(r$rashomon_sizes)),
+  min_rashomon_size = sapply(results, function(r) min(r$rashomon_sizes)),
+  max_rashomon_size = sapply(results, function(r) max(r$rashomon_sizes))
+)
+
+print(comparison_df)
+```
+
+## Stability Analysis
+
+```{r stability-analysis}
+# Analyze stability across different random seeds
+seeds <- c(42, 123, 456, 789, 999)
+stability_results <- list()
+
+for (seed in seeds) {
+  set.seed(seed)
+  result <- cross_fitted_rashomon(X_large, y_large, 
+                                 K = 5,
+                                 loss_function = "misclassification", 
+                                 regularization = 0.01,
+                                 seed = seed,
+                                 verbose = FALSE)
+  stability_results[[as.character(seed)]] <- result
+}
+
+# Analyze stability
+stability_df <- data.frame(
+  seed = seeds,
+  n_intersecting = sapply(stability_results, function(r) r$n_intersecting),
+  avg_rashomon_size = sapply(stability_results, function(r) mean(r$rashomon_sizes))
+)
+
+print(stability_df)
+
+# Calculate stability metrics
+cat("Mean intersecting trees:", round(mean(stability_df$n_intersecting), 2), "\n")
+cat("SD of intersecting trees:", round(sd(stability_df$n_intersecting), 2), "\n")
+cat("Mean Rashomon size:", round(mean(stability_df$avg_rashomon_size), 2), "\n")
+```
+
+# Real-World Applications
+
+## Medical Diagnosis Example
+
+```{r medical-example}
+# Simulate medical diagnosis data
+set.seed(42)
+n_patients <- 500
+
+# Patient features (binary symptoms)
+patients <- data.frame(
+  fever = sample(0:1, n_patients, replace = TRUE, prob = c(0.7, 0.3)),
+  cough = sample(0:1, n_patients, replace = TRUE, prob = c(0.6, 0.4)),
+  headache = sample(0:1, n_patients, replace = TRUE, prob = c(0.8, 0.2)),
+  fatigue = sample(0:1, n_patients, replace = TRUE, prob = c(0.7, 0.3)),
+  nausea = sample(0:1, n_patients, replace = TRUE, prob = c(0.9, 0.1))
+)
+
+# Disease diagnosis (1 = disease, 0 = healthy)
+# Complex rule: (fever AND cough) OR (headache AND fatigue AND nausea)
+disease <- as.numeric((patients$fever == 1 & patients$cough == 1) | 
+                      (patients$headache == 1 & patients$fatigue == 1 & patients$nausea == 1))
+
+# Train model
+medical_model <- treefarms(patients, disease, 
+                          loss_function = "log_loss", 
+                          regularization = 0.01,
+                          verbose = FALSE)
+
+cat("Medical diagnosis model:\n")
+cat("Number of trees:", medical_model$n_trees, "\n")
+cat("Training accuracy:", round(medical_model$accuracy, 3), "\n")
+
+# Get probability predictions
+probabilities <- medical_model$probabilities
+disease_prob <- probabilities[, 2]
+
+# Analyze probability distribution
+cat("Disease probability range:", round(range(disease_prob), 3), "\n")
+cat("Mean disease probability:", round(mean(disease_prob), 3), "\n")
+```
+
+## Financial Risk Assessment
+
+```{r financial-example}
+# Simulate financial risk data
+set.seed(42)
+n_loans <- 800
+
+# Loan applicant features
+applicants <- data.frame(
+  high_income = sample(0:1, n_loans, replace = TRUE, prob = c(0.6, 0.4)),
+  good_credit = sample(0:1, n_loans, replace = TRUE, prob = c(0.7, 0.3)),
+  stable_employment = sample(0:1, n_loans, replace = TRUE, prob = c(0.8, 0.2)),
+  low_debt_ratio = sample(0:1, n_loans, replace = TRUE, prob = c(0.6, 0.4)),
+  collateral = sample(0:1, n_loans, replace = TRUE, prob = c(0.7, 0.3))
+)
+
+# Default risk (1 = default, 0 = no default)
+# Rule: (low_income AND high_debt) OR (bad_credit AND no_collateral)
+default <- as.numeric((applicants$high_income == 0 & applicants$low_debt_ratio == 0) | 
+                      (applicants$good_credit == 0 & applicants$collateral == 0))
+
+# Train model
+risk_model <- treefarms(applicants, default, 
+                       loss_function = "log_loss", 
+                       regularization = 0.01,
+                       verbose = FALSE)
+
+cat("Financial risk model:\n")
+cat("Number of trees:", risk_model$n_trees, "\n")
+cat("Training accuracy:", round(risk_model$accuracy, 3), "\n")
+
+# Cross-fitted Rashomon for stability
+risk_cf <- cross_fitted_rashomon(applicants, default, 
+                                K = 5,
+                                loss_function = "log_loss", 
+                                regularization = 0.01,
+                                verbose = FALSE)
+
+cat("Cross-fitted Rashomon results:\n")
+cat("Intersecting trees:", risk_cf$n_intersecting, "\n")
+cat("Rashomon sizes:", paste(risk_cf$rashomon_sizes, collapse = ", "), "\n")
+```
+
+# Model Interpretation and Visualization
+
+## Tree Rule Extraction
+
+```{r tree-rules}
+# Extract and analyze tree rules
+trees <- get_rashomon_trees(medical_model)
+
+if (length(trees) > 0) {
+  cat("Extracting rules from medical diagnosis model:\n")
+  
+  for (i in seq_along(trees)) {
+    cat("\n--- Tree", i, "---\n")
+    rules <- get_tree_rules(trees[[i]], 
+                           feature_names = c("fever", "cough", "headache", "fatigue", "nausea"))
+    cat(paste(rules, collapse = "\n"), "\n")
+  }
+}
+```
+
+## Probability Calibration Analysis
+
+```{r probability-calibration}
+# Analyze probability calibration
+probabilities <- medical_model$probabilities
+disease_prob <- probabilities[, 2]
+
+# Create probability bins
+bins <- cut(disease_prob, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+bin_centers <- seq(0.05, 0.95, by = 0.1)
+
+# Calculate observed vs predicted probabilities
+calibration_data <- data.frame(
+  bin = bin_centers,
+  predicted = bin_centers,
+  observed = tapply(disease, bins, mean),
+  count = tapply(disease, bins, length)
+)
+
+# Remove bins with no data
+calibration_data <- calibration_data[!is.na(calibration_data$observed), ]
+
+print(calibration_data)
+
+# Calculate calibration error
+calibration_error <- mean(abs(calibration_data$predicted - calibration_data$observed))
+cat("Mean calibration error:", round(calibration_error, 3), "\n")
+```
+
+# Performance Benchmarking
+
+## Speed Comparison
+
+```{r speed-comparison}
+# Compare different regularization values
+reg_values <- c(0.001, 0.01, 0.1, 0.5)
+timing_results <- data.frame(
+  regularization = reg_values,
+  time_seconds = numeric(length(reg_values)),
+  n_trees = numeric(length(reg_values)),
+  accuracy = numeric(length(reg_values))
+)
+
+for (i in seq_along(reg_values)) {
+  reg <- reg_values[i]
+  
+  start_time <- Sys.time()
+  model <- treefarms(X_large, y_large, 
+                    loss_function = "misclassification", 
+                    regularization = reg,
+                    verbose = FALSE)
+  end_time <- Sys.time()
+  
+  timing_results$time_seconds[i] <- as.numeric(end_time - start_time, units = "secs")
+  timing_results$n_trees[i] <- model$n_trees
+  timing_results$accuracy[i] <- model$accuracy
+}
+
+print(timing_results)
+```
+
+## Memory Usage Analysis
+
+```{r memory-analysis}
+# Analyze memory usage across different dataset sizes
+dataset_sizes <- c(100, 500, 1000, 2000)
+memory_results <- data.frame(
+  n_obs = dataset_sizes,
+  memory_mb = numeric(length(dataset_sizes)),
+  n_trees = numeric(length(dataset_sizes))
+)
+
+for (i in seq_along(dataset_sizes)) {
+  n <- dataset_sizes[i]
+  
+  # Create dataset
+  X_test <- data.frame(
+    feature_1 = sample(0:1, n, replace = TRUE),
+    feature_2 = sample(0:1, n, replace = TRUE),
+    feature_3 = sample(0:1, n, replace = TRUE)
+  )
+  y_test <- sample(0:1, n, replace = TRUE)
+  
+  # Measure memory
+  mem_before <- mem_used()
+  model <- treefarms(X_test, y_test, 
+                    loss_function = "misclassification", 
+                    regularization = 0.01,
+                    verbose = FALSE)
+  mem_after <- mem_used()
+  
+  memory_results$memory_mb[i] <- (mem_after - mem_before) / 1024^2
+  memory_results$n_trees[i] <- model$n_trees
+}
+
+print(memory_results)
+```
+
+# Best Practices for Production
+
+## Model Validation
+
+```{r model-validation}
+# Create train/test split
+set.seed(42)
+train_idx <- sample(1:nrow(X_large), 0.7 * nrow(X_large))
+X_train <- X_large[train_idx, ]
+y_train <- y_large[train_idx]
+X_test <- X_large[-train_idx, ]
+y_test <- y_large[-train_idx]
+
+# Train model
+model_val <- treefarms(X_train, y_train, 
+                      loss_function = "misclassification", 
+                      regularization = 0.01,
+                      verbose = FALSE)
+
+# Test predictions
+test_pred <- predict(model_val, X_test, type = "class")
+test_prob <- predict(model_val, X_test, type = "prob")
+
+# Calculate test accuracy
+test_accuracy <- mean(test_pred == y_test)
+cat("Training accuracy:", round(model_val$accuracy, 3), "\n")
+cat("Test accuracy:", round(test_accuracy, 3), "\n")
+
+# Calculate test log-loss
+test_logloss <- -mean(y_test * log(test_prob[, 2] + 1e-15) + 
+                      (1 - y_test) * log(test_prob[, 1] + 1e-15))
+cat("Test log-loss:", round(test_logloss, 3), "\n")
+```
+
+## Cross-Validation for Parameter Selection
+
+```{r cv-parameter-selection}
+# Cross-validation for regularization selection
+reg_values <- c(0.001, 0.01, 0.1, 0.5)
+cv_results <- data.frame(
+  regularization = reg_values,
+  cv_accuracy = numeric(length(reg_values)),
+  cv_logloss = numeric(length(reg_values))
+)
+
+K_cv <- 5
+fold_size <- nrow(X_train) %/% K_cv
+
+for (i in seq_along(reg_values)) {
+  reg <- reg_values[i]
+  cv_accuracies <- numeric(K_cv)
+  cv_loglosses <- numeric(K_cv)
+  
+  for (k in 1:K_cv) {
+    # Create fold
+    start_idx <- (k - 1) * fold_size + 1
+    end_idx <- min(k * fold_size, nrow(X_train))
+    val_idx <- start_idx:end_idx
+    
+    X_cv_train <- X_train[-val_idx, ]
+    y_cv_train <- y_train[-val_idx]
+    X_cv_val <- X_train[val_idx, ]
+    y_cv_val <- y_train[val_idx]
+    
+    # Train model
+    model_cv <- treefarms(X_cv_train, y_cv_train, 
+                         loss_function = "log_loss", 
+                         regularization = reg,
+                         verbose = FALSE)
+    
+    # Validate
+    val_pred <- predict(model_cv, X_cv_val, type = "class")
+    val_prob <- predict(model_cv, X_cv_val, type = "prob")
+    
+    cv_accuracies[k] <- mean(val_pred == y_cv_val)
+    cv_loglosses[k] <- -mean(y_cv_val * log(val_prob[, 2] + 1e-15) + 
+                             (1 - y_cv_val) * log(val_prob[, 1] + 1e-15))
+  }
+  
+  cv_results$cv_accuracy[i] <- mean(cv_accuracies)
+  cv_results$cv_logloss[i] <- mean(cv_loglosses)
+}
+
+print(cv_results)
+
+# Select best regularization
+best_reg_idx <- which.min(cv_results$cv_logloss)
+best_reg <- cv_results$regularization[best_reg_idx]
+cat("Best regularization:", best_reg, "\n")
+cat("Best CV log-loss:", round(cv_results$cv_logloss[best_reg_idx], 3), "\n")
+```
+
+# Conclusion
+
+This vignette demonstrated advanced usage patterns for the TreeFARMS R package, including:
+
+1. **Performance optimization** for large datasets
+2. **Advanced cross-fitted Rashomon analysis** with stability assessment
+3. **Real-world applications** in medical diagnosis and financial risk
+4. **Model interpretation** through rule extraction and probability calibration
+5. **Performance benchmarking** and memory usage analysis
+6. **Production best practices** including validation and parameter selection
+
+The TreeFARMS R package provides a robust foundation for building interpretable decision tree models with strong theoretical guarantees and practical performance characteristics.
+
+

@@ -1,0 +1,157 @@
+# R CMD check workflow for TreeFARMR package
+# Runs on multiple OS and R versions for comprehensive testing
+
+name: R CMD check
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # Test on multiple operating systems
+          - {os: ubuntu-latest, r: 'release'}
+          - {os: ubuntu-latest, r: 'devel'}
+          - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: macos-latest, r: 'release'}
+          - {os: macos-latest, r: 'devel'}
+          - {os: windows-latest, r: 'release'}
+          - {os: windows-latest, r: 'devel'}
+
+    env:
+      R_REMOTES_NO_ERRORS_FROM_WARNINGS: true
+      RSPM: ${{ matrix.config.rspm }}
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgmp-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install gmp
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # GMP is included in Rtools on Windows
+          echo "System dependencies handled by Rtools"
+
+      - name: Cache R packages
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-${{ matrix.config.r }}-${{ hashFiles('.github/workflows/R-CMD-check.yml') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.config.r }}-
+
+      - name: Install R package dependencies
+        run: |
+          install.packages(c("remotes", "rcmdcheck", "testthat", "covr"))
+          remotes::install_deps(dependencies = TRUE)
+
+      - name: Build package
+        run: |
+          R CMD build --no-manual .
+
+      - name: Check package
+        run: |
+          R CMD check --as-cran --no-manual treefarmr_*.tar.gz
+        shell: bash
+
+      - name: Run tests
+        run: |
+          Rscript -e "devtools::test()"
+
+      - name: Upload check results
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: R-CMD-check-results-${{ matrix.config.os }}-${{ matrix.config.r }}
+          path: check-results/
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ matrix.config.os }}-${{ matrix.config.r }}
+          path: tests/testthat.Rout.fail
+
+  test-coverage:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgmp-dev
+
+      - name: Cache R packages
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-${{ matrix.config.r }}-${{ hashFiles('.github/workflows/R-CMD-check.yml') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.config.r }}-
+
+      - name: Install R package dependencies
+        run: |
+          install.packages(c("remotes", "covr", "testthat"))
+          remotes::install_deps(dependencies = TRUE)
+
+      - name: Run coverage
+        run: |
+          Rscript -e "covr::package_coverage()"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - name: Install lintr
+        run: |
+          install.packages("lintr")
+
+      - name: Lint package
+        run: |
+          Rscript -e "lintr::lint_package()"

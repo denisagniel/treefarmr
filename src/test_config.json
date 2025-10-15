@@ -1,0 +1,1 @@
+{"loss_function": "log_loss", "regularization": 0.1, "verbose": false, "worker_limit": 1, "rashomon_bound_multiplier": 0.05}

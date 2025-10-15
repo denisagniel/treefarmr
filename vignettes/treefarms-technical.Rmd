@@ -1,0 +1,408 @@
+---
+title: "TreeFARMS Technical Details and Implementation"
+author: "TreeFARMS Development Team"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{TreeFARMS Technical Details and Implementation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Technical Details and Implementation
+
+This vignette provides technical details about the TreeFARMS algorithm, the Rcpp implementation, and the underlying C++ library.
+
+# Algorithm Overview
+
+## TreeFARMS Algorithm
+
+TreeFARMS (Tree-based Fast and Accurate Rule Set Models) is a branch-and-bound algorithm for learning optimal decision trees. The algorithm:
+
+1. **Searches the space of all possible decision trees** using branch-and-bound optimization
+2. **Finds trees that minimize a specified loss function** (misclassification or log-loss)
+3. **Generates Rashomon sets** of near-optimal trees within a specified bound
+4. **Uses advanced pruning techniques** to efficiently explore the search space
+
+## Loss Functions
+
+### Misclassification Loss
+The traditional 0-1 loss function:
+```
+L(y, ŷ) = 1 if y ≠ ŷ, 0 otherwise
+```
+
+### Log-Loss (Cross-Entropy)
+The probabilistic loss function:
+```
+L(y, p) = -y*log(p) - (1-y)*log(1-p)
+```
+
+## Rashomon Sets
+
+A Rashomon set contains all trees within a specified bound of the optimal solution:
+```
+R(ε) = {T : L(T) ≤ L(T*) + ε}
+```
+
+Where:
+- `T*` is the optimal tree
+- `ε` is the Rashomon bound
+- `L(T)` is the loss of tree T
+
+# Rcpp Implementation
+
+## Architecture
+
+The R package uses direct Rcpp bindings to the C++ implementation:
+
+```
+R → Rcpp → C++ GOSDT Library
+```
+
+This eliminates the Python dependency and provides:
+- **Faster execution** through direct C++ integration
+- **Easier distribution** without Python environment setup
+- **Better reliability** with fewer dependencies
+
+## Core Rcpp Functions
+
+```{r rcpp-functions}
+library(treefarms)
+
+# The main Rcpp functions are:
+# - treefarms_configure_cpp(): Configure algorithm parameters
+# - treefarms_fit_cpp(): Train model and return JSON results
+# - treefarms_fit_and_stats_cpp(): Train model and return statistics
+# - treefarms_time_cpp(): Get training time
+# - treefarms_iterations_cpp(): Get number of iterations
+# - treefarms_size_cpp(): Get model size
+# - treefarms_status_cpp(): Get training status
+
+# These functions are called internally by the R wrapper functions
+```
+
+## Data Flow
+
+```{r data-flow}
+# 1. R data.frame → CSV string
+X <- data.frame(x1 = c(0, 1, 0, 1), x2 = c(0, 0, 1, 1))
+y <- c(0, 1, 1, 0)
+
+# 2. Combine X and y into CSV format
+data_df <- X
+data_df$class <- y
+
+# 3. Convert to CSV string
+csv_con <- textConnection("csv_data", "w")
+write.csv(data_df, csv_con, row.names = FALSE)
+close(csv_con)
+csv_string <- paste(csv_data, collapse = "\n")
+
+cat("CSV data format:\n")
+cat(csv_string)
+```
+
+## Configuration
+
+```{r configuration}
+# Configuration is passed as JSON
+config <- list(
+  loss_function = "misclassification",
+  regularization = 0.1,
+  verbose = FALSE,
+  rashomon = TRUE,
+  rashomon_bound_multiplier = 0.05
+)
+
+config_json <- jsonlite::toJSON(config, auto_unbox = TRUE)
+cat("Configuration JSON:\n")
+cat(config_json)
+```
+
+# C++ Library Details
+
+## GOSDT (Generalized Optimal Sparse Decision Trees)
+
+The underlying C++ library implements the GOSDT algorithm:
+
+- **Branch-and-bound optimization** for finding optimal trees
+- **Advanced pruning techniques** for efficient search
+- **Parallel processing** using Intel TBB
+- **High-precision arithmetic** using GMP for numerical stability
+
+## Dependencies
+
+### Intel TBB (Threading Building Blocks)
+- Provides parallel processing capabilities
+- Used for multi-threaded tree search
+- Required for optimal performance
+
+### GMP (GNU Multiple Precision)
+- Provides high-precision arithmetic
+- Ensures numerical stability in optimization
+- Required for accurate loss calculations
+
+## Build System
+
+The package uses standard Rcpp build system:
+
+```makefile
+# src/Makevars
+PKG_CPPFLAGS = -I../inst/include -I.
+PKG_LIBS = -ltbb -ltbbmalloc -lgmp -lpthread
+CXX_STD = CXX11
+```
+
+# Performance Characteristics
+
+## Time Complexity
+
+The algorithm has exponential worst-case complexity, but practical performance is much better due to:
+
+1. **Advanced pruning techniques** that eliminate large portions of the search space
+2. **Parallel processing** that distributes work across multiple cores
+3. **Efficient data structures** for fast tree evaluation
+
+## Memory Usage
+
+Memory usage scales with:
+- **Dataset size**: O(n) for n observations
+- **Number of features**: O(2^p) in worst case for p features
+- **Rashomon set size**: O(k) for k trees in the set
+
+## Scalability
+
+```{r scalability-test}
+library(treefarms)
+
+# Test scalability with different dataset sizes
+dataset_sizes <- c(100, 500, 1000, 2000)
+results <- data.frame(
+  n_obs = dataset_sizes,
+  time_seconds = numeric(length(dataset_sizes)),
+  memory_mb = numeric(length(dataset_sizes)),
+  n_trees = numeric(length(dataset_sizes))
+)
+
+for (i in seq_along(dataset_sizes)) {
+  n <- dataset_sizes[i]
+  
+  # Create dataset
+  X <- data.frame(
+    feature_1 = sample(0:1, n, replace = TRUE),
+    feature_2 = sample(0:1, n, replace = TRUE),
+    feature_3 = sample(0:1, n, replace = TRUE)
+  )
+  y <- sample(0:1, n, replace = TRUE)
+  
+  # Measure performance
+  start_time <- Sys.time()
+  mem_before <- pryr::mem_used()
+  
+  model <- treefarms(X, y, 
+                    loss_function = "misclassification", 
+                    regularization = 0.01,
+                    verbose = FALSE)
+  
+  end_time <- Sys.time()
+  mem_after <- pryr::mem_used()
+  
+  results$time_seconds[i] <- as.numeric(end_time - start_time, units = "secs")
+  results$memory_mb[i] <- (mem_after - mem_before) / 1024^2
+  results$n_trees[i] <- model$n_trees
+}
+
+print(results)
+```
+
+# Error Handling and Debugging
+
+## Common Error Conditions
+
+### Compilation Errors
+```{r compilation-errors}
+# Missing system dependencies
+# Error: fatal error: 'tbb/tbb.h' file not found
+# Solution: Install Intel TBB
+
+# Error: fatal error: 'gmp.h' file not found  
+# Solution: Install GMP library
+
+# Error: symbol not found: '_scalable_free'
+# Solution: Link against libtbbmalloc
+```
+
+### Runtime Errors
+```{r runtime-errors}
+# Invalid input data
+X_invalid <- data.frame(x1 = c(0, 1, 2))  # Non-binary values
+y_invalid <- c(0, 1, 2)  # Non-binary values
+
+# These will cause errors:
+# treefarms(X_invalid, y_invalid)  # Error: Feature must contain only binary values
+# treefarms(X, y_invalid)  # Error: y must contain only binary values
+```
+
+## Debugging Tips
+
+### Verbose Output
+```{r verbose-debugging}
+# Use verbose = TRUE for debugging
+model <- treefarms(X, y, 
+                  loss_function = "misclassification", 
+                  regularization = 0.01,
+                  verbose = TRUE)
+```
+
+### Check Model Status
+```{r model-status}
+# Check training status
+cat("Training time:", model$training_time, "seconds\n")
+cat("Training iterations:", model$training_iterations, "\n")
+cat("Model size:", model$model$size, "\n")
+cat("Training status:", model$model$status, "\n")
+```
+
+# Advanced Configuration
+
+## Custom Parameters
+
+```{r custom-parameters}
+# Advanced configuration options
+config_advanced <- list(
+  loss_function = "log_loss",
+  regularization = 0.01,
+  verbose = TRUE,
+  rashomon = TRUE,
+  rashomon_bound_multiplier = 0.05,
+  target_trees = 3,
+  max_trees = 10,
+  # Additional C++ parameters can be added here
+  time_limit = 300,  # 5 minutes
+  memory_limit = 1000  # 1GB
+)
+
+# Note: Some parameters may not be exposed in the R interface
+# Check the C++ documentation for full parameter list
+```
+
+## Memory Management
+
+```{r memory-management}
+# Monitor memory usage
+library(pryr)
+
+# Check memory before training
+mem_before <- mem_used()
+cat("Memory before:", round(mem_before / 1024^2, 2), "MB\n")
+
+# Train model
+model <- treefarms(X, y, 
+                  loss_function = "misclassification", 
+                  regularization = 0.01,
+                  verbose = FALSE)
+
+# Check memory after training
+mem_after <- mem_used()
+mem_increase <- mem_after - mem_before
+cat("Memory increase:", round(mem_increase / 1024^2, 2), "MB\n")
+
+# Clean up if needed
+rm(model)
+gc()
+```
+
+# Integration with Other R Packages
+
+## Parallel Processing
+
+```{r parallel-processing}
+# Use parallel processing for multiple models
+library(parallel)
+
+# Create cluster
+cl <- makeCluster(4)
+
+# Train multiple models in parallel
+regularization_values <- c(0.001, 0.01, 0.1, 0.5)
+models <- parLapply(cl, regularization_values, function(reg) {
+  treefarms(X, y, 
+            loss_function = "misclassification", 
+            regularization = reg,
+            verbose = FALSE)
+})
+
+# Stop cluster
+stopCluster(cl)
+
+# Compare results
+results <- data.frame(
+  regularization = regularization_values,
+  n_trees = sapply(models, function(m) m$n_trees),
+  accuracy = sapply(models, function(m) m$accuracy)
+)
+
+print(results)
+```
+
+## Integration with caret
+
+```{r caret-integration}
+# Example of integrating with caret (if available)
+# library(caret)
+
+# Define custom model
+# treefarms_model <- list(
+#   label = "TreeFARMS",
+#   library = "treefarms",
+#   type = "Classification",
+#   parameters = data.frame(
+#     parameter = c("regularization", "loss_function"),
+#     class = c("numeric", "character"),
+#     label = c("Regularization", "Loss Function")
+#   ),
+#   grid = function(x, y, len = NULL) {
+#     expand.grid(
+#       regularization = c(0.001, 0.01, 0.1, 0.5),
+#       loss_function = c("misclassification", "log_loss")
+#     )
+#   },
+#   fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+#     treefarms(x, y, 
+#               regularization = param$regularization,
+#               loss_function = param$loss_function,
+#               ...)
+#   },
+#   predict = function(modelFit, newdata, submodels = NULL) {
+#     predict(modelFit, newdata, type = "class")
+#   },
+#   prob = function(modelFit, newdata, submodels = NULL) {
+#     predict(modelFit, newdata, type = "prob")
+#   }
+# )
+```
+
+# Conclusion
+
+The TreeFARMS R package provides a robust, high-performance implementation of the TreeFARMS algorithm through direct Rcpp bindings to the C++ library. Key technical advantages include:
+
+1. **Direct C++ integration** for optimal performance
+2. **Advanced branch-and-bound optimization** for finding optimal trees
+3. **Parallel processing** using Intel TBB
+4. **High-precision arithmetic** using GMP
+5. **Comprehensive error handling** and debugging support
+6. **Standard R package structure** for easy integration
+
+The implementation balances theoretical rigor with practical performance, making it suitable for both research and production applications.
+
+

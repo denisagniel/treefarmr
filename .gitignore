@@ -1,0 +1,50 @@
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Compiled files
+*.o
+*.so
+*.dll
+*.dylib
+
+# Package files
+*.tar.gz
+*.zip
+
+# Development files
+dev/
+test_*.R
+compare_*.R
+
+# Results
+results/
+*.rds
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+temp_*
+*.tmp
+*.log
+
+# Python (if any)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# GitLab CI artifacts
+.gitlab-ci-local/

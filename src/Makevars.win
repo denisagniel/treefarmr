@@ -1,0 +1,19 @@
+# Makevars.win for Windows
+
+# Set C++ standard
+CXX_STD = CXX11
+
+# Get RcppParallel flags
+PKG_CPPFLAGS = -I../inst/include -DNOMINMAX $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::CxxFlags()")
+PKG_CXXFLAGS = -DNOMINMAX
+
+# Link against required libraries (RcppParallel provides TBB)
+PKG_LIBS = -lgmp $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::LdFlags()")
+
+# Include directories
+PKG_CPPFLAGS += -I../inst/include
+
+# Remove main.cpp from compilation (it's for CLI, not library)
+SOURCES = $(wildcard *.cpp)
+SOURCES := $(filter-out main.cpp, $(SOURCES))
+

@@ -1,0 +1,91 @@
+# GitLab CI configuration for TreeFARMR package
+# Runs R CMD check and tests on GitLab CI
+
+stages:
+  - check
+  - test
+  - coverage
+
+variables:
+  R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
+
+# R CMD check job
+r-cmd-check:
+  stage: check
+  image: rocker/r-ver:4.3.0
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git libgmp-dev
+    - R -e "install.packages(c('remotes', 'rcmdcheck', 'testthat', 'covr'), repos = 'https://cloud.r-project.org')"
+    - R -e "remotes::install_deps(dependencies = TRUE)"
+  script:
+    - R CMD build --no-manual .
+    - R CMD check --as-cran --no-manual treefarmr_*.tar.gz
+  artifacts:
+    when: on_failure
+    paths:
+      - treefarmr_*.tar.gz
+      - treefarmr.Rcheck/
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Test job
+test:
+  stage: test
+  image: rocker/r-ver:4.3.0
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git libgmp-dev
+    - R -e "install.packages(c('remotes', 'testthat', 'devtools'), repos = 'https://cloud.r-project.org')"
+    - R -e "remotes::install_deps(dependencies = TRUE)"
+  script:
+    - R -e "devtools::test()"
+  artifacts:
+    when: on_failure
+    paths:
+      - tests/testthat.Rout.fail
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Coverage job
+coverage:
+  stage: coverage
+  image: rocker/r-ver:4.3.0
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git libgmp-dev
+    - R -e "install.packages(c('remotes', 'covr', 'testthat'), repos = 'https://cloud.r-project.org')"
+    - R -e "remotes::install_deps(dependencies = TRUE)"
+  script:
+    - R -e "cov <- covr::package_coverage(); print(covr::coverage_to_list(cov))"
+    - R -e "covr::report(cov, file = 'coverage.html')"
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.html
+    expire_in: 1 week
+  coverage: '/Total.*?(\d+\.\d+)%/'
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Lint job
+lint:
+  stage: test
+  image: rocker/r-ver:4.3.0
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git
+    - R -e "install.packages('lintr', repos = 'https://cloud.r-project.org')"
+  script:
+    - R -e "lintr::lint_package()"
+  only:
+    - main
+    - develop
+    - merge_requests
