@@ -4,12 +4,13 @@ Title: Tree-based Fast and Accurate Rule Set Models with Log-Loss and Probabilit
 Version: 0.3.0
 Author: TreeFARMR Development Team
 Maintainer: TreeFARMR Development Team <treefarmr@example.com>
-Description: R wrapper for TreeFARMS, providing access to optimal decision tree learning
-    with support for log-loss optimization and probability predictions. TreeFARMS finds
-    optimal decision trees using either misclassification loss or log-loss (cross-entropy),
-    and provides well-calibrated probability estimates bounded away from 0 and 1.
-    This version uses direct Rcpp bindings to the C++ implementation, eliminating
-    Python dependencies for easier distribution and better performance.
+Description: R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models),
+    providing optimal decision tree learning with support for log-loss optimization and 
+    probability predictions. TreeFARMS finds optimal decision trees using either 
+    misclassification loss or log-loss (cross-entropy), and provides well-calibrated 
+    probability estimates bounded away from 0 and 1. This package uses direct Rcpp 
+    bindings to the integrated C++ implementation, eliminating external dependencies 
+    for easier distribution and better performance.
 License: MIT
 Depends: R (>= 3.6.0)
 Imports: Rcpp (>= 1.0.0), jsonlite (>= 1.7.0)

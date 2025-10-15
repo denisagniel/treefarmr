@@ -4,7 +4,7 @@
 [![Coverage](https://codecov.io/gh/your-org/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/your-org/treefarmr)
 [![CRAN](https://www.r-pkg.org/badges/version/treefarmr)](https://cran.r-project.org/package=treefarmr)
 
-R wrapper for TreeFARMS (Tree-based Fast and Accurate Rule Set Models) with support for log-loss optimization and probability predictions. This package provides direct Rcpp bindings to the C++ implementation, eliminating Python dependencies for easier distribution and better performance.
+R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models) with support for log-loss optimization and probability predictions. This package provides direct Rcpp bindings to the integrated C++ implementation, eliminating external dependencies for easier distribution and better performance.
 
 ## Installation
 
@@ -192,11 +192,11 @@ See `tests/README.md` for detailed testing documentation.
 ## Performance Benefits
 
 This Rcpp-based implementation provides:
-- **Faster execution**: Direct C++ calls without Python overhead
-- **Easier distribution**: No Python environment setup required
-- **Better reliability**: Fewer dependency issues
+- **Faster execution**: Direct C++ calls without external process overhead
+- **Easier distribution**: No external dependencies or environment setup required
+- **Better reliability**: Fewer dependency issues and no subprocess management
 - **Standard R package**: Follows typical Rcpp package patterns
-- **Parallel execution**: Multi-threaded training support
+- **Parallel execution**: Multi-threaded training support with RcppParallel
 
 ## Contributing
 
