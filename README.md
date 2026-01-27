@@ -261,8 +261,8 @@ If you use TreeFARMR in your research, please cite:
 ```bibtex
 @software{treefarmr2024,
   title = {TreeFARMR: Tree-based Fast and Accurate Rule Set Models for R},
-  author = {TreeFARMR Development Team},
-  year = {2024},
+  author = {Denis Agniel},
+  year = {2025},
   url = {https://github.com/denisagniel/treefarmr}
 }
 ```
