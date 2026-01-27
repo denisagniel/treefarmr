@@ -7,7 +7,6 @@
 #include <queue>
 #include <mutex>
 #include <unordered_map>
-#include <RcppParallel.h>
 
 #include "bitmask.hpp"
 #include "configuration.hpp"
@@ -17,7 +16,7 @@ typedef Message message_type;
 
 class PriorityKeyComparator {
 public:
-    // Note that the tbb::concurrent_priority_queue is implemented to pop the item with the highest priority value
+    // Priority queue comparator: pop the item with the highest priority value
     bool operator()(message_type const * left, message_type const * right) {
         return (* left) < (* right);
     }
@@ -42,11 +41,11 @@ struct MembershipKeyHashCompare {
     }
 };
 
-// Use std::priority_queue with mutex protection since concurrent_priority_queue is not available in RcppParallel's TBB
+// Use std::priority_queue with mutex protection
 typedef std::priority_queue< message_type *, std::vector<message_type *>, PriorityKeyComparator > queue_type;
 
-// Use TBB concurrent_unordered_map that is available in RcppParallel
-typedef tbb::concurrent_unordered_map< message_type *, bool, std::hash<message_type *>, std::equal_to<message_type *> > membership_table_type;
+// Use std::unordered_map with mutex protection for thread-safety
+typedef std::unordered_map< message_type *, bool, std::hash<message_type *>, std::equal_to<message_type *> > membership_table_type;
 
 class Queue {
 public:

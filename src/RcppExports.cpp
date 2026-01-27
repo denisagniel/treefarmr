@@ -12,7 +12,7 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 
 // treefarms_configure_cpp
 void treefarms_configure_cpp(std::string configuration);
-RcppExport SEXP _treefarms_treefarms_configure_cpp(SEXP configurationSEXP) {
+RcppExport SEXP _treefarmr_treefarms_configure_cpp(SEXP configurationSEXP) {
 BEGIN_RCPP
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< std::string >::type configuration(configurationSEXP);
@@ -22,7 +22,7 @@ END_RCPP
 }
 // treefarms_fit_cpp
 std::string treefarms_fit_cpp(std::string data_csv);
-RcppExport SEXP _treefarms_treefarms_fit_cpp(SEXP data_csvSEXP) {
+RcppExport SEXP _treefarmr_treefarms_fit_cpp(SEXP data_csvSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -33,7 +33,7 @@ END_RCPP
 }
 // treefarms_time_cpp
 double treefarms_time_cpp();
-RcppExport SEXP _treefarms_treefarms_time_cpp() {
+RcppExport SEXP _treefarmr_treefarms_time_cpp() {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -43,7 +43,7 @@ END_RCPP
 }
 // treefarms_iterations_cpp
 int treefarms_iterations_cpp();
-RcppExport SEXP _treefarms_treefarms_iterations_cpp() {
+RcppExport SEXP _treefarmr_treefarms_iterations_cpp() {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -53,7 +53,7 @@ END_RCPP
 }
 // treefarms_size_cpp
 int treefarms_size_cpp();
-RcppExport SEXP _treefarms_treefarms_size_cpp() {
+RcppExport SEXP _treefarmr_treefarms_size_cpp() {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -63,7 +63,7 @@ END_RCPP
 }
 // treefarms_status_cpp
 int treefarms_status_cpp();
-RcppExport SEXP _treefarms_treefarms_status_cpp() {
+RcppExport SEXP _treefarmr_treefarms_status_cpp() {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -72,8 +72,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // treefarms_fit_with_config_cpp
-std::string treefarms_fit_with_config_cpp(std::string data_csv, std::string configuration);
-RcppExport SEXP _treefarms_treefarms_fit_with_config_cpp(SEXP data_csvSEXP, SEXP configurationSEXP) {
+Rcpp::CharacterVector treefarms_fit_with_config_cpp(std::string data_csv, std::string configuration);
+RcppExport SEXP _treefarmr_treefarms_fit_with_config_cpp(SEXP data_csvSEXP, SEXP configurationSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -85,7 +85,7 @@ END_RCPP
 }
 // treefarms_fit_and_stats_cpp
 Rcpp::List treefarms_fit_and_stats_cpp(std::string data_csv, std::string configuration);
-RcppExport SEXP _treefarms_treefarms_fit_and_stats_cpp(SEXP data_csvSEXP, SEXP configurationSEXP) {
+RcppExport SEXP _treefarmr_treefarms_fit_and_stats_cpp(SEXP data_csvSEXP, SEXP configurationSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -97,7 +97,7 @@ END_RCPP
 }
 // cleanup_static_state
 void cleanup_static_state();
-RcppExport SEXP _treefarms_cleanup_static_state() {
+RcppExport SEXP _treefarmr_cleanup_static_state() {
 BEGIN_RCPP
     Rcpp::RNGScope rcpp_rngScope_gen;
     cleanup_static_state();
@@ -106,19 +106,19 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_treefarms_treefarms_configure_cpp", (DL_FUNC) &_treefarms_treefarms_configure_cpp, 1},
-    {"_treefarms_treefarms_fit_cpp", (DL_FUNC) &_treefarms_treefarms_fit_cpp, 1},
-    {"_treefarms_treefarms_time_cpp", (DL_FUNC) &_treefarms_treefarms_time_cpp, 0},
-    {"_treefarms_treefarms_iterations_cpp", (DL_FUNC) &_treefarms_treefarms_iterations_cpp, 0},
-    {"_treefarms_treefarms_size_cpp", (DL_FUNC) &_treefarms_treefarms_size_cpp, 0},
-    {"_treefarms_treefarms_status_cpp", (DL_FUNC) &_treefarms_treefarms_status_cpp, 0},
-    {"_treefarms_treefarms_fit_with_config_cpp", (DL_FUNC) &_treefarms_treefarms_fit_with_config_cpp, 2},
-    {"_treefarms_treefarms_fit_and_stats_cpp", (DL_FUNC) &_treefarms_treefarms_fit_and_stats_cpp, 2},
-    {"_treefarms_cleanup_static_state", (DL_FUNC) &_treefarms_cleanup_static_state, 0},
+    {"_treefarmr_treefarms_configure_cpp", (DL_FUNC) &_treefarmr_treefarms_configure_cpp, 1},
+    {"_treefarmr_treefarms_fit_cpp", (DL_FUNC) &_treefarmr_treefarms_fit_cpp, 1},
+    {"_treefarmr_treefarms_time_cpp", (DL_FUNC) &_treefarmr_treefarms_time_cpp, 0},
+    {"_treefarmr_treefarms_iterations_cpp", (DL_FUNC) &_treefarmr_treefarms_iterations_cpp, 0},
+    {"_treefarmr_treefarms_size_cpp", (DL_FUNC) &_treefarmr_treefarms_size_cpp, 0},
+    {"_treefarmr_treefarms_status_cpp", (DL_FUNC) &_treefarmr_treefarms_status_cpp, 0},
+    {"_treefarmr_treefarms_fit_with_config_cpp", (DL_FUNC) &_treefarmr_treefarms_fit_with_config_cpp, 2},
+    {"_treefarmr_treefarms_fit_and_stats_cpp", (DL_FUNC) &_treefarmr_treefarms_fit_and_stats_cpp, 2},
+    {"_treefarmr_cleanup_static_state", (DL_FUNC) &_treefarmr_cleanup_static_state, 0},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_treefarms(DllInfo *dll) {
+RcppExport void R_init_treefarmr(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

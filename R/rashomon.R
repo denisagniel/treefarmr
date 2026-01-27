@@ -28,21 +28,56 @@ get_rashomon_trees <- function(model) {
     }
     return(model$trees)
   } else {
-    # For regular models, use model_set
-    model_set <- model$model$model_set
-    tree_count <- model_set$get_tree_count()
-    
-    if (tree_count == 0) {
-      warning("No trees in Rashomon set")
+    # For regular models, extract from JSON structure
+    # Note: Current implementation stores trees as JSON, not C++ objects
+    # If C++ model_set exists in the future, we can add backward compatibility here
+    {
+      tree_json <- model$model$tree_json
+      
+      if (is.null(tree_json)) {
+        # Try result_data as fallback
+        tree_json <- model$model$result_data
+      }
+      
+      if (is.null(tree_json)) {
+        warning("No tree structure found in model")
+        return(list())
+      }
+      
+      # Check if it's a single tree or a rashomon set
+      if (is.list(tree_json)) {
+        # Check if it's a single tree (has feature or prediction directly)
+        if (!is.null(tree_json$feature) || !is.null(tree_json$prediction)) {
+          # Single tree - return as list with one element
+          return(list(tree_json))
+        } else if (length(tree_json) > 0) {
+          # Check if it's a list of trees
+          # If first element has feature or prediction, it's a list of trees
+          if (length(tree_json) == 1 && 
+              is.list(tree_json[[1]]) &&
+              (!is.null(tree_json[[1]]$feature) || !is.null(tree_json[[1]]$prediction))) {
+            # Single tree in a list
+            return(list(tree_json[[1]]))
+          } else if (length(tree_json) > 1) {
+            # Multiple trees - check if they're valid tree structures
+            valid_trees <- list()
+            for (i in seq_along(tree_json)) {
+              if (is.list(tree_json[[i]]) && 
+                  (!is.null(tree_json[[i]]$feature) || !is.null(tree_json[[i]]$prediction))) {
+                valid_trees[[length(valid_trees) + 1]] <- tree_json[[i]]
+              }
+            }
+            if (length(valid_trees) > 0) {
+              return(valid_trees)
+            }
+          }
+        }
+      }
+      
+      # If we get here, couldn't extract trees
+      warning("Could not extract trees from model structure")
       return(list())
     }
-    
-    # Extract all trees using 0-based indexing
-    trees <- lapply(0:(tree_count - 1), function(i) {
-      model_set[i]
-    })
-    
-    return(trees)
   }
 }
 
@@ -68,16 +103,25 @@ tree_to_json <- function(tree) {
   if (is.character(tree)) {
     # This is already a JSON string (log_loss model)
     return(tree)
-  } else if (is.list(tree) && "json" %in% names(tree)) {
-    # This is a log_loss model tree with json field
-    return(as.character(tree$json))
-  } else if ("json" %in% names(tree)) {
-    # This is a TreeClassifier object
-    json_str <- as.character(tree$json())
-    return(json_str)
-  } else {
-    stop("Tree object does not have a json() method or json field")
+  } else if (is.list(tree)) {
+    # Check if it's a JSON tree structure (has feature or prediction)
+    if (!is.null(tree$feature) || !is.null(tree$prediction)) {
+      # This is a JSON tree structure - convert to JSON string
+      return(jsonlite::toJSON(tree, auto_unbox = TRUE))
+    } else if ("json" %in% names(tree)) {
+      # This is a log_loss model tree with json field or TreeClassifier object
+      if (is.character(tree$json)) {
+        return(as.character(tree$json))
+      } else if (is.function(tree$json)) {
+        # This is a TreeClassifier object with json() method
+        json_str <- as.character(tree$json())
+        return(json_str)
+      }
+    }
   }
+  
+  # If we get here, couldn't convert
+  stop("Tree object does not have a recognizable structure. Expected: JSON tree (list with feature/prediction), JSON string, or TreeClassifier object with json() method")
 }
 
 #' Compare Two Trees for Structural Equality

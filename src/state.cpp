@@ -1,46 +1,143 @@
 #include "state.hpp"
+#include <cstdint>  // For uintptr_t
 
-Dataset State::dataset = Dataset();
-Graph State::graph = Graph();
-// Initialize queue using placement new since it contains non-copyable mutex
-Queue State::queue;
-std::vector< LocalState > State::locals = std::vector< LocalState >();
-int State::status = 0;
+State::State() : dataset(), graph(), queue(), status(0), locals() {
+    // Initialize empty state
+}
+
+State::~State() {
+    // Destructor - cleanup is handled by member destructors
+    // Explicit cleanup can be done via reset() if needed
+}
 
 void State::initialize(std::istream & data_source, unsigned int workers) {
-    State::dataset.load(data_source);
-    State::graph = Graph();
+    // CRITICAL: Validate worker count
+    if (workers == 0) {
+        throw std::runtime_error("Worker count must be > 0 in State::initialize()");
+    }
+    assert(workers > 0 && "Worker count must be > 0");
+    
+    // CRITICAL: Validate stream state before loading dataset
+    if (!data_source.good() && !data_source.eof()) {
+        throw std::runtime_error("Input stream is not in valid state in State::initialize()");
+    }
+    
+    // CRITICAL: Check alignment of dataset object
+    void* dptr = &dataset;
+    size_t dataset_alignment = alignof(Dataset);
+    if (reinterpret_cast<uintptr_t>(dptr) % dataset_alignment != 0) {
+        throw std::runtime_error("Dataset object alignment error in State::initialize()");
+    }
+    
+    dataset.load(data_source);
+    
+    // CRITICAL: Verify dataset was loaded successfully
+    if (dataset.height() == 0) {
+        throw std::runtime_error("Dataset height must be > 0 after load()");
+    }
+    if (dataset.depth() == 0) {
+        throw std::runtime_error("Dataset depth must be > 0 after load()");
+    }
+    assert(dataset.height() > 0 && "Dataset height must be > 0");
+    assert(dataset.width() >= 0 && "Dataset width must be >= 0");
+    assert(dataset.depth() > 0 && "Dataset depth must be > 0");
+    
+    // Clear graph containers
+    graph.clear();
     // Reset queue in place instead of assignment (mutex is non-copyable)
-    State::queue.~Queue();
-    new (&State::queue) Queue();
-    State::locals.resize(workers);
+    queue.~Queue();
+    new (&queue) Queue();
+    
+    // CRITICAL: Check alignment of locals vector before resize
+    void* lptr = locals.data();
+    if (locals.capacity() > 0 && lptr != nullptr) {
+        size_t local_alignment = alignof(LocalState);
+        if (reinterpret_cast<uintptr_t>(lptr) % local_alignment != 0) {
+            throw std::runtime_error("locals vector alignment error before resize");
+        }
+    }
+    
+    // CRITICAL: Resize locals vector to match worker count
+    locals.resize(workers);
+    if (locals.size() != workers) {
+        throw std::runtime_error("Failed to resize locals vector to worker count");
+    }
+    assert(locals.size() == workers && "locals size must match worker count");
+    
+    // CRITICAL: Verify alignment after resize
+    lptr = locals.data();
+    if (lptr != nullptr) {
+        size_t local_alignment = alignof(LocalState);
+        if (reinterpret_cast<uintptr_t>(lptr) % local_alignment != 0) {
+            throw std::runtime_error("locals vector alignment error after resize");
+        }
+    }
+    
     for (unsigned int i = 0; i < workers; ++i) {
-        State::locals[i].initialize(dataset.height(), dataset.width(), dataset.depth());
+        // CRITICAL: Verify dataset dimensions before initializing local state
+        unsigned int h = dataset.height();
+        unsigned int w = dataset.width();
+        unsigned int d = dataset.depth();
+        
+        if (h == 0 || d == 0) {
+            throw std::runtime_error("Invalid dataset dimensions: h=" + std::to_string(h) + 
+                                   " w=" + std::to_string(w) + " d=" + std::to_string(d));
+        }
+        assert(h > 0 && w >= 0 && d > 0 && "Dataset dimensions must be valid");
+        
+        // CRITICAL: Check alignment of local state element before initialization
+        void* leptr = &locals[i];
+        size_t local_elem_alignment = alignof(LocalState);
+        if (reinterpret_cast<uintptr_t>(leptr) % local_elem_alignment != 0) {
+            throw std::runtime_error("LocalState element alignment error at index " + std::to_string(i));
+        }
+        
+        locals[i].initialize(h, w, d);
     }
 }
 
 
 void State::reset(void) {
     // Clear in reverse dependency order
-    State::locals.clear();  // First: clear thread-local state
+    locals.clear();  // First: clear thread-local state
     
-    State::queue.~Queue();  // Second: destroy queue
-    new (&State::queue) Queue();
+    queue.~Queue();  // Second: destroy queue
+    new (&queue) Queue();
     
-    State::graph = Graph(); // Third: reset graph (clears TBB containers)
+    // Third: clear graph containers
+    graph.clear();
     
-    State::dataset.clear(); // Last: clear dataset
+    dataset.clear(); // Last: clear dataset
 }
 
 void State::reset_except_dataset(void) {
-    State::graph = Graph();
+    // Clear graph containers
+    graph.clear();
+    
     // Reset queue in place instead of assignment (mutex is non-copyable)
-    State::queue.~Queue();
-    new (&State::queue) Queue();
-    // Ensure locals is properly sized before accessing it
-    if (locals.size() > 0) {
-        for (unsigned int i = 0; i < locals.size(); ++i) {
-            State::locals[i].initialize(dataset.height(), dataset.width(), dataset.depth());
+    queue.~Queue();
+    new (&queue) Queue();
+    
+    // CRITICAL: Reinitialize locals with current dataset dimensions
+    // This ensures locals is always properly sized and initialized
+    // Use the same worker count as before (locals.size() if non-zero, else 1)
+    unsigned int workers = (locals.size() > 0) ? locals.size() : 1;
+    
+    // Verify dataset is valid before initializing locals
+    if (dataset.height() > 0 && dataset.depth() > 0) {
+        locals.resize(workers);
+        for (unsigned int i = 0; i < workers; ++i) {
+            locals[i].initialize(dataset.height(), dataset.width(), dataset.depth());
         }
+    } else {
+        // Dataset not loaded - clear locals to prevent invalid access
+        locals.clear();
     }
+}
+
+LocalState& State::get_local(unsigned int id) {
+    if (id >= locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(locals.size()));
+    }
+    return locals[id];
 }

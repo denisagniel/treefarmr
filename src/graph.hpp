@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
-#include <RcppParallel.h>
 
 class Graph;
 
@@ -24,17 +23,8 @@ typedef Tile key_type;
 typedef Task value_type;
 typedef std::vector<int> translation_type;
 
-// Additional Hash Implementation for tbb::concurrent_hash_table
+// Hash implementations for std::unordered_map
 // These delegate to the already implemented hash functions and equality operators
-class GraphVertexHashComparator {
-public:
-    static size_t hash(key_type const & key) {
-        return key.hash();
-    }
-    static bool equal(key_type const & left, key_type const & right) {
-        return left == right;
-    }
-};
 
 // class GraphTranslationHashComparator {
 // public:
@@ -69,23 +59,25 @@ struct PairHash {
     }
 };
 
-// Use TBB containers that are available in RcppParallel
-typedef tbb::concurrent_unordered_map< // Table for storing forward edges
+// Use std::unordered_map with mutex protection for thread-safety
+// Note: Since worker_limit=1 for regression and we're going single-threaded,
+// mutexes are defensive but won't contend in practice
+typedef std::unordered_map< // Table for storing forward edges
     std::pair<key_type, int>, key_type, PairHash, std::equal_to<std::pair<key_type, int>>> child_table;
 
-typedef tbb::concurrent_unordered_map< // Table for storing tile-orderings
+typedef std::unordered_map< // Table for storing tile-orderings
     std::pair<key_type, int>, translation_type, PairHash, std::equal_to<std::pair<key_type, int>>> translation_table;
 
-typedef tbb::concurrent_unordered_map< // Table for storing vertices
+typedef std::unordered_map< // Table for storing vertices
     key_type, value_type, std::hash<key_type>, std::equal_to<key_type>> vertex_table;
 
-typedef tbb::concurrent_unordered_map< // Set of parents for a single vertex
+typedef std::unordered_map< // Set of parents for a single vertex
     key_type, std::pair<Bitmask, float>, std::hash<Tile>, std::equal_to<Tile>> adjacency_set; 
 
-typedef tbb::concurrent_unordered_map< // Table of all adjacency sets
+typedef std::unordered_map< // Table of all adjacency sets
     key_type, adjacency_set, std::hash<key_type>, std::equal_to<key_type>> adjacency_table;
 
-// Use std::vector since concurrent_vector is not available in RcppParallel's TBB
+// Use std::vector for bound lists
 typedef std::vector<std::tuple<unsigned int, float, float>> bound_list; // List of split-bounds for a single vertex
 
 // A collection of model sets, representing the result or solution of a
@@ -94,13 +86,13 @@ typedef std::vector<std::tuple<unsigned int, float, float>> bound_list; // List 
 typedef std::pair<std::set<Objective, ObjectiveLess>, std::unordered_map<Objective, std::shared_ptr<ModelSet>, ObjectiveHash>> results_t; 
 typedef std::tuple< float, results_t > scoped_result_t; // A collection of model sets with an associated scope
 
-typedef tbb::concurrent_unordered_map< // Table of all bound lists
+typedef std::unordered_map< // Table of all bound lists
     key_type, bound_list, std::hash<key_type>, std::equal_to<key_type>> bound_table;
 
-typedef tbb::concurrent_unordered_map< // Table of all saved models
+typedef std::unordered_map< // Table of all saved models
     key_type, scoped_result_t, std::hash<key_type>, std::equal_to<key_type>> models_table;
 
-// Iterator types for concurrent_unordered_map
+// Iterator types for std::unordered_map
 typedef vertex_table::const_iterator const_vertex_accessor;
 typedef vertex_table::iterator vertex_accessor;
 
@@ -137,6 +129,8 @@ public:
     bound_table bounds;
     models_table models;
 
+    // Mutex for thread-safety (defensive, since we're single-threaded)
+    mutable std::mutex graph_mutex;
 
     Graph(void);
     ~Graph(void);

@@ -4,17 +4,26 @@
 #include <functional>
 #include <tuple>
 
+class State; // Forward declaration for State reference parameter
+
 struct Objective {
-    Objective(const int falses, const int regularization);
+    Objective(const int falses, const int regularization, State & state);
     Objective() = default;
 
     int falses;
     int regularization;
     float objective;
 
+    // Note: operator+ creates new Objective but doesn't have State
+    // This is used in contexts where State isn't available
+    // The objective value is already calculated, so we can create with default constructor
+    // and set objective directly, or we need to refactor to store mismatch_cost
     Objective operator+(const Objective &other) const {
-        return Objective(falses + other.falses,
-                         regularization + other.regularization);
+        Objective result;
+        result.falses = falses + other.falses;
+        result.regularization = regularization + other.regularization;
+        result.objective = objective + other.objective; // Use pre-calculated values
+        return result;
     }
 
     std::tuple<float, int, int> to_tuple() const {

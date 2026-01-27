@@ -21,8 +21,26 @@ Trie::Trie(bool calculate_size, char const *type)
       calculate_size_(calculate_size), type_(type) {}
 
 Trie::~Trie() {
-    // if(num_nodes())
-    //     delete_subtree(this, root_, true, false);
+    // Clean up all nodes recursively
+    if (root_ != nullptr) {
+        delete_subtree_recursive(root_);
+        root_ = nullptr;
+    }
+}
+
+// Helper function to recursively delete all nodes in the trie
+void Trie::delete_subtree_recursive(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+    // Recursively delete all children first
+    for (auto it = node->children_.begin(); it != node->children_.end(); ++it) {
+        delete_subtree_recursive(it->second);
+    }
+    // Clear the children map
+    node->children_.clear();
+    // Delete this node
+    delete node;
 }
 
 Node *Trie::construct_node(std::vector<int> new_rule, Node *parent) {
@@ -58,6 +76,8 @@ void Trie::insert_if_not_exist(std::vector<int> feats, Node *currNode,
 }
 
 void Trie::insert_model(const Model *model) {
+    // Note: insert_model doesn't need State - it uses model->loss() and model->complexity()
+    // which are already calculated and stored in the Model object
     std::vector<const Model *> models{model};
     Node *currNode = root_;
     while (!models.empty()) {
@@ -87,12 +107,12 @@ void Trie::insert_model(const Model *model) {
     currNode->complexity = model->complexity();
 }
 
-void Trie::insert_model_set(const model_set_p models) {
+void Trie::insert_model_set(const model_set_p models, State & state) {
     if (models->terminal) {
         Node *child;
         std::vector<int> feats = {-(int)models->get_binary_target() - 1};
         insert_if_not_exist(feats, root_, child);
-        finalize_leaf_node(child, models->values_of_interest);
+        finalize_leaf_node(child, models->values_of_interest, state);
     }
     for (auto it : models->mapping) {
         Node *child;
@@ -101,13 +121,13 @@ void Trie::insert_model_set(const model_set_p models) {
         std::vector<std::vector<std::pair<model_set_p, model_set_p>>>
             init_combinations = {it.second};
         insert_model_set_children(init_combinations, child,
-                                  values_of_interest_t());
+                                  values_of_interest_t(), state);
     }
 }
 
 void Trie::insert_model_set_children(
     const std::vector<std::vector<std::pair<model_set_p, model_set_p>>> &models,
-    Node *currNode, values_of_interest_t values_of_interest) {
+    Node *currNode, values_of_interest_t values_of_interest, State & state) {
     CartIt<std::pair<model_set_p, model_set_p>> cart_container(models);
 
     for (auto selected_extensions : cart_container) {
@@ -144,7 +164,7 @@ void Trie::insert_model_set_children(
             values_of_interest_t new_values_of_interest = values_of_interest;
             std::vector<std::vector<std::pair<model_set_p, model_set_p>>>
                 next_level_models;
-            for (int i = 0; i < next_trie_level_key.size(); i++) {
+            for (size_t i = 0; i < next_trie_level_key.size(); i++) {
                 if (next_trie_level_key[i] >= 0) {
                     next_level_models.push_back(
                         unwrapped_models[i]->mapping[next_trie_level_key[i]]);
@@ -156,23 +176,23 @@ void Trie::insert_model_set_children(
             }
             insert_if_not_exist(next_trie_level_key, currNode, child);
             if (next_level_models.size() == 0) {
-                finalize_leaf_node(child, new_values_of_interest);
+                finalize_leaf_node(child, new_values_of_interest, state);
             } else {
                 insert_model_set_children(next_level_models, child,
-                                          new_values_of_interest);
+                                          new_values_of_interest, state);
             }
         }
     }
 }
 
 void Trie::finalize_leaf_node(Node *currNode,
-                              values_of_interest_t values_of_interest) {
+                              values_of_interest_t values_of_interest, State & state) {
     currNode->terminal = true;
     double TP = values_of_interest.TP;
     double TN = values_of_interest.TN;
     auto reg = values_of_interest.regularization;
 
-    currNode->loss = 1 - (TP + TN) / (float)State::dataset.size();
+    currNode->loss = 1 - (TP + TN) / (float)state.dataset.size();
     currNode->complexity = reg * Configuration::regularization;
 }
 

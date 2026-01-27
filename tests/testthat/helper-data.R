@@ -1,142 +1,218 @@
-# Helper datasets for TreeFARMS testing
-# These datasets are designed to be lightweight and cover various scenarios
+# Helper functions to create synthetic datasets for testing
 
-# Simple synthetic datasets (quick generation)
-simple_dataset <- local({
-  set.seed(42)
-  list(
-    X = data.frame(
-      feature_1 = sample(0:1, 100, replace = TRUE),
-      feature_2 = sample(0:1, 100, replace = TRUE),
-      feature_3 = sample(0:1, 100, replace = TRUE)
-    ),
-    y = sample(0:1, 100, replace = TRUE)
+#' Create a simple binary classification dataset
+#' @param n Number of samples
+#' @param p Number of features
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+simple_dataset <- function(n = 100, p = 3, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
+
+#' Create a dataset with a clear pattern for entropy/log-loss testing
+#' (e.g., XOR-like pattern)
+#' @param n Number of samples (must be a multiple of 4)
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+entropy_dataset <- function(n = 100, seed = 42) {
+  set.seed(seed)
+  if (n %% 4 != 0) stop("n must be a multiple of 4 for entropy_dataset")
+  quarter <- n / 4
+  X <- data.frame(
+    x1 = c(rep(0, quarter), rep(1, quarter), rep(0, quarter), rep(1, quarter)),
+    x2 = c(rep(0, quarter), rep(0, quarter), rep(1, quarter), rep(1, quarter))
   )
-})
+  y <- c(rep(0, 2 * quarter), rep(1, 2 * quarter)) # x1 XOR x2 pattern
+  list(X = X, y = y)
+}
 
-# Pattern dataset with clear XOR relationship for reliable learning
-pattern_dataset <- local({
-  list(
-    X = data.frame(
-      x1 = c(rep(0, 25), rep(1, 25), rep(0, 25), rep(1, 25)),
-      x2 = c(rep(0, 25), rep(0, 25), rep(1, 25), rep(1, 25))
-    ),
-    y = c(rep(0, 50), rep(1, 50))  # Clear pattern: x1 XOR x2
-  )
-})
+#' Create a larger dataset for performance/consistency testing
+#' @param n Number of samples
+#' @param p Number of features
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+big_dataset <- function(n = 1000, p = 10, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
 
-# Minimal dataset for edge case testing
-minimal_dataset <- local({
+#' Create an unbalanced dataset
+#' @param n Number of samples
+#' @param p Number of features
+#' @param imbalance_ratio Ratio of minority class (e.g., 0.1 for 10% minority)
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+unbalanced_dataset <- function(n = 100, p = 3, imbalance_ratio = 0.1, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  
+  n_minority <- round(n * imbalance_ratio)
+  n_majority <- n - n_minority
+  
+  y <- c(rep(0, n_majority), rep(1, n_minority))
+  y <- sample(y) # Shuffle to mix classes
+  
+  list(X = X, y = y)
+}
+
+#' Create a dataset with all features identical
+#' @param n Number of samples
+#' @param p Number of features
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+identical_features_dataset <- function(n = 100, p = 3, seed = 42) {
+  set.seed(seed)
+  feature_val <- sample(0:1, n, replace = TRUE)
+  X <- as.data.frame(lapply(1:p, function(i) feature_val))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
+
+#' Create a dataset with no predictive features (random y)
+#' @param n Number of samples
+#' @param p Number of features
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+random_y_dataset <- function(n = 100, p = 3, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE) # Completely random
+  list(X = X, y = y)
+}
+
+#' Create a minimal dataset for edge case testing
+#' @return A list with X (data.frame) and y (vector)
+minimal_dataset <- function() {
   list(
     X = data.frame(f1 = c(0, 1, 0, 1)),
     y = c(0, 1, 1, 0)
   )
-})
+}
 
-# Complex/realistic datasets
-imbalanced_dataset <- local({
-  set.seed(123)
-  n_0 <- 180
-  n_1 <- 20
+#' Create an empty dataset for edge case testing
+#' @return A list with X (data.frame) and y (vector)
+empty_dataset <- function() {
   list(
-    X = data.frame(
-      feature_1 = sample(0:1, n_0 + n_1, replace = TRUE),
-      feature_2 = sample(0:1, n_0 + n_1, replace = TRUE),
-      feature_3 = sample(0:1, n_0 + n_1, replace = TRUE)
-    ),
-    y = c(rep(0, n_0), rep(1, n_1))  # 90/10 class split
-  )
-})
-
-# Many features dataset
-many_features_dataset <- local({
-  set.seed(456)
-  list(
-    X = data.frame(
-      f1 = sample(0:1, 100, replace = TRUE),
-      f2 = sample(0:1, 100, replace = TRUE),
-      f3 = sample(0:1, 100, replace = TRUE),
-      f4 = sample(0:1, 100, replace = TRUE),
-      f5 = sample(0:1, 100, replace = TRUE),
-      f6 = sample(0:1, 100, replace = TRUE),
-      f7 = sample(0:1, 100, replace = TRUE),
-      f8 = sample(0:1, 100, replace = TRUE),
-      f9 = sample(0:1, 100, replace = TRUE),
-      f10 = sample(0:1, 100, replace = TRUE)
-    ),
-    y = sample(0:1, 100, replace = TRUE)
-  )
-})
-
-# Single class dataset (edge case)
-single_class_dataset <- local({
-  list(
-    X = data.frame(
-      feature_1 = sample(0:1, 50, replace = TRUE),
-      feature_2 = sample(0:1, 50, replace = TRUE)
-    ),
-    y = rep(0, 50)  # All labels are 0
-  )
-})
-
-# High entropy dataset for log-loss testing
-entropy_dataset <- local({
-  set.seed(789)
-  # Create data where log-loss should show different behavior than misclassification
-  X <- data.frame(
-    x1 = sample(0:1, 200, replace = TRUE),
-    x2 = sample(0:1, 200, replace = TRUE),
-    x3 = sample(0:1, 200, replace = TRUE)
-  )
-  # Create probabilistic relationship
-  prob <- 0.3 + 0.4 * (X$x1 == 1) + 0.2 * (X$x2 == 1) - 0.1 * (X$x3 == 1)
-  prob <- pmax(0.1, pmin(0.9, prob))  # Bound between 0.1 and 0.9
-  y <- rbinom(200, 1, prob)
-  list(X = X, y = y)
-})
-
-# Empty dataset (edge case)
-empty_dataset <- local({
-  list(
-    X = data.frame(feature_1 = integer(0), feature_2 = integer(0)),
+    X = data.frame(f1 = integer(0)),
     y = integer(0)
   )
-})
+}
 
-# Single row dataset (edge case)
-single_row_dataset <- local({
+#' Create a single-row dataset for edge case testing
+#' @return A list with X (data.frame) and y (vector)
+single_row_dataset <- function() {
   list(
-    X = data.frame(feature_1 = 1, feature_2 = 0),
+    X = data.frame(f1 = 1),
     y = 1
   )
-})
+}
 
-# All zeros dataset (edge case)
-all_zeros_dataset <- local({
-  list(
-    X = data.frame(
-      feature_1 = rep(0, 20),
-      feature_2 = rep(0, 20)
-    ),
-    y = rep(0, 20)
-  )
-})
+#' Create a dataset where all features are 0
+#' @param n Number of samples
+#' @param p Number of features
+#' @return A list with X (data.frame) and y (vector)
+all_zeros_dataset <- function(n = 50, p = 3) {
+  X <- as.data.frame(matrix(0, nrow = n, ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
 
-# All ones dataset (edge case)
-all_ones_dataset <- local({
-  list(
-    X = data.frame(
-      feature_1 = rep(1, 20),
-      feature_2 = rep(1, 20)
-    ),
-    y = rep(1, 20)
-  )
-})
+#' Create a dataset where all features are 1
+#' @param n Number of samples
+#' @param p Number of features
+#' @return A list with X (data.frame) and y (vector)
+all_ones_dataset <- function(n = 50, p = 3) {
+  X <- as.data.frame(matrix(1, nrow = n, ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
 
-# Dataset with one feature (minimal features)
-one_feature_dataset <- local({
-  list(
-    X = data.frame(feature_1 = sample(0:1, 50, replace = TRUE)),
-    y = sample(0:1, 50, replace = TRUE)
+#' Create a dataset where all y values are the same class
+#' @param n Number of samples
+#' @param p Number of features
+#' @param class_value The class value (0 or 1)
+#' @return A list with X (data.frame) and y (vector)
+single_class_dataset <- function(n = 50, p = 3, class_value = 0) {
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- rep(class_value, n)
+  list(X = X, y = y)
+}
+
+#' Create a dataset with many features for stress testing
+#' @param n Number of samples
+#' @param p Number of features (default 50)
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+many_features_dataset <- function(n = 100, p = 50, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  y <- sample(0:1, n, replace = TRUE)
+  list(X = X, y = y)
+}
+
+#' Create a dataset with a clear pattern (XOR-like)
+#' @param n Number of samples (must be a multiple of 4)
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+pattern_dataset <- function(n = 100, seed = 42) {
+  set.seed(seed)
+  if (n %% 4 != 0) stop("n must be a multiple of 4 for pattern_dataset")
+  quarter <- n / 4
+  X <- data.frame(
+    x1 = c(rep(0, quarter), rep(1, quarter), rep(0, quarter), rep(1, quarter)),
+    x2 = c(rep(0, quarter), rep(0, quarter), rep(1, quarter), rep(1, quarter))
   )
-})
+  y <- c(rep(0, 2 * quarter), rep(1, 2 * quarter)) # x1 XOR x2 pattern
+  list(X = X, y = y)
+}
+
+#' Create an imbalanced dataset
+#' @param n Number of samples
+#' @param p Number of features
+#' @param imbalance_ratio Ratio of minority class (default 0.1)
+#' @param seed Random seed
+#' @return A list with X (data.frame) and y (vector)
+imbalanced_dataset <- function(n = 100, p = 3, imbalance_ratio = 0.1, seed = 42) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(sample(0:1, n * p, replace = TRUE), ncol = p))
+  colnames(X) <- paste0("feature_", 1:p)
+  
+  n_minority <- round(n * imbalance_ratio)
+  n_majority <- n - n_minority
+  
+  y <- c(rep(0, n_majority), rep(1, n_minority))
+  y <- sample(y) # Shuffle to mix classes
+  
+  list(X = X, y = y)
+}
+
+# Create test datasets at package load time
+simple_dataset <- simple_dataset(100, 3, 42)
+pattern_dataset <- pattern_dataset(100, 42)
+entropy_dataset <- entropy_dataset(100, 42)
+big_dataset <- big_dataset(1000, 10, 42)
+unbalanced_dataset <- unbalanced_dataset(100, 3, 0.1, 42)
+identical_features_dataset <- identical_features_dataset(100, 3, 42)
+random_y_dataset <- random_y_dataset(100, 3, 42)
+minimal_dataset <- minimal_dataset()
+empty_dataset <- empty_dataset()
+single_row_dataset <- single_row_dataset()
+all_zeros_dataset <- all_zeros_dataset(50, 3)
+all_ones_dataset <- all_ones_dataset(50, 3)
+single_class_dataset <- single_class_dataset(50, 3, 0)
+many_features_dataset <- many_features_dataset(100, 50, 42)
+imbalanced_dataset <- imbalanced_dataset(100, 3, 0.1, 42)

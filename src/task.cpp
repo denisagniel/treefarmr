@@ -4,49 +4,100 @@
 
 Task::Task(void) {}
 
-Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, bool rashomon_flag) {
+Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, State & state, bool rashomon_flag) {
     this -> _capture_set = capture_set;
     this -> _feature_set = feature_set;
-    this -> _support = (float)(capture_set.count()) / (float)(State::dataset.height());
+    this -> _support = (float)(capture_set.count()) / (float)(state.dataset.height());
     float const regularization = Configuration::regularization;
     bool terminal = (this -> _capture_set.count() <= 1) || (this -> _feature_set.empty());
 
     float potential, min_loss, max_loss;
     unsigned int target_index;
     // Careful, the following method modifies capture_set
-    State::dataset.summary(this -> _capture_set, this -> _information, potential, min_loss, max_loss, target_index, id);
+    state.dataset.summary(this -> _capture_set, this -> _information, potential, min_loss, max_loss, target_index, id, state);
 
     this -> _base_objective = max_loss + regularization;
-    // Add lambda because we know this has at least 2 leaves
-    float const lowerbound = std::min(this -> _base_objective, min_loss + 2 * regularization);
+    // Calculate initial bounds
+    // For misclassification loss: min_loss is 0-1, so min_loss + 2*regularization makes sense
+    // For log_loss: min_loss == max_loss (both are entropy), so we need a different approach
+    float const lowerbound = (Configuration::loss_function == LOG_LOSS) 
+        ? std::max(0.0f, this -> _base_objective - potential)  // Allow exploration: base_objective - potential = regularization (conservative lower bound)
+        : std::min(this -> _base_objective, min_loss + 2 * regularization);  // Original misclassification logic
     float const upperbound = this -> _base_objective;
+    
+    // Debug output for root node initialization
+    if (Configuration::verbose && capture_set.count() == capture_set.size()) {
+        std::cout << "DEBUG: Root node initialization" << std::endl;
+        std::cout << "  Loss function: " << (Configuration::loss_function == LOG_LOSS ? "LOG_LOSS" : "MISCLASSIFICATION") << std::endl;
+        std::cout << "  min_loss: " << min_loss << std::endl;
+        std::cout << "  max_loss: " << max_loss << std::endl;
+        std::cout << "  potential: " << potential << std::endl;
+        std::cout << "  regularization: " << regularization << std::endl;
+        std::cout << "  base_objective: " << this -> _base_objective << std::endl;
+        std::cout << "  lowerbound: " << lowerbound << std::endl;
+        std::cout << "  upperbound: " << upperbound << std::endl;
+    }
 
     // false && rashomon_flag
     if (rashomon_flag) {
         this -> _lowerbound = lowerbound;
         this -> _upperbound = upperbound;
     } else {
-        if ( (1.0 - min_loss < regularization ) // Insufficient maximum accuracy
-            || ( potential < 2 * regularization && (1.0 - max_loss) < regularization) ) // Leaf Support + Incremental Accuracy
-        { // Insufficient support and leaf accuracy
-            // Node is provably not part of any optimal tree
-            this -> _lowerbound = this -> _base_objective;
-            this -> _upperbound = this -> _base_objective;
-            this -> _feature_set.clear();
-        } else if (
-            max_loss - min_loss < regularization // Accuracy
-            || potential < 2 * regularization // Leaf Support
-            || terminal
-        ) {
-            // Node is provably not an internal node of any optimal tree
-            this -> _lowerbound = this -> _base_objective;
-            this -> _upperbound = this -> _base_objective;
-            this -> _feature_set.clear();
-            
+        if (Configuration::loss_function == LOG_LOSS) {
+            // For log-loss (entropy-based), use different pruning criteria
+            // For log_loss, min_loss == max_loss (both are entropy)
+            // We only prune terminal nodes - let the algorithm evaluate actual splits
+            // The actual information gain from splitting is evaluated in prune_features()
+            // by comparing split bounds to base_objective
+            if (Configuration::verbose && capture_set.count() == capture_set.size()) {
+                std::cout << "DEBUG: Root node pruning logic (LOG_LOSS)" << std::endl;
+                std::cout << "  terminal: " << terminal << std::endl;
+                std::cout << "  potential: " << potential << std::endl;
+                std::cout << "  2 * regularization: " << (2 * regularization) << std::endl;
+                std::cout << "  lowerbound (calculated): " << lowerbound << std::endl;
+                std::cout << "  upperbound (calculated): " << upperbound << std::endl;
+            }
+            if (terminal) {
+                // Terminal node - can only be a leaf
+                this -> _lowerbound = this -> _base_objective;
+                this -> _upperbound = this -> _base_objective;
+                this -> _feature_set.clear();
+            } else {
+                // Node can be either an internal node or leaf
+                // Allow the algorithm to explore splits - actual information gain will be
+                // evaluated in prune_features() by comparing split bounds to base_objective
+                // Regularization still controls complexity: if information gain < 2*regularization,
+                // the split bounds will show that splitting is not beneficial
+                this -> _lowerbound = lowerbound;
+                this -> _upperbound = upperbound;
+                if (Configuration::verbose && capture_set.count() == capture_set.size()) {
+                    std::cout << "  Setting bounds to: [" << this -> _lowerbound << ", " << this -> _upperbound << "]" << std::endl;
+                }
+            }
         } else {
-            // Node can be either an internal node or leaf
-            this -> _lowerbound = lowerbound;
-            this -> _upperbound = upperbound;
+            // Original misclassification loss pruning logic
+            if ( (1.0 - min_loss < regularization ) // Insufficient maximum accuracy
+                || ( potential < 2 * regularization && (1.0 - max_loss) < regularization) ) // Leaf Support + Incremental Accuracy
+            { // Insufficient support and leaf accuracy
+                // Node is provably not part of any optimal tree
+                this -> _lowerbound = this -> _base_objective;
+                this -> _upperbound = this -> _base_objective;
+                this -> _feature_set.clear();
+            } else if (
+                max_loss - min_loss < regularization // Accuracy
+                || potential < 2 * regularization // Leaf Support
+                || terminal
+            ) {
+                // Node is provably not an internal node of any optimal tree
+                this -> _lowerbound = this -> _base_objective;
+                this -> _upperbound = this -> _base_objective;
+                this -> _feature_set.clear();
+                
+            } else {
+                // Node can be either an internal node or leaf
+                this -> _lowerbound = lowerbound;
+                this -> _upperbound = upperbound;
+            }
         }
     }
 
@@ -96,14 +147,14 @@ void Task::scope(float new_scope) {
 
 void Task::prune_feature(unsigned int index) { this -> _feature_set.set(index, false); }
 
-void Task::create_children(unsigned int id) {    
+void Task::create_children(unsigned int id, State & state) {    
     // this -> _lowerbound = this -> _base_objective;
     // this -> _upperbound = this -> _base_objective;
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
-    Bitmask & buffer = State::locals[id].columns[0];
+    Bitmask & buffer = state.locals[id].columns[0];
     bool conditions[2] = {false, true};
     Bitmask const & features = this -> _feature_set;
     for (int j_begin = 0, j_end = 0; features.scan_range(true, j_begin, j_end); j_begin = j_end) {
@@ -111,14 +162,14 @@ void Task::create_children(unsigned int id) {
             bool skip = false;
             for (unsigned int k = 0; k < 2; ++k) {
                 buffer = this -> _capture_set;
-                State::dataset.subset(j, conditions[k], buffer);
+                state.dataset.subset(j, conditions[k], buffer);
                 unsigned int buffer_count = buffer.count();
                 if (std::min(buffer_count, buffer.size() - buffer_count) <= Configuration::minimum_captured_points) {
                     skip = true;
                     continue;
                 }
-                Task child(buffer, this -> _feature_set, id);
-                State::locals[id].neighbourhood[2 * j + k] = child;
+                Task child(buffer, this -> _feature_set, id, state);
+                state.locals[id].neighbourhood[2 * j + k] = child;
             }
             if (skip) { prune_feature(j); }
 
@@ -130,17 +181,17 @@ void Task::create_children(unsigned int id) {
     }
 }
 
-void Task::prune_features(unsigned int id) {
-    if (Configuration::continuous_feature_exchange) { continuous_feature_exchange(id); }
-    if (Configuration::feature_exchange) { feature_exchange(id); }
+void Task::prune_features(unsigned int id, State & state) {
+    if (Configuration::continuous_feature_exchange) { continuous_feature_exchange(id, state); }
+    if (Configuration::feature_exchange) { feature_exchange(id, state); }
 
     // this -> _lowerbound = this -> _base_objective;
     // this -> _upperbound = this -> _base_objective;
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
-    Bitmask & buffer = State::locals[id].columns[0];
+    Bitmask & buffer = state.locals[id].columns[0];
     bool conditions[2] = {false, true};
     Bitmask const & features = this -> _feature_set;
     int optimal_feature = -1;
@@ -150,8 +201,8 @@ void Task::prune_features(unsigned int id) {
         for (int j = j_begin; j < j_end; ++j) {
             float lower = 0.0, upper = 0.0;
             
-            Task & left = State::locals[id].neighbourhood[2 * j];
-            Task & right = State::locals[id].neighbourhood[2 * j + 1];
+            Task & left = state.locals[id].neighbourhood[2 * j];
+            Task & right = state.locals[id].neighbourhood[2 * j + 1];
 
             if (Configuration::rule_list) {
                 float lower_negative = left.base_objective() + right.lowerbound();
@@ -178,43 +229,65 @@ void Task::prune_features(unsigned int id) {
         }
     }
     if (new_lower > this -> _upperscope) { return; }
+    
+    // Debug output for root node
+    if (Configuration::verbose && this -> _capture_set.count() == this -> _capture_set.size()) {
+        std::cout << "DEBUG: Root node prune_features()" << std::endl;
+        std::cout << "  lowerbound before: " << this -> _lowerbound << std::endl;
+        std::cout << "  upperbound before: " << this -> _upperbound << std::endl;
+        std::cout << "  new_lower: " << new_lower << std::endl;
+        std::cout << "  new_upper: " << new_upper << std::endl;
+        std::cout << "  base_objective: " << this -> _base_objective << std::endl;
+    }
+    
+    // For log_loss, the root node's bounds should reflect the actual best objective achievable
+    // If splitting reduces the objective (new_upper < base_objective), that's correct
+    // The base_objective is just the objective of a single leaf, but splitting might be better
+    // So we don't force the bounds to stay at base_objective - we allow them to reflect the actual optimal solution
+    
     this -> _lowerbound = new_lower;
     this -> _upperbound = new_upper;
     this -> _optimal_feature = optimal_feature;
+    
+    // Debug output for root node
+    if (Configuration::verbose && this -> _capture_set.count() == this -> _capture_set.size()) {
+        std::cout << "  lowerbound after: " << this -> _lowerbound << std::endl;
+        std::cout << "  upperbound after: " << this -> _upperbound << std::endl;
+    }
 }
 
-void Task::continuous_feature_exchange(unsigned int id) {
+void Task::continuous_feature_exchange(unsigned int id, State & state) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     Bitmask const & features = this -> _feature_set;
-    for (auto it = State::dataset.encoder.boundaries.begin(); it != State::dataset.encoder.boundaries.end(); ++it) {
+    for (auto it = state.dataset.encoder.boundaries.begin(); it != state.dataset.encoder.boundaries.end(); ++it) {
         int start = it -> first, finish = it -> second;
         for (int i = features.scan(start, true), j = features.scan(i + 1, true); j < finish; i = j, j = features.scan(j + 1, true)) {
-            float alpha = State::locals[id].neighbourhood[2 * i].lowerbound();
-            float beta = State::locals[id].neighbourhood[2 * j].upperbound();
+            float alpha = state.locals[id].neighbourhood[2 * i].lowerbound();
+            float beta = state.locals[id].neighbourhood[2 * j].upperbound();
             if (alpha >= beta) { prune_feature(i); }
             if (j >= finish - 1) { break; }
         }
 
         for (int i = features.rscan(finish - 1, true), j = features.rscan(i - 1, true); j >= start; i = j, j = features.rscan(j - 1, true)) {
-            float alpha = State::locals[id].neighbourhood[2 * i + 1].lowerbound();
-            float beta = State::locals[id].neighbourhood[2 * j + 1].upperbound();
+            float alpha = state.locals[id].neighbourhood[2 * i + 1].lowerbound();
+            float beta = state.locals[id].neighbourhood[2 * j + 1].upperbound();
             if (alpha >= beta) { prune_feature(i); }
             if (j <= start) { break; }
         }
     }
 }
 
-void Task::feature_exchange(unsigned int id) {
+void Task::feature_exchange(unsigned int id, State & state) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     Bitmask const & features = this -> _feature_set;
     int max = features.size();
-    Bitmask & buffer = State::locals[id].columns[0];
+    Bitmask & buffer = state.locals[id].columns[0];
     for (int i = features.scan(0, true); i < max; i = features.scan(i + 1, true)) {
         for (int j = features.scan(0, true); j < max; j = features.scan(j + 1, true)) {
             if (i == j) { continue; }
@@ -222,14 +295,14 @@ void Task::feature_exchange(unsigned int id) {
                 buffer = this -> _capture_set;
                 bool i_sign = (bool)(k & 1);
                 bool j_sign = (bool)((k >> 1) & 1);
-                State::dataset.subset(i, i_sign, buffer); // population after applying i filter
+                state.dataset.subset(i, i_sign, buffer); // population after applying i filter
                 int i_count = buffer.count(); 
-                State::dataset.subset(j, j_sign, buffer); // population remaining if !j filter is applied
+                state.dataset.subset(j, j_sign, buffer); // population remaining if !j filter is applied
                 if (i_count != buffer.count()) { continue; } // implies that i is not a subset of j
                 // implies that i IS a subset of j, therefore !j is a subset of !i
                 // (since i + !i covers the same set as j + !j)
-                float not_i_risk = State::locals[id].neighbourhood[2 * i + (int)(!i_sign)].upperbound();
-                float not_j_risk = State::locals[id].neighbourhood[2 * j + (int)(!j_sign)].lowerbound();
+                float not_i_risk = state.locals[id].neighbourhood[2 * i + (int)(!i_sign)].upperbound();
+                float not_j_risk = state.locals[id].neighbourhood[2 * j + (int)(!j_sign)].lowerbound();
                 // not_i_risk <= not_j_risk and i IS a subset of j implies that risk_i <= risk_j
                 if (not_i_risk <= not_j_risk && features.get(i)) { prune_feature(j); break; }
             }
@@ -237,10 +310,10 @@ void Task::feature_exchange(unsigned int id) {
     }
 }
 
-void Task::send_explorers(float new_scope, unsigned int id) {
+void Task::send_explorers(float new_scope, unsigned int id, State & state) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     if (!_rashomon_flag && this -> uncertainty() == 0) { return; }
     this -> scope(new_scope);
@@ -258,8 +331,8 @@ void Task::send_explorers(float new_scope, unsigned int id) {
     Bitmask const & features = this -> _feature_set;
     for (int j_begin = 0, j_end = 0; features.scan_range(true, j_begin, j_end); j_begin = j_end) {
         for (unsigned int j = j_begin; j < j_end; ++j) {
-            Task & left = State::locals[id].neighbourhood[2 * j];
-            Task & right = State::locals[id].neighbourhood[2 * j + 1];
+            Task & left = state.locals[id].neighbourhood[2 * j];
+            Task & right = state.locals[id].neighbourhood[2 * j + 1];
             float lower, upper;
             if (Configuration::rule_list) {
                 lower = std::min(left.lowerbound() + right.base_objective(), left.base_objective() + right.lowerbound());
@@ -278,33 +351,33 @@ void Task::send_explorers(float new_scope, unsigned int id) {
             if (!_rashomon_flag && upper <= this -> _coverage) { continue; } // Skip children that have been explored
 
             if (Configuration::rule_list) {
-                send_explorer(left, exploration_boundary - right.base_objective(), -(j + 1), id);
-                send_explorer(right, exploration_boundary - left.base_objective(), (j + 1), id);
+                send_explorer(left, exploration_boundary - right.base_objective(), -(j + 1), id, state);
+                send_explorer(right, exploration_boundary - left.base_objective(), (j + 1), id, state);
             } else {
-                send_explorer(left, exploration_boundary - right.lowerbound(), -(j + 1), id);
-                send_explorer(right, exploration_boundary - left.lowerbound(), (j + 1), id);
+                send_explorer(left, exploration_boundary - right.lowerbound(), -(j + 1), id, state);
+                send_explorer(right, exploration_boundary - left.lowerbound(), (j + 1), id, state);
             }
         }
     }
     this -> _coverage = this -> _upperscope;
 }
 
-void Task::send_explorer(Task const & child, float scope, int feature, unsigned int id) {
+void Task::send_explorer(Task const & child, float scope, int feature, unsigned int id, State & state) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     bool send = true;
-    auto key = State::graph.children.find(std::make_pair(this -> identifier(), feature));
+    auto key = state.graph.children.find(std::make_pair(this -> identifier(), feature));
 
-    if (key != State::graph.children.end()) {
-        auto child = State::graph.vertices.find(key -> second);
-        if (child != State::graph.vertices.end()) {
+    if (key != state.graph.children.end()) {
+        auto child = state.graph.vertices.find(key -> second);
+        if (child != state.graph.vertices.end()) {
             if (scope < child -> second.upperscope()) {
-                auto parents = State::graph.edges.find(child -> second.identifier()); // insert backward look-up entry
-                if (parents != State::graph.edges.end()) {
+                auto parents = state.graph.edges.find(child -> second.identifier()); // insert backward look-up entry
+                if (parents != state.graph.edges.end()) {
                     std::pair<adjacency_iterator, bool> insertion = parents -> second.insert(
-                        std::make_pair(this -> identifier(), std::make_pair(Bitmask(State::dataset.width(), false), scope)));
+                        std::make_pair(this -> identifier(), std::make_pair(Bitmask(state.dataset.width(), false), scope)));
                     insertion.first -> second.first.set(std::abs(feature) - 1, true);
                     insertion.first -> second.second = std::min(insertion.first -> second.second, scope);
                     child -> second.scope(scope);
@@ -314,14 +387,20 @@ void Task::send_explorer(Task const & child, float scope, int feature, unsigned 
         }
     }
     if (send) {
-        State::locals[id].outbound_message.exploration(
+        // Priority calculation: for log_loss, use support (prioritize higher support)
+        // For misclassification loss, use support - lowerbound (prioritize higher support with lower bounds)
+        // Note: For log_loss, lowerbound can be large (entropy * n_points + regularization), so we use support alone
+        float priority = (Configuration::loss_function == LOG_LOSS) 
+            ? this->_support 
+            : (this->_support - this->_lowerbound);
+        state.locals[id].outbound_message.exploration(
             this->_identifier,  // sender tile
             child._capture_set, // recipient capture_set
             this->_feature_set, // recipient feature_set
             feature,            // feature
             scope,              // scope
-            this->_support - this->_lowerbound); // priority
-        State::queue.push(State::locals[id].outbound_message);
+            priority); // priority
+        state.queue.push(state.locals[id].outbound_message);
     }
 }
 
@@ -336,10 +415,18 @@ bool Task::update(float lower, float upper, int optimal_feature) {
 
     this -> _optimal_feature = optimal_feature;
 
-    float regularization = Configuration::regularization;
-    if ((Configuration::cancellation && 1.0 - this -> _lowerbound < 0.0)
-        || this -> _upperbound - this -> _lowerbound <= std::numeric_limits<float>::epsilon()) {
-        this -> _lowerbound = this -> _upperbound;
+    // Note: regularization is available via Configuration::regularization if needed
+    if (Configuration::loss_function == LOG_LOSS) {
+        // For log-loss, only check if bounds are equal (converged)
+        if (this -> _upperbound - this -> _lowerbound <= std::numeric_limits<float>::epsilon()) {
+            this -> _lowerbound = this -> _upperbound;
+        }
+    } else {
+        // Original misclassification loss cancellation logic
+        if ((Configuration::cancellation && 1.0 - this -> _lowerbound < 0.0)
+            || this -> _upperbound - this -> _lowerbound <= std::numeric_limits<float>::epsilon()) {
+            this -> _lowerbound = this -> _upperbound;
+        }
     }
     return change;
 }

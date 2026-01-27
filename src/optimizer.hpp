@@ -10,6 +10,16 @@
 #include <fstream>
 #include <sstream>
 
+// Conditionally include Rcpp for R output capture
+#ifdef USING_RCPP
+// CRITICAL FIX: Prevent Rcpp global stream initialization during static init
+#ifdef RCPP_USE_GLOBAL_ROSTREAM
+#undef RCPP_USE_GLOBAL_ROSTREAM
+#endif
+
+#include <Rcpp.h>
+#endif
+
 #include <queue>
 
 #include <chrono>
@@ -30,6 +40,7 @@
 #include "trie.hpp"
 #include "memusage.h"
 #include "integrity_violation.hpp"
+#include "state.hpp"
 
 using json = nlohmann::json;
 
@@ -90,6 +101,10 @@ public:
     // Print diagnositic trace for detected false-convergence of algorithm
     // False-convergence is defined as a premature termination of the algorithm
     void diagnose_false_convergence(void);
+
+    // Getter for state - needed by GOSDT for serialization
+    State& get_state() { return state; }
+    const State& get_state() const { return state; }
 private:
 
     // Timing State
@@ -122,7 +137,10 @@ private:
     // For exporting trie based on memory usage 
     int exported_idx = 0;
 
-    float cart(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id) const;
+    // State instance - owns all optimization state
+    State state;
+
+    float cart(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id);
 
     // @param message: message to handle
     // @param id: id of the worker thread that is handling this message

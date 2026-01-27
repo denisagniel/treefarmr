@@ -28,7 +28,7 @@ sudo apt-get install libgmp-dev
 2. **R Package Dependencies**: Install required R packages:
 
 ```r
-install.packages(c("Rcpp", "RcppParallel", "jsonlite", "devtools"))
+install.packages(c("Rcpp", "jsonlite", "devtools"))
 ```
 
 ### Install TreeFARMR Package
@@ -60,7 +60,13 @@ X <- data.frame(
 y <- as.numeric((X$feature_1 == 1 & X$feature_2 == 1) | 
                 (X$feature_1 == 0 & X$feature_2 == 0))
 
-# Train with misclassification loss
+# Fit a single tree (most common use case)
+model_single <- fit_tree(X, y, loss_function = "misclassification", regularization = 0.1)
+
+# Fit with rashomon set (exploratory analysis)
+model_rashomon <- fit_rashomon(X, y, loss_function = "misclassification", regularization = 0.1)
+
+# Or use treefarms() directly (defaults to single tree)
 model_misclass <- treefarms(X, y, loss_function = "misclassification", regularization = 0.1)
 
 # Train with log-loss
@@ -115,26 +121,73 @@ model_auto <- treefarms(X, y, regularization = NULL, target_trees = 3, max_trees
 model <- treefarms(X, y, worker_limit = 4, regularization = 0.1)
 ```
 
-### 4. Cross-Fitted Rashomon Sets
+### 4. Single Tree vs Rashomon Set
 ```r
-# Find stable trees across cross-fitting folds
-result <- cross_fitted_rashomon(X, y, K = 5, regularization = 0.1)
+# Fit exactly one tree (guaranteed n_trees = 1)
+model_single <- fit_tree(X, y, regularization = 0.1)
+print(model_single$n_trees)  # Always 1
+
+# Fit with rashomon set (n_trees >= 1)
+model_rashomon <- fit_rashomon(X, y, regularization = 0.1, rashomon_bound_multiplier = 0.05)
+print(model_rashomon$n_trees)  # >= 1
+
+# Extract all trees from rashomon set
+trees <- get_rashomon_trees(model_rashomon)
+cat("Found", length(trees), "trees in rashomon set\n")
+```
+
+### 5. Cross-Fitted Rashomon Sets
+```r
+# Cross-fitting with single tree per fold
+result_single <- cross_fitted_rashomon(X, y, K = 5, regularization = 0.1, single_tree = TRUE)
+
+# Cross-fitting with rashomon sets per fold (default)
+result_rashomon <- cross_fitted_rashomon(X, y, K = 5, regularization = 0.1, single_tree = FALSE)
 
 # Check if stable trees were found
-print(result)  # Shows number of intersecting trees
+print(result_rashomon)  # Shows number of intersecting trees
 
 # Use stable trees for prediction
-if (result$n_intersecting > 0) {
-  predictions <- predict(result, X_new)
-  cat("Found", result$n_intersecting, "stable tree(s)!\n")
+if (result_rashomon$n_intersecting > 0) {
+  predictions <- predict(result_rashomon, X_new)
+  cat("Found", result_rashomon$n_intersecting, "stable tree(s)!\n")
 }
 ```
 
 ## Function Reference
 
-### `treefarms(X, y, loss_function, regularization, rashomon_bound_multiplier, target_trees, max_trees, worker_limit, verbose, ...)`
+### `fit_tree(X, y, loss_function, regularization, worker_limit, verbose, ...)`
 
-Train a TreeFARMS model.
+Fit exactly one optimal tree. This is the most common use case.
+
+**Parameters:**
+- `X`: Data.frame or matrix of binary features (0/1)
+- `y`: Vector of binary class labels (0/1)
+- `loss_function`: "misclassification" or "log_loss" (default: "misclassification")
+- `regularization`: Model complexity control (default: 0.1, NULL for auto-tuning)
+- `worker_limit`: Number of parallel workers (default: 1)
+- `verbose`: Print training progress (default: FALSE)
+
+**Returns:** List with model object, predictions, probabilities, accuracy, and metadata. Guaranteed `n_trees = 1`.
+
+### `fit_rashomon(X, y, loss_function, regularization, rashomon_bound_multiplier, worker_limit, verbose, ...)`
+
+Fit a TreeFARMS model with a full rashomon set (multiple near-optimal trees).
+
+**Parameters:**
+- `X`: Data.frame or matrix of binary features (0/1)
+- `y`: Vector of binary class labels (0/1)
+- `loss_function`: "misclassification" or "log_loss" (default: "misclassification")
+- `regularization`: Model complexity control (default: 0.1, NULL for auto-tuning)
+- `rashomon_bound_multiplier`: Rashomon set size control (default: 0.05, NULL for auto-tuning)
+- `worker_limit`: Number of parallel workers (default: 1)
+- `verbose`: Print training progress (default: FALSE)
+
+**Returns:** List with model object, predictions, probabilities, accuracy, and metadata. `n_trees >= 1` (number of trees in rashomon set).
+
+### `treefarms(X, y, loss_function, regularization, rashomon_bound_multiplier, target_trees, max_trees, worker_limit, verbose, single_tree, ...)`
+
+Train a TreeFARMS model. Convenience wrapper that defaults to `single_tree = TRUE`.
 
 **Parameters:**
 - `X`: Data.frame or matrix of binary features (0/1)
@@ -146,6 +199,7 @@ Train a TreeFARMS model.
 - `max_trees`: Maximum acceptable trees for auto-tuning (default: 5)
 - `worker_limit`: Number of parallel workers (default: 1)
 - `verbose`: Print training progress (default: FALSE)
+- `single_tree`: If TRUE, fit exactly one tree (default: TRUE)
 
 **Returns:** List with model object, predictions, probabilities, accuracy, and metadata.
 
@@ -196,7 +250,7 @@ This Rcpp-based implementation provides:
 - **Easier distribution**: No external dependencies or environment setup required
 - **Better reliability**: Fewer dependency issues and no subprocess management
 - **Standard R package**: Follows typical Rcpp package patterns
-- **Parallel execution**: Multi-threaded training support with RcppParallel
+- **Single-threaded execution**: Stable, reliable operation without external threading dependencies
 
 ## Contributing
 

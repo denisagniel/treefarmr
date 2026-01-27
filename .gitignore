@@ -10,9 +10,18 @@
 *.dll
 *.dylib
 
+# Executables
+src/gosdt
+inst/src/gosdt
+
+# Test files in src directory
+src/test_*.json
+src/test_*.csv
+
 # Package files
 *.tar.gz
 *.zip
+*.Rcheck/
 
 # Development files
 dev/
@@ -48,3 +57,17 @@ venv/
 
 # GitLab CI artifacts
 .gitlab-ci-local/
+
+# Archive folder for audit/testing reports (preserved locally, excluded from git)
+dev-docs/
+
+# Development and testing scripts
+verify_*.R
+verify_*.sh
+*_diagnostics.R
+interactive_*.R
+benchmark_*.R
+aggregate_*.R
+run_clang_tidy.sh
+INSTALL_AND_TEST.sh
+VERIFY_FIXES.sh

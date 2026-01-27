@@ -226,8 +226,12 @@ void Dataset::construct_majority(void) {
     }
 }
 
-float Dataset::distance(Bitmask const & set, unsigned int i, unsigned int j, unsigned int id) const {
-    Bitmask & buffer = State::locals[id].columns[0];
+float Dataset::distance(Bitmask const & set, unsigned int i, unsigned int j, unsigned int id, State & state) const {
+    // CRITICAL: Bounds check to prevent segfault
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
+    }
+    Bitmask & buffer = state.locals[id].columns[0];
     float positive_distance = 0.0, negative_distance = 0.0;
     for (unsigned int k = 0; k < depth(); ++k) {
         buffer = this -> features[i];
@@ -268,12 +272,12 @@ void Dataset::subset(unsigned int feature_index, Bitmask & negative, Bitmask & p
     } //subproblems have one less depth_budget than their parent
 }
 
-void Dataset::summary(Bitmask const & capture_set, float & info, float & potential, float & min_loss, float & max_loss, unsigned int & target_index, unsigned int id) const {
+void Dataset::summary(Bitmask const & capture_set, float & info, float & potential, float & min_loss, float & max_loss, unsigned int & target_index, unsigned int id, State & state) const {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
-    Bitmask & buffer = State::locals[id].columns[0];
+    Bitmask & buffer = state.locals[id].columns[0];
     // Use heap allocation instead of alloca for thread safety
     std::vector<unsigned int> distribution(depth(), 0); // The frequencies of each class
     for (int j = depth(); --j >= 0;) {
@@ -288,17 +292,33 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
     if (Configuration::loss_function == LOG_LOSS) {
         // For log-loss, we need to calculate cross-entropy loss
         float total_points = (float)capture_set.count();
-        if (total_points > 0) {
-            float log_loss = 0.0;
+        // CRITICAL: Validate total_points early to prevent division by zero
+        if (total_points > 0.0f) {
+            const float eps = 1e-12f; // Small epsilon to prevent log(0) and ensure numerical stability
+            float log_loss = 0.0f;
             for (int j = depth(); --j >= 0;) {
-                float prob = distribution[j] / total_points;
-                if (prob > 0) {
-                    // Cross-entropy loss: -sum(p_i * log(p_i))
-                    log_loss -= prob * log(prob);
-                }
+                float raw_prob = distribution[j] / total_points;
+                // Clamp probability to [eps, 1-eps] to prevent log(0) and ensure numerical stability
+                // This prevents NaN/Inf from log(0) or log(1) in edge cases
+                float prob = (raw_prob < eps) ? eps : ((raw_prob > 1.0f - eps) ? 1.0f - eps : raw_prob);
+                // Cross-entropy loss: -sum(p_i * log(p_i))
+                // Using clamped prob ensures log(prob) is always finite
+                log_loss -= prob * log(prob);
             }
             min_cost = log_loss * total_points; // Scale by number of points
             cost_minimizer = 0; // For log-loss, we don't have a single prediction
+            
+            // Debug output for root node
+            if (Configuration::verbose && capture_set.count() == capture_set.size()) {
+                std::cout << "DEBUG: Log-loss calculation for root node" << std::endl;
+                std::cout << "  total_points: " << total_points << std::endl;
+                std::cout << "  entropy (log_loss): " << log_loss << std::endl;
+                std::cout << "  min_cost (entropy * total_points): " << min_cost << std::endl;
+                for (int j = depth(); --j >= 0;) {
+                    float prob = distribution[j] / total_points;
+                    std::cout << "  class " << j << " count: " << distribution[j] << ", prob: " << prob << std::endl;
+                }
+            }
         }
     } else {
         // Original misclassification loss calculation
@@ -322,13 +342,16 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
     if (Configuration::loss_function == LOG_LOSS) {
         // For log-loss, calculate potential reduction using entropy
         float total_points = (float)capture_set.count();
-        if (total_points > 0) {
-            float entropy = 0.0;
+        // CRITICAL: Validate total_points early to prevent division by zero
+        if (total_points > 0.0f) {
+            const float eps = 1e-12f; // Small epsilon for numerical stability
+            float entropy = 0.0f;
             for (int j = depth(); --j >= 0;) {
-                float prob = distribution[j] / total_points;
-                if (prob > 0) {
-                    entropy -= prob * log(prob);
-                }
+                float raw_prob = distribution[j] / total_points;
+                // Clamp probability to [eps, 1-eps] to prevent log(0) and ensure numerical stability
+                float prob = (raw_prob < eps) ? eps : ((raw_prob > 1.0f - eps) ? 1.0f - eps : raw_prob);
+                // Entropy: -sum(p_i * log(p_i))
+                entropy -= prob * log(prob);
             }
             max_cost_reduction = entropy * total_points;
             equivalent_point_loss = entropy * total_points;
@@ -363,12 +386,12 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
     target_index = cost_minimizer;
 }
 
-void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN) {
+void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN, State & state) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
-    Bitmask & buffer = State::locals[id].columns[0];
+    Bitmask & buffer = state.locals[id].columns[0];
 
     buffer = capture_set; // Set representing the captured points
     this -> targets.at(target_index).bit_and(buffer); // Captured points with label j
@@ -388,30 +411,49 @@ void Dataset::get_total_P_N(unsigned int & P, unsigned int & N) {
     N = targets.at(0).count();
 }
 
-void Dataset::get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id) const {
-    // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+void Dataset::get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id, State & state) const {
+    // CRITICAL: Bounds check to prevent segfault
+    if (id >= state.locals.size()) {
+        std::string error_msg = "Worker ID out of bounds: " + std::to_string(id) 
+                              + " >= " + std::to_string(state.locals.size())
+                              + " (locals.size()=" + std::to_string(state.locals.size()) + ")";
+        throw std::runtime_error(error_msg);
     }
-    Bitmask & buffer = State::locals[id].columns[0];
+    
+    // CRITICAL: Assert that distribution vector is properly sized
+    unsigned int dataset_depth = depth();
+    assert(dataset_depth > 0 && "Dataset depth must be > 0");
+    assert(distribution.size() == dataset_depth && "Distribution vector size must match dataset depth");
+    
+    // CRITICAL: Bounds check to prevent segfault - use get_local() for consistency
+    LocalState& local = state.get_local(id);
+    Bitmask & buffer = local.columns[0];
+    
     float total_points = (float)capture_set.count();
+    assert(total_points >= 0 && "Total points count must be >= 0");
     
     if (total_points > 0) {
-        for (unsigned int j = 0; j < depth(); ++j) {
+        for (unsigned int j = 0; j < dataset_depth; ++j) {
+            // CRITICAL: Bounds check for targets vector
+            assert(j < targets.size() && "Target index must be within bounds");
             buffer = capture_set;
             this -> targets.at(j).bit_and(buffer);
-            distribution[j] = buffer.count() / total_points;
+            float count = (float)buffer.count();
+            distribution[j] = count / total_points;
+            // CRITICAL: Verify probability is valid
+            assert(distribution[j] >= 0.0 && distribution[j] <= 1.0 && "Probability must be in [0,1]");
         }
     } else {
         // If no training data, use uniform distribution
-        for (unsigned int j = 0; j < depth(); ++j) {
-            distribution[j] = 1.0 / depth();
+        float uniform_prob = 1.0 / dataset_depth;
+        for (unsigned int j = 0; j < dataset_depth; ++j) {
+            distribution[j] = uniform_prob;
         }
     }
 }
 
 // Assume that data is already of the right size
-void Dataset::tile(Bitmask const & capture_set, Bitmask const & feature_set, Tile & tile, std::vector< int > & order, unsigned int id) const {
+void Dataset::tile(Bitmask const & capture_set, Bitmask const & feature_set, Tile & tile, std::vector< int > & order, unsigned int id, State & state) const {
     tile.content() = capture_set;
     tile.width(0);
     return;

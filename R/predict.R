@@ -50,16 +50,46 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
     }
   }
   
-  # For now, return the stored predictions/probabilities from training
-  # In a full implementation, we would parse the tree structure and make predictions
-  # This is a simplified approach that works with the current model structure
-  
-  if (type == "class") {
-    # Return stored predictions (this is a placeholder - in practice you'd evaluate the tree)
-    return(object$predictions[1:nrow(newdata)])
+  # Get tree structure from model object
+  # Use tree_json if available, otherwise use result_data
+  tree_to_use <- if (!is.null(object$model$tree_json)) {
+    object$model$tree_json
+  } else if (!is.null(object$model$result_data)) {
+    object$model$result_data
   } else {
-    # Return stored probabilities (this is a placeholder - in practice you'd evaluate the tree)
-    return(object$probabilities[1:nrow(newdata), , drop = FALSE])
+    NULL
+  }
+  
+  # Extract probabilities from tree structure
+  if (!is.null(tree_to_use)) {
+    probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
+    
+    if (type == "class") {
+      # Derive predictions from probabilities (argmax)
+      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
+      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
+      return(predictions)
+    } else {
+      # Return probabilities
+      return(probabilities)
+    }
+  } else {
+    # Fallback: if no tree available, try to use stored predictions/probabilities
+    # This handles edge cases where tree structure might not be available
+    n_samples <- nrow(newdata)
+    if (type == "class") {
+      if (!is.null(object$predictions) && length(object$predictions) >= n_samples) {
+        return(object$predictions[1:n_samples])
+      } else {
+        return(rep(0, n_samples))
+      }
+    } else {
+      if (!is.null(object$probabilities) && nrow(object$probabilities) >= n_samples) {
+        return(object$probabilities[1:n_samples, , drop = FALSE])
+      } else {
+        return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+      }
+    }
   }
 }
 

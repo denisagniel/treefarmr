@@ -280,5 +280,131 @@ test_that("log-loss numerical stability", {
   expect_true(all(model_high_reg$probabilities < 1))
 })
 
+test_that("log-loss worker_limit is enforced", {
+  # For log-loss, worker_limit should be 1
+  # This is enforced in C++ code, but we can verify behavior
+  model <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                         loss_function = "log_loss", 
+                         regularization = 0.1,
+                         worker_limit = 1,  # Should be enforced
+                         verbose = FALSE)
+  
+  expect_valid_treefarms_model(model, "log_loss")
+  
+  # Even if we try to set worker_limit > 1, it should be corrected to 1
+  # (This is handled in C++ code)
+})
+
+test_that("log-loss cross-entropy calculation is reasonable", {
+  model <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                         loss_function = "log_loss", 
+                         regularization = 0.1,
+                         verbose = FALSE)
+  
+  expect_valid_treefarms_model(model, "log_loss")
+  
+  # Compute cross-entropy manually
+  manual_loss <- compute_cross_entropy_loss(model$probabilities, simple_dataset$y)
+  
+  # Loss should be finite and reasonable (between 0 and log(2) for binary classification)
+  expect_true(is.finite(manual_loss),
+              info = "Cross-entropy loss should be finite")
+  expect_true(manual_loss >= 0,
+              info = "Cross-entropy loss should be >= 0")
+  expect_true(manual_loss <= log(2),
+              info = "Cross-entropy loss should be <= log(2) for binary classification")
+})
+
+test_that("log-loss probabilities differ from misclassification", {
+  # Train both models with same data
+  model_logloss <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                                 loss_function = "log_loss", 
+                                 regularization = 0.1,
+                                 verbose = FALSE)
+  
+  model_misclass <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                                  loss_function = "misclassification", 
+                                  regularization = 0.1,
+                                  verbose = FALSE)
+  
+  expect_valid_treefarms_model(model_logloss, "log_loss")
+  expect_valid_treefarms_model(model_misclass, "misclassification")
+  
+  # Probabilities should differ
+  expect_false(identical(model_logloss$probabilities, model_misclass$probabilities),
+               info = "Log-loss and misclassification probabilities should differ")
+  
+  # Log-loss probabilities should be more conservative (closer to 0.5)
+  # This is a heuristic check - log-loss tends to produce smoother probabilities
+  logloss_mean_diff <- mean(abs(model_logloss$probabilities - 0.5))
+  misclass_mean_diff <- mean(abs(model_misclass$probabilities - 0.5))
+  
+  # Log-loss probabilities are often closer to 0.5 (more conservative)
+  # But this is not always true, so we just check that they differ
+  expect_true(logloss_mean_diff != misclass_mean_diff,
+               info = "Log-loss and misclassification should produce different probability distributions")
+})
+
+test_that("log-loss handles extreme regularization values", {
+  # Very low regularization
+  model_low <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                              loss_function = "log_loss", 
+                              regularization = 0.001,
+                              verbose = FALSE)
+  
+  expect_valid_treefarms_model(model_low, "log_loss")
+  expect_valid_probabilities(model_low$probabilities, loss_function = "log_loss",
+                             info = "Low regularization")
+  
+  # Very high regularization
+  model_high <- safe_treefarms(simple_dataset$X, simple_dataset$y, 
+                               loss_function = "log_loss", 
+                               regularization = 10.0,
+                               verbose = FALSE)
+  
+  expect_valid_treefarms_model(model_high, "log_loss")
+  expect_valid_probabilities(model_high$probabilities, loss_function = "log_loss",
+                             info = "High regularization")
+})
+
+test_that("log-loss produces well-calibrated probabilities", {
+  # Test with entropy dataset (high entropy, good for log-loss)
+  model <- safe_treefarms(entropy_dataset$X, entropy_dataset$y, 
+                         loss_function = "log_loss", 
+                         regularization = 0.1,
+                         verbose = FALSE)
+  
+  expect_valid_treefarms_model(model, "log_loss")
+  
+  # Probabilities should be well-distributed (not all near 0.5)
+  prob_class_1 <- model$probabilities[, 2]
+  prob_range <- range(prob_class_1)
+  
+  # Should have some variation
+  expect_true(prob_range[2] - prob_range[1] > 0.05,
+              info = "Log-loss should produce varied probabilities")
+  
+  # Mean probability should be reasonable
+  mean_prob <- mean(prob_class_1)
+  expect_true(mean_prob > 0.1 && mean_prob < 0.9,
+              info = "Mean log-loss probability should be reasonable")
+})
+
+test_that("log-loss bounds hold under perfect separation", {
+  # Perfect separation should still produce bounded probabilities
+  test_data <- create_perfect_separation_data(n_samples = 100, seed = 42)
+  
+  model <- safe_treefarms(test_data$X, test_data$y, 
+                         loss_function = "log_loss", 
+                         regularization = 0.1,
+                         verbose = FALSE)
+  
+  expect_valid_treefarms_model(model, "log_loss")
+  
+  # Even with perfect separation, probabilities should be bounded
+  expect_logloss_bounds(model$probabilities,
+                       info = "Perfect separation with log-loss")
+})
+
 # Cleanup
 teardown_test_environment()

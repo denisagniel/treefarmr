@@ -2,38 +2,38 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 treefarms_configure_cpp <- function(configuration) {
-    invisible(.Call(`_treefarms_treefarms_configure_cpp`, configuration))
+    invisible(.Call(`_treefarmr_treefarms_configure_cpp`, configuration))
 }
 
 treefarms_fit_cpp <- function(data_csv) {
-    .Call(`_treefarms_treefarms_fit_cpp`, data_csv)
+    .Call(`_treefarmr_treefarms_fit_cpp`, data_csv)
 }
 
 treefarms_time_cpp <- function() {
-    .Call(`_treefarms_treefarms_time_cpp`)
+    .Call(`_treefarmr_treefarms_time_cpp`)
 }
 
 treefarms_iterations_cpp <- function() {
-    .Call(`_treefarms_treefarms_iterations_cpp`)
+    .Call(`_treefarmr_treefarms_iterations_cpp`)
 }
 
 treefarms_size_cpp <- function() {
-    .Call(`_treefarms_treefarms_size_cpp`)
+    .Call(`_treefarmr_treefarms_size_cpp`)
 }
 
 treefarms_status_cpp <- function() {
-    .Call(`_treefarms_treefarms_status_cpp`)
+    .Call(`_treefarmr_treefarms_status_cpp`)
 }
 
 treefarms_fit_with_config_cpp <- function(data_csv, configuration) {
-    .Call(`_treefarms_treefarms_fit_with_config_cpp`, data_csv, configuration)
+    .Call(`_treefarmr_treefarms_fit_with_config_cpp`, data_csv, configuration)
 }
 
 treefarms_fit_and_stats_cpp <- function(data_csv, configuration) {
-    .Call(`_treefarms_treefarms_fit_and_stats_cpp`, data_csv, configuration)
+    .Call(`_treefarmr_treefarms_fit_and_stats_cpp`, data_csv, configuration)
 }
 
 cleanup_static_state <- function() {
-    invisible(.Call(`_treefarms_cleanup_static_state`))
+    invisible(.Call(`_treefarmr_cleanup_static_state`))
 }
 

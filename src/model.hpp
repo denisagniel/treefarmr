@@ -26,13 +26,13 @@ public:
     Model(void);
     // Constructor for terminal node in a model
     // @param set: shared pointer to a bitmask that identifies the captured set of data points
-    Model(std::shared_ptr<Bitmask> set);
+    Model(std::shared_ptr<Bitmask> set, State & state);
 
     // Constructor for non-terminal node in a model
     // @param binary_feature_index: the index of the feature used for splitting (after encoding)
     // @param negative: shared pointer to the model acting as the left subtree
     // @param positive: shared pointer to the model acting as the right subtree
-    Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive);
+    Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state);
 
     ~Model(void);
 
@@ -68,18 +68,21 @@ public:
     float complexity(void) const;
 
     // @modifies node: JSON object representation of this model
-    void to_json(json &node) const;
+    void to_json(json &node, State & state) const;
     void _to_json(json &node) const;
 
-    void decode_json(json & node) const;
-    void translate_json(json & node, translation_type const & main, translation_type const & alternative) const;
+    void decode_json(json & node, State & state) const;
+    void translate_json(json & node, translation_type const & main, translation_type const & alternative, State & state) const;
 
     void summarize(json & node) const;
     void intersect(json & src, json & dest) const;
 
     // @param spacing: number of spaces to used in the indentation format
     // @modifies serialization: string representation of the JSON object representation of this model
-    void serialize(std::string & serialization, int const spacing = 0) const;
+    void serialize(std::string & serialization, int const spacing, State & state) const;
+    
+    // Print a readable summary of the model
+    void print_readable(std::ostream & os = std::cout, int indent = 0) const;
 
     key_type identifier; // Identifier for association to graph vertex
 

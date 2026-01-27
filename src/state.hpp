@@ -18,19 +18,27 @@ class State;
 
 class State {
 public:
+    // Constructor - initialize empty state
+    State();
+    
+    // Destructor - cleanup
+    ~State();
 
     // Global state to which all thread shares access 
-    static Dataset dataset;
-    static Graph graph; 
-    static Queue queue;
-    static int status;
+    Dataset dataset;
+    Graph graph; 
+    Queue queue;
+    int status;
 
     // Local state to which each thread has exclusive access to a single entry
-    static std::vector< LocalState > locals;
+    std::vector< LocalState > locals;
 
-    static void initialize(std::istream & data_source, unsigned int workers = 1);
-    static void reset(void);
-    static void reset_except_dataset(void);
+    void initialize(std::istream & data_source, unsigned int workers = 1);
+    void reset(void);
+    void reset_except_dataset(void);
+    
+    // Accessor for thread-local state
+    LocalState& get_local(unsigned int id);
 
 };
 

@@ -3,12 +3,20 @@
 # Set C++ standard
 CXX_STD = CXX11
 
-# Get RcppParallel flags
-PKG_CPPFLAGS = -I../inst/include -DNOMINMAX $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::CxxFlags()")
+# Compiler flags
+PKG_CPPFLAGS = -I../inst/include -DNOMINMAX
+# CRITICAL FIX: Prevent Rcpp global stream initialization during static init
+PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
 PKG_CXXFLAGS = -DNOMINMAX
 
-# Link against required libraries (RcppParallel provides TBB)
-PKG_LIBS = -lgmp $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::LdFlags()")
+# Link against required libraries
+PKG_LIBS = -lgmp
+
+# CRITICAL FIX: Explicitly exclude RcppParallel/TBB libraries
+# R's build system may auto-link RcppParallel when Rcpp is in LinkingTo,
+# but we don't use TBB (removed in favor of std::unordered_map with mutex).
+# Filter out TBB libraries to prevent unnecessary linking.
+PKG_LIBS := $(filter-out -ltbb -ltbbmalloc,$(PKG_LIBS))
 
 # Include directories
 PKG_CPPFLAGS += -I../inst/include
@@ -17,3 +25,12 @@ PKG_CPPFLAGS += -I../inst/include
 SOURCES = $(wildcard *.cpp)
 SOURCES := $(filter-out main.cpp, $(SOURCES))
 
+# Build standalone executable for process isolation (Windows)
+# Create inst/bin directory if it doesn't exist
+all: $(SHLIB)
+	@if not exist ..\inst\bin mkdir ..\inst\bin
+	@echo Building standalone gosdt executable...
+	$(CXX) $(PKG_CPPFLAGS) $(PKG_CXXFLAGS) $(CXXFLAGS) -o ../inst/bin/gosdt.exe \
+		main.cpp $(filter-out rcpp_treefarms.cpp RcppExports.cpp, $(wildcard *.cpp)) \
+		$(PKG_LIBS) $(LDFLAGS)
+	@echo Standalone executable built: ../inst/bin/gosdt.exe

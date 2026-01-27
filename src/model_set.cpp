@@ -1,4 +1,5 @@
 #include "model_set.hpp"
+#include "model.hpp"
 #include "graph.hpp"
 #include <array>
 #include <cassert>
@@ -9,19 +10,19 @@
 
 ModelSet::ModelSet(ModelSetType type) : type(type) {}
 
-ModelSet::ModelSet(std::shared_ptr<Bitmask> capture_set)
+ModelSet::ModelSet(std::shared_ptr<Bitmask> capture_set, State & state)
     : type(CLUSTERED_BY_OBJ) {
     std::string prediction_name, prediction_type, prediction_value;
     float info, potential, min_loss, max_loss;
     unsigned int target_index;
     // TODO: investigate performance impact of the following line
-    State::dataset.summary(*capture_set, info, potential, min_loss, max_loss,
-                           target_index, 0);
-    State::dataset.encoder.target_value(target_index, prediction_value);
-    // State::dataset.encoder.header(prediction_name);
-    // State::dataset.encoder.target_type(prediction_type);
+    state.dataset.summary(*capture_set, info, potential, min_loss, max_loss,
+                           target_index, 0, state);
+    state.dataset.encoder.target_value(target_index, prediction_value);
+    // state.dataset.encoder.header(prediction_name);
+    // state.dataset.encoder.target_type(prediction_type);
     unsigned int TP, TN;
-    State::dataset.get_TP_TN(*capture_set, 0, target_index, TP, TN);
+    state.dataset.get_TP_TN(*capture_set, 0, target_index, TP, TN, state);
 
     this->binary_target = target_index;
     // this -> name = prediction_name;
@@ -31,7 +32,7 @@ ModelSet::ModelSet(std::shared_ptr<Bitmask> capture_set)
     this->_complexity = Configuration::regularization;
     // this -> capture_set = capture_set;
     this->terminal = true;
-    this->objective = Objective(capture_set->count() - TP - TN, 1);
+    this->objective = Objective(capture_set->count() - TP - TN, 1, state);
     this->values_of_interest = ValuesOfInterest(TP, TN, 1);
     stored_model_count++;
 }
@@ -223,7 +224,7 @@ void ModelSet::construct_values_of_interest_mapping() {
 
 // TODO: merge this function with the one below
 void ModelSet::serialize(results_t source, std::string &serialization,
-                         int const spacing) {
+                         int const spacing, State & state) {
     std::unordered_map<ModelSet *, int> pointer_dictionary;
     json node = json::object();
     json metric_values = json::array();
@@ -232,7 +233,7 @@ void ModelSet::serialize(results_t source, std::string &serialization,
     for (auto i : source.second) {
         pointer_dictionary[i.second.get()] = pointer_dictionary.size();
 
-        convert_ptr_and_to_json(i.second, node["storage"], pointer_dictionary);
+        convert_ptr_and_to_json(i.second, node["storage"], pointer_dictionary, state);
         metric_values.emplace_back(i.first.to_tuple());
         metric_pointers.emplace_back(pointer_dictionary[i.second.get()]);
     }
@@ -246,12 +247,83 @@ void ModelSet::serialize(results_t source, std::string &serialization,
 
     node["metadata"] = json::object();
     node["metadata"]["regularization"] = Configuration::regularization;
-    node["metadata"]["dataset_size"] = State::dataset.size();
+    node["metadata"]["dataset_size"] = state.dataset.size();
     serialization = spacing == 0 ? node.dump() : node.dump(spacing);
 }
 
+void ModelSet::serialize(results_t source, std::unordered_set< Model > const & models, std::string &serialization,
+                         int const spacing, State & state) {
+    try {
+        std::unordered_map<ModelSet *, int> pointer_dictionary;
+        json node = json::object();
+        json metric_values = json::array();
+        json metric_pointers = json::array();
+        node["storage"] = json::array();
+        
+        for (auto i : source.second) {
+            pointer_dictionary[i.second.get()] = pointer_dictionary.size();
+
+            convert_ptr_and_to_json(i.second, node["storage"], pointer_dictionary, state);
+            metric_values.emplace_back(i.first.to_tuple());
+            metric_pointers.emplace_back(pointer_dictionary[i.second.get()]);
+        }
+        if (Configuration::verbose) {
+            std::cout << "Nodes Count in Model Set: " << pointer_dictionary.size()
+                      << std::endl;
+        }
+        node["available_metric_values"] = json::object();
+        node["available_metric_values"]["metric_values"] = metric_values;
+        node["available_metric_values"]["metric_pointers"] = metric_pointers;
+
+        node["metadata"] = json::object();
+        node["metadata"]["regularization"] = Configuration::regularization;
+        node["metadata"]["dataset_size"] = state.dataset.size();
+        
+        // Add trees field with Model objects (tree JSON)
+        node["trees"] = json::array();
+        for (auto const & model : models) {
+            try {
+                std::string tree_serialization;
+                // Note: Model::serialize needs State, but we're in ModelSet::serialize which has state parameter
+                // We need to pass state through - but ModelSet::serialize is static, so state is passed as parameter
+                // For now, we'll need to store state reference or pass it through differently
+                // TODO: Refactor ModelSet to store state reference or make serialize non-static
+                // For now, this will fail - need to fix ModelSet::serialize signature
+                model.serialize(tree_serialization, spacing, state);
+                // Validate tree_serialization is valid JSON before parsing
+                if (!tree_serialization.empty()) {
+                    json parsed_tree = json::parse(tree_serialization);
+                    node["trees"].push_back(parsed_tree);
+                }
+            } catch (json::parse_error& e) {
+                if (Configuration::verbose) {
+                    std::cout << "WARNING: Failed to parse tree serialization: " << e.what() << std::endl;
+                }
+                // Skip this tree if serialization fails
+            } catch (...) {
+                if (Configuration::verbose) {
+                    std::cout << "WARNING: Unknown error serializing tree" << std::endl;
+                }
+                // Skip this tree if serialization fails
+            }
+        }
+        
+        serialization = spacing == 0 ? node.dump() : node.dump(spacing);
+    } catch (std::exception& e) {
+        if (Configuration::verbose) {
+            std::cout << "ERROR: Exception in ModelSet::serialize: " << e.what() << std::endl;
+        }
+        serialization = "{}"; // Return empty JSON on error
+    } catch (...) {
+        if (Configuration::verbose) {
+            std::cout << "ERROR: Unknown exception in ModelSet::serialize" << std::endl;
+        }
+        serialization = "{}"; // Return empty JSON on error
+    }
+}
+
 void ModelSet::serialize(values_of_interest_mapping_t source,
-                         std::string &serialization, int const spacing) {
+                         std::string &serialization, int const spacing, State & state) {
     std::unordered_map<ModelSet *, int> pointer_dictionary;
     json node = json::object();
     json metric_values = json::array();
@@ -260,7 +332,7 @@ void ModelSet::serialize(values_of_interest_mapping_t source,
     for (auto i : source) {
         pointer_dictionary[i.second.get()] = pointer_dictionary.size();
 
-        convert_ptr_and_to_json(i.second, node["storage"], pointer_dictionary);
+        convert_ptr_and_to_json(i.second, node["storage"], pointer_dictionary, state);
         metric_values.emplace_back(i.first.to_tuple());
         metric_pointers.emplace_back(pointer_dictionary[i.second.get()]);
     }
@@ -274,13 +346,13 @@ void ModelSet::serialize(values_of_interest_mapping_t source,
 
     node["metadata"] = json::object();
     node["metadata"]["regularization"] = Configuration::regularization;
-    node["metadata"]["dataset_size"] = State::dataset.size();
+    node["metadata"]["dataset_size"] = state.dataset.size();
     serialization = spacing == 0 ? node.dump() : node.dump(spacing);
 }
 
 void ModelSet::convert_ptr_and_to_json(
     model_set_p const source, json &storage_arr,
-    std::unordered_map<ModelSet *, int> &pointer_dictionary) {
+    std::unordered_map<ModelSet *, int> &pointer_dictionary, State & state) {
 
     json node = json::object();
 
@@ -300,7 +372,7 @@ void ModelSet::convert_ptr_and_to_json(
                                         left_ptr, pointer_dictionary.size()))
                                     .first;
                 convert_ptr_and_to_json(pair.first, storage_arr,
-                                        pointer_dictionary);
+                                        pointer_dictionary, state);
             }
             ModelSet *right_ptr = pair.second.get();
             auto right_ptr_conv = pointer_dictionary.find(right_ptr);
@@ -310,7 +382,7 @@ void ModelSet::convert_ptr_and_to_json(
                                          right_ptr, pointer_dictionary.size()))
                                      .first;
                 convert_ptr_and_to_json(pair.second, storage_arr,
-                                        pointer_dictionary);
+                                        pointer_dictionary, state);
             }
 
             // json pair_json = json::array();
@@ -322,7 +394,7 @@ void ModelSet::convert_ptr_and_to_json(
         }
         unsigned int binary_feature_index = i.first;
         unsigned int feature_index;
-        State::dataset.encoder.decode(binary_feature_index, &feature_index);
+        state.dataset.encoder.decode(binary_feature_index, &feature_index);
         mapping[std::to_string(feature_index)] = feature_extensions;
     }
     // node["values_of_interest"] = source->values_of_interest;

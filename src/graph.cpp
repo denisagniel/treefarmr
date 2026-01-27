@@ -1,8 +1,11 @@
 #include "graph.hpp"
+#include <iostream>
 
 Graph::Graph(void) {}
 
-Graph::~Graph(void) {}
+Graph::~Graph(void) {
+    // Standard container destructors will handle cleanup automatically
+}
 
 // bool Graph::exists(key_type const & key) const {
 //     return this -> vertices.count(key) != 0;
@@ -190,12 +193,13 @@ Graph::~Graph(void) {}
 // }
 
 void Graph::clear(void) {
+    // Clear all containers
     this -> vertices.clear();
-    this -> edges.clear();
-    this -> translations.clear();
     this -> children.clear();
-    this -> vertices.clear();
+    this -> translations.clear();
+    this -> edges.clear();
     this -> bounds.clear();
+    this -> models.clear();
     return;
 }
 

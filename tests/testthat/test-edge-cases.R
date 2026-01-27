@@ -294,6 +294,66 @@ test_that("edge cases with log-loss", {
   expect_valid_treefarms_model(model, "log_loss")
 })
 
+test_that("NaN values in inputs raise errors", {
+  # Test NaN in features
+  X_nan <- simple_dataset$X
+  X_nan$feature_1[1] <- NaN
+  expect_error(treefarms(X_nan, simple_dataset$y, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "Feature feature_1 must contain only binary values")
+  
+  # Test NaN in labels
+  y_nan <- simple_dataset$y
+  y_nan[1] <- NaN
+  expect_error(treefarms(simple_dataset$X, y_nan, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "y must contain only binary values")
+})
+
+test_that("Inf values in inputs raise errors", {
+  # Test Inf in features
+  X_inf <- simple_dataset$X
+  X_inf$feature_1[1] <- Inf
+  expect_error(treefarms(X_inf, simple_dataset$y, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "Feature feature_1 must contain only binary values")
+  
+  # Test Inf in labels
+  y_inf <- simple_dataset$y
+  y_inf[1] <- Inf
+  expect_error(treefarms(simple_dataset$X, y_inf, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "y must contain only binary values")
+})
+
+test_that("negative values in inputs raise errors", {
+  # Test negative in features
+  X_neg <- simple_dataset$X
+  X_neg$feature_1[1] <- -1
+  expect_error(treefarms(X_neg, simple_dataset$y, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "Feature feature_1 must contain only binary values")
+  
+  # Test negative in labels
+  y_neg <- simple_dataset$y
+  y_neg[1] <- -1
+  expect_error(treefarms(simple_dataset$X, y_neg, 
+                        loss_function = "misclassification", 
+                        regularization = 0.1,
+                        verbose = FALSE),
+               "y must contain only binary values")
+})
+
 test_that("edge cases with auto-tuning", {
   # Test auto-tuning with extreme target values
   expect_no_error({

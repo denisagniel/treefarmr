@@ -4,14 +4,14 @@
 #' Comprehensive tree visualization functions for TreeFARMS models,
 #' including static plots, interactive visualizations, and comparison tools.
 
-# Load required packages
-if (!requireNamespace("ggplot2", quietly = TRUE)) {
-  stop("Package 'ggplot2' is required for tree visualization. Install with: install.packages('ggplot2')")
-}
-
-if (!requireNamespace("DiagrammeR", quietly = TRUE)) {
-  stop("Package 'DiagrammeR' is required for tree visualization. Install with: install.packages('DiagrammeR')")
-}
+# Load required packages (checked at runtime within functions that need them)
+# if (!requireNamespace("ggplot2", quietly = TRUE)) {
+#   stop("Package 'ggplot2' is required for tree visualization. Install with: install.packages('ggplot2')")
+# }
+# 
+# if (!requireNamespace("DiagrammeR", quietly = TRUE)) {
+#   stop("Package 'DiagrammeR' is required for tree visualization. Install with: install.packages('DiagrammeR')")
+# }
 
 #' Plot TreeFARMS Model
 #'
@@ -48,40 +48,6 @@ plot.treefarms_logloss_model <- function(x, tree_index = 1, type = c("tree", "ru
   )
 }
 
-#' Plot TreeFARMS Subprocess Model
-#'
-#' @description
-#' Create a visualization of a TreeFARMS subprocess model.
-#'
-#' @param x A treefarms_subprocess_model object
-#' @param tree_index Integer: which tree to plot (default: 1)
-#' @param type Character: type of plot ("tree", "rules", "comparison")
-#' @param interactive Logical: whether to create interactive plot
-#' @param ... Additional arguments passed to plotting functions
-#'
-#' @return A ggplot2 object or interactive plot
-#'
-#' @export
-plot.treefarms_subprocess_model <- function(x, tree_index = 1, type = c("tree", "rules", "comparison"), 
-                                           interactive = FALSE, ...) {
-  type <- match.arg(type)
-  
-  if (x$n_trees == 0) {
-    stop("No trees available for plotting")
-  }
-  
-  if (tree_index > x$n_trees) {
-    stop(sprintf("Tree index %d exceeds number of trees (%d)", tree_index, x$n_trees))
-  }
-  
-  tree <- x$trees[[tree_index]]
-  
-  switch(type,
-    "tree" = plot_tree_structure(tree, x$X_train, interactive = interactive, ...),
-    "rules" = plot_tree_rules(tree, x$X_train, ...),
-    "comparison" = plot_tree_comparison(x, ...)
-  )
-}
 
 #' Plot Cross-Fitted Rashomon Results
 #'

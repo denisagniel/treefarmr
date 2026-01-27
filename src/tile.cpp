@@ -2,8 +2,8 @@
 
 Tile::Tile(Bitmask const & content, unsigned int width) : _content(content), _width(width) {}
 
-Tile::Tile(Bitmask const & samples, Bitmask const & features, unsigned int id) {
-
+Tile::Tile(Bitmask const & /* samples */, Bitmask const & /* features */, unsigned int /* id */) {
+    // Stub implementation - parameters intentionally unused
 }
 
 Tile::Tile(void) {};

@@ -22,6 +22,7 @@
 
 using json = nlohmann::json;
 
+class Model;
 class ModelSet;
 
 typedef std::shared_ptr<ModelSet> model_set_p;
@@ -56,7 +57,7 @@ public:
     ModelSet(ModelSetType type=CLUSTERED_BY_OBJ);
     // Constructor for terminal node in a model
     // @param set: shared pointer to a bitmask that identifies the captured set of data points
-    ModelSet(std::shared_ptr<Bitmask> set);
+    ModelSet(std::shared_ptr<Bitmask> set, State & state);
 
     // Constructor for terminal node for switching node type
     ModelSet(ModelSet* source);
@@ -108,9 +109,10 @@ public:
     void construct_values_of_interest_count();
     void construct_values_of_interest_mapping();
     
-    static void serialize(results_t source, std::string & serialization, int const spacing);
-    static void serialize(values_of_interest_mapping_t source, std::string & serialization, int const spacing);
-    static void convert_ptr_and_to_json(model_set_p const source, json & storage_arr, std::unordered_map<ModelSet*, int> & pointer_dictionary);
+    static void serialize(results_t source, std::string & serialization, int const spacing, State & state);
+    static void serialize(results_t source, std::unordered_set< Model > const & models, std::string & serialization, int const spacing, State & state);
+    static void serialize(values_of_interest_mapping_t source, std::string & serialization, int const spacing, State & state);
+    static void convert_ptr_and_to_json(model_set_p const source, json & storage_arr, std::unordered_map<ModelSet*, int> & pointer_dictionary, State & state);
     static json convert_values_of_interest_to_array(values_of_interest_t values_of_interest);
 
     bool terminal = false;

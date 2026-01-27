@@ -88,17 +88,17 @@ class Trie {
 
     void insert_model(const Model *model);
 
-    void insert_model_set(const model_set_p model);
+    void insert_model_set(const model_set_p model, State & state);
     // @param models: a vector of children sets. Any element in the cartesian
     // product of the sets is in the rashomon set and (supposedly) has the same
     // objective value by design
     void insert_model_set_children(
         const std::vector<std::vector<std::pair<model_set_p, model_set_p>>>
             &models,
-        Node *currNode, values_of_interest_t values_of_interest);
+        Node *currNode, values_of_interest_t values_of_interest, State & state);
 
     void finalize_leaf_node(Node *currNode,
-                            values_of_interest_t values_of_interest);
+                            values_of_interest_t values_of_interest, State & state);
 
     inline void increment_num_evaluated();
     inline void decrement_num_nodes();
@@ -127,6 +127,7 @@ class Trie {
 
     char const *type_;
     void gc_helper(Node *node);
+    void delete_subtree_recursive(Node *node);  // Helper for destructor cleanup
 };
 
 inline std::vector<int> Node::id() const { return id_; }

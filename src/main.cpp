@@ -2,8 +2,9 @@
 #include "version.hpp"
 
 int main(int argc, char *argv[]) {
-	// Reset all static state at startup
-	State::reset();
+	// Note: State is now instance-based, not static
+	// Each GOSDT instance manages its own State through Optimizer
+	// No global cleanup needed
 
 //	struct pollfd file_descriptors;
 //	file_descriptors.fd = 0; /* this is STDIN */
@@ -32,7 +33,7 @@ bool standard_input = false;
 		std::ifstream configuration(argv[argc - 1]);
 		Configuration::configure(configuration);
 		
-		// Force single-threaded for log-loss to avoid TBB issues
+		// Force single-threaded for log-loss
 		if (Configuration::loss_function == LOG_LOSS) {
 			Configuration::worker_limit = 1;
 			if (Configuration::verbose) {

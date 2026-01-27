@@ -13,7 +13,6 @@
 #include <assert.h>
 #include <vector>
 #include <unordered_map>
-#include <tbb/concurrent_hash_map.h>
 
 #ifdef INCLUDE_OPENCL
 #include <opencl/cl.hpp>
@@ -23,6 +22,7 @@
 #include <csv/csv.h>
 
 class Dataset;
+class State; // Forward declaration for State reference parameter
 
 #include "bitmask.hpp"
 #include "configuration.hpp"
@@ -67,12 +67,12 @@ public:
     // @modifies min_loss: The minimal loss incurred if all equivalent classes are optimally labelled without considering complexity penalty
     // @modifies max_loss: The loss incurred if the capture set is left unsplit and the best single label is chosen
     // @modifies target_index: The label to choose if left unsplit
-    void summary(Bitmask const & capture_set, float & info, float & potential, float & min_loss, float & max_loss, unsigned int & target_index, unsigned int id) const;
+    void summary(Bitmask const & capture_set, float & info, float & potential, float & min_loss, float & max_loss, unsigned int & target_index, unsigned int id, State & state) const;
     
-    void get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN);
+    void get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN, State & state);
     
     // Get class distribution for probability predictions
-    void get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id) const;
+    void get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id, State & state) const;
     
     void get_total_P_N(unsigned int & P, unsigned int & N);
 
@@ -91,9 +91,9 @@ public:
     // @param i: feature index for pairwise comparison
     // @param j: other feature index for pairwise comparison
     // @return distance: The maximum change in objective value if feature i is swapped for j or vice versa
-    float distance(Bitmask const & set, unsigned int i, unsigned int j, unsigned int id) const;
+    float distance(Bitmask const & set, unsigned int i, unsigned int j, unsigned int id, State & state) const;
 
-    void tile(Bitmask const & filter, Bitmask const & selector, Tile & tile_output, std::vector< int > & order, unsigned int id) const;
+    void tile(Bitmask const & filter, Bitmask const & selector, Tile & tile_output, std::vector< int > & order, unsigned int id, State & state) const;
     
     float get_mismatch_cost() const;
 

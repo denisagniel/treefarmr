@@ -1,175 +1,188 @@
-# TreeFARMR Test Suite
+# TreeFARMS Test Suite
+
+This directory contains a comprehensive test suite for the TreeFARMS R/C++ package, with emphasis on probability outputs and log-loss optimization.
 
 ## Overview
 
-This directory contains a comprehensive automated test suite for the TreeFARMR R package. The test suite provides full coverage of R interfaces, algorithmic correctness, parallel execution, cleanup behavior, and edge cases.
+The test suite is organized into several categories:
 
-## Test Organization
+1. **Core Functionality Tests**: Basic model fitting and prediction
+2. **Probability Tests**: Validation of probability outputs
+3. **Log-Loss Tests**: Log-loss specific functionality
+4. **Edge Case Tests**: Invalid inputs, extreme values, special cases
+5. **Stress Tests**: Large datasets, many features, repeated operations
+6. **Memory Tests**: Memory safety with ASan, Valgrind, and R-specific tools
+7. **Installation Tests**: Package loading and initialization
 
-### Test Files
+## Running Tests
 
-- **`test-api.R`** - R-level interface tests and basic workflows
-- **`test-logloss.R`** - Log-loss specific regression tests
-- **`test-parallel.R`** - Parallel/multithreading functionality tests
-- **`test-cleanup.R`** - Cleanup and memory safety tests
-- **`test-edge-cases.R`** - Edge input handling and boundary conditions
-- **`test-treefarms.R`** - Core functionality tests (existing)
-- **`test-predict.R`** - Prediction functionality tests (existing)
-- **`test-auto-tuning.R`** - Auto-tuning functionality tests (existing)
-- **`test-s3-methods.R`** - S3 methods tests (existing)
-- **`test-cross-fitted-rashomon.R`** - Cross-fitted Rashomon tests (existing)
-- **`test-rashomon-utils.R`** - Rashomon utilities tests (existing)
+### Standard Test Run
 
-### Helper Files
+Run all tests using testthat:
 
-- **`helper-data.R`** - Shared test datasets for consistent testing
-- **`helper-setup.R`** - Test utilities and helper functions
-
-## Running Tests Locally
-
-### Run All Tests
 ```r
-# Using devtools
-devtools::test()
-
-# Using testthat directly
-testthat::test_dir("tests/testthat/")
+library(testthat)
+test_dir("tests/testthat")
 ```
 
-### Run Specific Test Files
-```r
-# Single test file
-devtools::test_file("tests/testthat/test-api.R")
+Or from the command line:
 
-# Multiple test files
-devtools::test_file(c("tests/testthat/test-api.R", "tests/testthat/test-logloss.R"))
-```
-
-### Run Full Package Check
 ```bash
-# From command line
-R CMD check .
-
-# From R
-devtools::check()
+Rscript -e "testthat::test_dir('tests/testthat')"
 ```
 
-## Test Datasets
+### Running Specific Test Categories
 
-The test suite includes several pre-defined datasets in `helper-data.R`:
+Filter tests by category:
 
-### Simple Datasets
-- **`simple_dataset`** - 100 samples, 3 binary features, random labels
-- **`pattern_dataset`** - 100 samples with XOR pattern for reliable learning
-- **`minimal_dataset`** - 4 samples for edge case testing
+```r
+# Probability tests
+test_dir("tests/testthat", filter = "probabilities")
 
-### Complex Datasets
-- **`imbalanced_dataset`** - 90/10 class split (200 samples)
-- **`many_features_dataset`** - 10 binary features (100 samples)
-- **`entropy_dataset`** - High entropy labels for log-loss testing
+# Log-loss tests
+test_dir("tests/testthat", filter = "logloss")
 
-### Edge Case Datasets
-- **`single_class_dataset`** - All labels are 0
-- **`empty_dataset`** - 0 rows (for error testing)
-- **`single_row_dataset`** - 1 row (for edge case testing)
-- **`all_zeros_dataset`** - All features are 0
-- **`all_ones_dataset`** - All features are 1
+# Edge case tests
+test_dir("tests/testthat", filter = "edge")
+
+# Stress tests
+test_dir("tests/testthat", filter = "stress")
+
+# Memory tests (R-specific)
+test_dir("tests/testthat", filter = "memory-r")
+```
+
+### Memory Instrumentation Tests
+
+See [MEMORY_TESTING.md](MEMORY_TESTING.md) for detailed instructions on running memory instrumentation tests with ASan, Valgrind, and R-specific tools.
+
+## Test Structure
+
+```
+tests/
+├── testthat/
+│   ├── helper-*.R          # Helper functions and test data
+│   ├── test-probabilities.R # Probability validation tests
+│   ├── test-logloss.R       # Log-loss specific tests
+│   ├── test-edge-cases.R   # Edge case tests
+│   ├── test-stress.R       # Stress tests
+│   ├── test-memory-*.R     # Memory safety tests
+│   └── test-installation.R # Installation/load tests
+├── run_with_asan.sh        # ASan test harness
+├── run_with_valgrind.sh    # Valgrind test harness
+├── run_memory_tests.R      # R memory test runner
+└── run_stress_tests.R      # Stress test runner
+```
+
+## Test Helpers
+
+The test suite includes several helper functions:
+
+- `setup_test_environment()`: Initialize test environment
+- `expect_valid_treefarms_model()`: Validate model structure
+- `expect_valid_probabilities()`: Validate probability outputs
+- `expect_logloss_bounds()`: Validate log-loss probability bounds
+- `run_with_memory_check()`: Run test with memory instrumentation
+- `create_probability_test_data()`: Generate test datasets
+
+See helper files in `testthat/` for details.
+
+## Test Data
+
+Test datasets are generated using helper functions in `helper-data.R`:
+
+- `simple_dataset`: Basic binary classification dataset
+- `entropy_dataset`: High entropy dataset for log-loss testing
+- `pattern_dataset`: Dataset with clear pattern (XOR-like)
+- `minimal_dataset`: Minimal valid dataset (4 samples, 2 features)
+- `single_row_dataset`: Single row dataset
+- `single_class_dataset`: All same class
+- `many_features_dataset`: Many features (50+)
+- `imbalanced_dataset`: Imbalanced class distribution
+
+## Key Test Scenarios
+
+### Probability Validation
+
+- Probabilities sum to 1.0 per row
+- Probabilities in [0, 1] bounds
+- For log-loss: probabilities bounded away from 0/1 (e.g., [0.01, 0.99])
+- Predictions consistent with probabilities (argmax)
+- Probability calibration with class distribution
+
+### Log-Loss Specific
+
+- Loss decreases with training
+- Cross-entropy calculation verification
+- Probability bounds for log-loss
+- Worker limit enforcement (worker_limit=1 for log-loss)
+
+### Edge Cases
+
+- Empty/minimal inputs
+- Extreme parameter values
+- Invalid inputs (non-binary, NaN, Inf)
+- Special values (negative, zero, very large)
+
+### Stress Tests
+
+- Large datasets (1000-10000 samples)
+- Many features (50-100 features)
+- Deep trees (low regularization)
+- Multiple sequential fits
+- Long-running probability computations
+
+### Memory Safety
+
+- Memory leak detection
+- Buffer overrun detection
+- Use-after-free detection
+- Uninitialized memory detection
 
 ## Test Coverage
 
-The test suite covers:
+See [TEST_COVERAGE.md](TEST_COVERAGE.md) for detailed coverage information.
 
-- ✅ R-level interface functionality
-- ✅ Input validation and error handling
-- ✅ Both loss functions (misclassification and log-loss)
-- ✅ Parallel execution with different worker limits
-- ✅ Auto-tuning functionality
-- ✅ Memory cleanup and safety
-- ✅ Edge cases and boundary conditions
-- ✅ S3 methods (print, summary, predict)
-- ✅ Cross-fitted Rashomon analysis
+## Documentation
 
-## Performance
+- [FUNCTION_MAPPING.md](FUNCTION_MAPPING.md): Complete function mapping
+- [TEST_SCENARIOS.md](TEST_SCENARIOS.md): Detailed test scenario design
+- [MEMORY_TESTING.md](MEMORY_TESTING.md): Memory instrumentation guide
 
-- **Total runtime**: ~2 minutes for full test suite
-- **Individual files**: <30 seconds each (CRAN compliant)
-- **Memory usage**: Minimal, with proper cleanup
-- **Parallel execution**: Tests run independently
+## Reproducibility
 
-## CI/CD Integration
+All tests use fixed random seeds for reproducibility. Test data generators use `set.seed(42)` by default.
 
-### GitHub Actions
-- **R-CMD-check.yml** - Multi-OS testing (Ubuntu, macOS, Windows)
-- **test-coverage.yml** - Coverage analysis and reporting
+## Continuous Integration
 
-### Coverage Requirements
-- Minimum 80% coverage for core functions
-- Coverage reports uploaded to Codecov
-- PR comments with coverage changes
-
-## Adding New Tests
-
-### Guidelines
-1. Use existing helper datasets when possible
-2. Follow the test structure pattern:
-   ```r
-   test_that("descriptive test name", {
-     # Setup
-     data <- simple_dataset
-     
-     # Execute
-     expect_no_error({
-       result <- treefarms(data$X, data$y, verbose = FALSE)
-     })
-     
-     # Verify
-     expect_valid_treefarms_model(result)
-   })
-   ```
-3. Keep tests lightweight (<30 seconds)
-4. Use `expect_valid_treefarms_model()` for model validation
-5. Clean up after tests with `teardown_test_environment()`
-
-### Helper Functions
-- **`expect_valid_treefarms_model(model)`** - Validates model structure
-- **`expect_valid_predictions(pred, n_samples)`** - Validates predictions
-- **`expect_models_consistent(model1, model2)`** - Compares two models
-- **`safe_treefarms(...)`** - Wrapper with error handling
-- **`setup_test_environment()`** - Test setup
-- **`teardown_test_environment()`** - Test cleanup
+The test suite is designed to run in CI environments. Some stress tests are skipped on CRAN using `skip_on_cran()`.
 
 ## Troubleshooting
 
-### Common Issues
-1. **Tests fail with "package not found"** - Run `devtools::load_all()` first
-2. **Memory issues** - Tests include cleanup, but restart R if needed
-3. **Parallel test failures** - Check RcppParallel installation
-4. **Coverage not working** - Ensure covr package is installed
+### Tests Fail with Memory Errors
 
-### Debug Mode
-```r
-# Run tests with verbose output
-testthat::test_dir("tests/testthat/", reporter = "progress")
+- Run with memory instrumentation (ASan/Valgrind) to identify issues
+- Check for memory leaks in test output
+- Verify garbage collection is working
 
-# Run single test with debug info
-testthat::test_file("tests/testthat/test-api.R", reporter = "progress")
-```
+### Tests Timeout
 
-## CI Badges
+- Some stress tests may take a long time
+- Reduce dataset sizes in stress tests if needed
+- Skip stress tests on CI if time is limited
 
-Add these badges to your README:
+### Package Loading Issues
 
-```markdown
-[![R-CMD-check](https://github.com/your-org/treefarmr/workflows/R-CMD-check/badge.svg)](https://github.com/your-org/treefarmr/actions)
-[![Coverage](https://codecov.io/gh/your-org/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/your-org/treefarmr)
-[![CRAN](https://www.r-pkg.org/badges/version/treefarmr)](https://cran.r-project.org/package=treefarmr)
-```
+- Verify package is installed correctly
+- Check that C++ symbols are resolved
+- Run installation tests to diagnose issues
 
 ## Contributing
 
-When contributing to the test suite:
-1. Add tests for new functionality
-2. Update existing tests if behavior changes
-3. Ensure all tests pass locally
-4. Update this documentation if needed
-5. Follow CRAN compliance guidelines
+When adding new tests:
+
+1. Follow existing test structure and naming conventions
+2. Use helper functions for common validations
+3. Add appropriate test data generators
+4. Document test scenarios in TEST_SCENARIOS.md
+5. Update TEST_COVERAGE.md with new coverage

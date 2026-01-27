@@ -2,13 +2,13 @@
 #'
 #' @description
 #' Functions for saving and loading TreeFARMS models to/from disk.
-#' Handles Python objects via JSON serialization.
+#' Models are serialized using JSON format for tree structures.
 
 #' Save TreeFARMS Model
 #'
 #' @description
 #' Save a TreeFARMS model to disk using RDS format.
-#' Handles Python objects by converting trees to JSON.
+#' Tree structures are converted to JSON for serialization.
 #'
 #' @param model A TreeFARMS model object (any type)
 #' @param path Character: file path to save to (should end with .rds)
@@ -17,8 +17,8 @@
 #' @return Invisibly returns the model
 #'
 #' @details
-#' This function saves TreeFARMS models to disk, handling the complexity
-#' of Python objects by converting tree structures to JSON format.
+#' This function saves TreeFARMS models to disk, converting tree structures
+#' to JSON format for serialization.
 #' The saved model can be loaded later using \code{load_treefarms()}.
 #'
 #' @examples
@@ -37,7 +37,7 @@
 save_treefarms <- function(model, path, ...) {
   
   # Validate inputs
-  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model", "treefarms_subprocess_model", "cf_rashomon"))) {
+  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model", "cf_rashomon"))) {
     stop("model must be a TreeFARMS model object")
   }
   
@@ -61,7 +61,7 @@ save_treefarms <- function(model, path, ...) {
   
   # Handle different model types
   if (inherits(model, "treefarms_model")) {
-    # For reticulate models, convert trees to JSON
+    # For treefarms models, convert trees to JSON
     if (model$n_trees > 0) {
       trees_json <- list()
       for (i in seq_len(model$n_trees)) {
@@ -81,8 +81,8 @@ save_treefarms <- function(model, path, ...) {
       rashomon_bound_multiplier = 0.05
     )
     
-  } else if (inherits(model, c("treefarms_logloss_model", "treefarms_subprocess_model"))) {
-    # For subprocess models, trees are already JSON strings
+  } else if (inherits(model, "treefarms_logloss_model")) {
+    # For logloss models, trees are already JSON strings
     serializable_model$trees_json <- model$trees
     serializable_model$config <- model$config
     
@@ -156,8 +156,7 @@ save_treefarms <- function(model, path, ...) {
 #'
 #' @details
 #' This function loads TreeFARMS models from disk, reconstructing
-#' the model object from the saved JSON data. Note that Python
-#' objects are not fully reconstructed - only the essential
+#' the model object from the saved JSON data. Only the essential
 #' information for making predictions is restored.
 #'
 #' @examples
@@ -186,8 +185,8 @@ load_treefarms <- function(path, ...) {
   
   # Reconstruct the model object
   if (serializable_model$class == "treefarms_model") {
-    # For reticulate models, we can't fully reconstruct the Python object
-    # but we can create a minimal object for prediction purposes
+    # For treefarms models, we reconstruct from JSON data
+    # and create a minimal object for prediction purposes
     model <- list(
       loss_function = serializable_model$loss_function,
       regularization = serializable_model$regularization,
@@ -202,8 +201,8 @@ load_treefarms <- function(path, ...) {
     )
     class(model) <- "treefarms_model_loaded"
     
-  } else if (serializable_model$class %in% c("treefarms_logloss_model", "treefarms_subprocess_model")) {
-    # For subprocess models, reconstruction is straightforward
+  } else if (serializable_model$class == "treefarms_logloss_model") {
+    # For logloss models, reconstruction is straightforward
     model <- list(
       loss_function = serializable_model$loss_function,
       regularization = serializable_model$regularization,
@@ -294,126 +293,56 @@ predict.treefarms_model_loaded <- function(object, newdata, type = c("class", "p
   # Ensure same column order
   newdata <- newdata[, colnames(object$X_train), drop = FALSE]
   
-  # Create temporary files for subprocess prediction
-  temp_dir <- tempdir()
-  X_file <- file.path(temp_dir, "X_new.csv")
-  model_file <- file.path(temp_dir, "model.json")
-  result_file <- file.path(temp_dir, "predictions.json")
-  script_file <- file.path(temp_dir, "predict.py")
+  # Check for missing values
+  if (any(is.na(newdata))) {
+    stop("newdata contains missing values")
+  }
   
-  # Write data to files
-  write.csv(newdata, X_file, row.names = FALSE)
-  
-  # Save model information
-  model_data <- list(
-    trees = object$trees_json,
-    config = object$config
-  )
-  writeLines(jsonlite::toJSON(model_data, auto_unbox = TRUE), model_file)
-  
-  # Create Python prediction script
-  python_script <- sprintf('
-import pandas as pd
-import numpy as np
-import json
-import sys
-import os
-
-# Add TreeFARMS to path
-sys.path.insert(0, os.path.expanduser("~/OneDrive/rrr/treeFarms"))
-
-from treefarms.model.treefarms import TREEFARMS
-
-# Read data
-X_new = pd.read_csv("%s")
-
-# Load model
-with open("%s", "r") as f:
-    model_data = json.load(f)
-
-# Create model and load trees
-if model_data["trees"]:
-    tree_json = model_data["trees"][0]["json"]
-    
-    # Create a minimal model for prediction
-    config = model_data["config"]
-    model = TREEFARMS(config)
-    
-    try:
-        # Get predictions using the model
-        predictions = model.predict(X_new)
-        probabilities = model.predict_proba(X_new)
-        
-        # Convert to lists for JSON serialization
-        if hasattr(predictions, "tolist"):
-            predictions_list = predictions.tolist()
-        else:
-            predictions_list = list(predictions)
-            
-        if hasattr(probabilities, "tolist"):
-            probabilities_list = probabilities.tolist()
-        else:
-            probabilities_list = list(probabilities)
-        
-        # Save results
-        results = {
-            "predictions": predictions_list,
-            "probabilities": probabilities_list
-        }
-        
-        with open("%s", "w") as f:
-            json.dump(results, f)
-            
-    except Exception as e:
-        # Fallback: return default predictions
-        n_samples = len(X_new)
-        results = {
-            "predictions": [0] * n_samples,
-            "probabilities": [[0.5, 0.5]] * n_samples,
-            "error": str(e)
-        }
-        
-        with open("%s", "w") as f:
-            json.dump(results, f)
-else:
-    # No trees available
-    n_samples = len(X_new)
-    results = {
-        "predictions": [0] * n_samples,
-        "probabilities": [[0.5, 0.5]] * n_samples,
-        "error": "No trees available"
+  # Check for non-binary values
+  for (col in names(newdata)) {
+    if (!all(newdata[[col]] %in% c(0, 1))) {
+      stop("newdata must contain only binary values")
     }
+  }
+  
+  # Get tree structure from model object
+  # Use first tree from trees_json if available
+  tree_to_use <- NULL
+  if (!is.null(object$trees_json) && length(object$trees_json) > 0) {
+    # trees_json is a list of trees, use the first one
+    if (is.list(object$trees_json[[1]]) && !is.null(object$trees_json[[1]]$json)) {
+      # Tree is stored as list with json field
+      tree_to_use <- jsonlite::fromJSON(object$trees_json[[1]]$json, simplifyVector = FALSE)
+    } else if (is.character(object$trees_json[[1]])) {
+      # Tree is stored as JSON string
+      tree_to_use <- jsonlite::fromJSON(object$trees_json[[1]], simplifyVector = FALSE)
+    } else if (is.list(object$trees_json[[1]])) {
+      # Tree is already a parsed list
+      tree_to_use <- object$trees_json[[1]]
+    }
+  }
+  
+  # Extract probabilities from tree structure
+  if (!is.null(tree_to_use)) {
+    probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
-    with open("%s", "w") as f:
-        json.dump(results, f)
-', X_file, model_file, result_file, result_file, result_file)
-  
-  # Write and execute Python script
-  writeLines(python_script, script_file)
-  
-  # Execute Python script
-  python_path <- getOption("treefarms.python_path", "~/gosdt-env/bin/python")
-  cmd <- sprintf("%s %s", python_path, script_file)
-  exit_code <- system(cmd, intern = FALSE)
-  
-  if (exit_code != 0) {
-    stop("Error running Python prediction script")
-  }
-  
-  # Read results
-  if (!file.exists(result_file)) {
-    stop("Prediction results file not found")
-  }
-  
-  results <- jsonlite::fromJSON(result_file)
-  
-  # Clean up temporary files
-  unlink(c(X_file, model_file, result_file, script_file))
-  
-  if (type == "class") {
-    return(as.numeric(results$predictions))
+    if (type == "class") {
+      # Derive predictions from probabilities (argmax)
+      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
+      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
+      return(predictions)
+    } else {
+      # Return probabilities
+      return(probabilities)
+    }
   } else {
-    return(as.matrix(results$probabilities))
+    # No tree available, return default values
+    n_samples <- nrow(newdata)
+    if (type == "class") {
+      return(rep(0, n_samples))
+    } else {
+      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+    }
   }
 }
 

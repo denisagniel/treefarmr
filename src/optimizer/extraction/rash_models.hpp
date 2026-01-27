@@ -4,7 +4,7 @@ void Optimizer::rash_models(results_t & results) {
     rash_models(this -> root, results, rashomon_bound);
 
     if (Configuration::verbose) {
-        std::cout << "Cached subproblem models size: " << State::graph.models.size() << std::endl;
+        std::cout << "Cached subproblem models size: " << this->state.graph.models.size() << std::endl;
         std::cout << "Models calls: " << models_calls << std::endl;
         std::cout << "Pruned combinations using scope: " << pruned_combinations_with_scope << std::endl;
         std::cout << "Pruned leaves using scope: " << pruned_leaves_with_scope << std::endl;
@@ -24,8 +24,8 @@ void Optimizer::rash_models(key_type const & identifier, results_t & results, fl
 
     models_calls++;
 
-    auto stored_models_accessor = State::graph.models.find(identifier);
-    if (stored_models_accessor != State::graph.models.end()) {
+    auto stored_models_accessor = this->state.graph.models.find(identifier);
+    if (stored_models_accessor != this->state.graph.models.end()) {
         scoped_result_t stored_models = stored_models_accessor->second;
         float stored_scope = std::get<0>(stored_models);
         if (stored_scope >= scope) {
@@ -40,20 +40,19 @@ void Optimizer::rash_models(key_type const & identifier, results_t & results, fl
             // }
             return;
         } else {
-            // Note: concurrent_unordered_map doesn't have erase() method
-            // We'll just continue without caching this result
+            // Result already cached, continue without updating
         }
     } 
 
     rash_models_inner(identifier, results, scope);
 
     auto new_models = std::make_pair(identifier, std::make_pair(scope, results));
-    State::graph.models.insert(new_models);
+    this->state.graph.models.insert(new_models);
 }
 
 void Optimizer::rash_models_inner(key_type const & identifier, results_t & results, float scope) {
-    auto task_accessor = State::graph.vertices.find(identifier);
-    if (task_accessor == State::graph.vertices.end()) { return; }
+    auto task_accessor = this->state.graph.vertices.find(identifier);
+    if (task_accessor == this->state.graph.vertices.end()) { return; }
     Task & task = task_accessor -> second;
     //std::cout << "Base Condition: " << task.base_objective() << " <= " << task.upperbound() << " = " << (int)(task.base_objective() <= task.upperbound()) << std::endl;
 
@@ -82,7 +81,7 @@ void Optimizer::rash_models_inner(key_type const & identifier, results_t & resul
         //std::cout << task.rashomon_bound() << std::endl;
 
 
-        model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set()))));
+        model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set())), this->state));
         insert_leaf_to_results(results, model);        
         // std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set()))));
         // model -> identify(identifier);
@@ -92,8 +91,8 @@ void Optimizer::rash_models_inner(key_type const & identifier, results_t & resul
         pruned_leaves_with_scope++;
     }
 
-    auto bounds = State::graph.bounds.find(identifier);
-    if (bounds == State::graph.bounds.end()) { return; }
+    auto bounds = this->state.graph.bounds.find(identifier);
+    if (bounds == this->state.graph.bounds.end()) { return; }
 
     
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
@@ -110,23 +109,23 @@ void Optimizer::rash_models_inner(key_type const & identifier, results_t & resul
         Tile left_identifier, right_identifier;
         float left_lowerbound = 0, right_lowerbound = 0;
 
-        auto left_key = State::graph.children.find(std::make_pair(identifier, -(feature + 1)));
-        bool left_has_key = (left_key != State::graph.children.end());
+        auto left_key = this->state.graph.children.find(std::make_pair(identifier, -(feature + 1)));
+        bool left_has_key = (left_key != this->state.graph.children.end());
         if (left_has_key) {
             left_identifier = left_key->second;
         } else {
             Bitmask subset(task.capture_set());
-            State::dataset.subset(feature, false, subset);
+            this->state.dataset.subset(feature, false, subset);
             // One optimization: move subset data to tile instead of copying? 
             left_identifier = Tile(subset, 0);
         }
-        auto left_child = State::graph.vertices.find(left_identifier);
-        bool left_has_child = (left_child != State::graph.vertices.end());
+        auto left_child = this->state.graph.vertices.find(left_identifier);
+        bool left_has_child = (left_child != this->state.graph.vertices.end());
         if (left_has_child) {
             left_lowerbound = left_child->second.lowerbound();
         } else if (!left_has_key) {
             Bitmask &subset = left_identifier.content();
-            model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(subset))));
+            model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
             float leaf_objective = model->loss() + model->complexity();
             if (leaf_objective > scope + std::numeric_limits<float>::epsilon()) {
                 pruned_leaves_with_scope++;
@@ -138,23 +137,23 @@ void Optimizer::rash_models_inner(key_type const & identifier, results_t & resul
             continue;
         }
 
-        auto right_key = State::graph.children.find(std::make_pair(identifier, feature + 1));
-        bool right_has_key = (right_key != State::graph.children.end());
+        auto right_key = this->state.graph.children.find(std::make_pair(identifier, feature + 1));
+        bool right_has_key = (right_key != this->state.graph.children.end());
         if (right_has_key) {
             right_identifier = right_key->second;
         } else {
             Bitmask subset(task.capture_set());
-            State::dataset.subset(feature, true, subset);
+            this->state.dataset.subset(feature, true, subset);
             right_identifier = Tile(subset, 0);
         }
-        auto right_child = State::graph.vertices.find(right_identifier);
-        bool right_has_child = (right_child != State::graph.vertices.end());
+        auto right_child = this->state.graph.vertices.find(right_identifier);
+        bool right_has_child = (right_child != this->state.graph.vertices.end());
         if (right_has_child) {
             right_lowerbound = right_child->second.lowerbound();
         } else if (!right_has_key) {
             Bitmask &subset = right_identifier.content();
             unsigned int count = subset.count();
-            model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(subset))));
+            model_set_p model(new ModelSet(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
             float leaf_objective = model->loss() + model->complexity();
             if (leaf_objective > scope + std::numeric_limits<float>::epsilon()) {
                 pruned_leaves_with_scope++;

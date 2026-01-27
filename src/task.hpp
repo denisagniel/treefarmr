@@ -10,6 +10,7 @@
 #include <limits>
 
 class Task;
+class State; // Forward declaration for State reference parameter
 
 #include "bitmask.hpp"
 #include "configuration.hpp"
@@ -26,7 +27,7 @@ public:
 
     // @param capture_set: indicator for which data points are captured
     // @param feature_set: indicator for which features are still active
-    Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, bool rashomon_flag = false);
+    Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, State & state, bool rashomon_flag = false);
 
     // @returns the support of the this task
     float support(void) const;
@@ -69,20 +70,20 @@ public:
     void prune_feature(unsigned int id);
 
     // @modifies: inserts children into the cache based on the currently non-pruned features
-    void create_children(unsigned int id);
+    void create_children(unsigned int id, State & state);
 
     // @modifies: prunes features
-    void prune_features(unsigned int id);
+    void prune_features(unsigned int id, State & state);
 
     // @modifies: prunes features based on the indifference bound within adjacent thresholds of ordinal features
-    void continuous_feature_exchange(unsigned int id);
+    void continuous_feature_exchange(unsigned int id, State & state);
 
     // @modifes: prunes features based on the indifference bound for all feature pairs
-    void feature_exchange(unsigned int id);
+    void feature_exchange(unsigned int id, State & state);
 
-    void send_explorers(float scope, unsigned int id);
+    void send_explorers(float scope, unsigned int id, State & state);
 
-    void send_explorer(Task const & child, float scope, int feature, unsigned int id);
+    void send_explorer(Task const & child, float scope, int feature, unsigned int id, State & state);
 
     bool update(float lower, float upper, int optimal_feature);
 

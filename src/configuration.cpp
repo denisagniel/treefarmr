@@ -1,4 +1,20 @@
 #include "configuration.hpp"
+#include <cstdio>
+
+// REMOVED: __attribute__((constructor)) functions cause installation hangs
+// These functions run during static initialization (before R_init_treefarmr())
+// and perform file I/O, which can deadlock during R's lazy loading database creation.
+// The original treeFarms codebase does not have these constructor functions.
+// static void __attribute__((constructor)) before_config_static_init() {
+//     fprintf(stderr, "[TREEFARMR_CHECKPOINT] BEFORE configuration.cpp static initialization\n");
+//     fflush(stderr);
+//     FILE* f = fopen("/tmp/treefarmr_load.log", "a");
+//     if (f) {
+//         fprintf(f, "[CHECKPOINT] BEFORE configuration.cpp static initialization\n");
+//         fflush(f);
+//         fclose(f);
+//     }
+// }
 
 float Configuration::uncertainty_tolerance = 0.0;
 float Configuration::regularization = 0.05;
@@ -53,6 +69,17 @@ bool Configuration::rashomon_ignore_trivial_extensions = true;
 
 LossFunction Configuration::loss_function = MISCLASSIFICATION;
 
+// REMOVED: __attribute__((constructor)) functions cause installation hangs
+// static void __attribute__((constructor)) after_config_static_init() {
+//     fprintf(stderr, "[TREEFARMR_CHECKPOINT] AFTER configuration.cpp static initialization\n");
+//     fflush(stderr);
+//     FILE* f = fopen("/tmp/treefarmr_load.log", "a");
+//     if (f) {
+//         fprintf(f, "[CHECKPOINT] AFTER configuration.cpp static initialization\n");
+//         fflush(f);
+//         fclose(f);
+//     }
+// }
 
 void Configuration::configure(std::istream & source) {
     json config;

@@ -10,6 +10,17 @@
 #' @param loss_function Loss function: "misclassification" or "log_loss". Default: "misclassification"
 #' @param regularization Model complexity penalty. Default: 0.1
 #' @param rashomon_bound_multiplier Rashomon set size control. Default: 0.05
+#' @param single_tree Logical. If TRUE, fit exactly one tree per fold (disable rashomon set).
+#'   Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold computes
+#'   a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via the underlying
+#'   \code{\link{treefarms}} call.
+#' @param auto_tune_intersecting Logical. If TRUE, auto-tune parameters until at least one
+#'   intersecting tree is found. Default: FALSE.
+#' @param tune_param Character. Which parameter to tune when auto_tune_intersecting=TRUE.
+#'   Options: "regularization", "rashomon_bound_multiplier", or "both". Default: "regularization".
+#' @param max_tune_iterations Integer. Maximum number of auto-tuning iterations. Default: 20.
+#' @param tune_search_range Numeric vector of length 2. Search range for the parameter being tuned.
+#'   If NULL, uses default ranges based on loss_function. Default: NULL.
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param verbose Print progress information. Default: TRUE
 #' @param ... Additional parameters passed to TreeFARMS
@@ -59,6 +70,11 @@ cross_fitted_rashomon <- function(X, y, K = 5,
                                   loss_function = "misclassification",
                                   regularization = 0.1,
                                   rashomon_bound_multiplier = 0.05,
+                                  single_tree = FALSE,
+                                  auto_tune_intersecting = FALSE,
+                                  tune_param = "regularization",
+                                  max_tune_iterations = 20,
+                                  tune_search_range = NULL,
                                   seed = NULL,
                                   verbose = TRUE,
                                   ...) {
@@ -113,6 +129,231 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     cat(sprintf("Fold sizes: %s\n\n", paste(fold_sizes, collapse = ", ")))
   }
   
+  # Auto-tuning for intersecting trees
+  if (auto_tune_intersecting) {
+    if (verbose) {
+      cat("Auto-tuning parameters to find intersecting trees...\n")
+      cat(sprintf("Tuning parameter: %s\n", tune_param))
+      cat(sprintf("Max iterations: %d\n\n", max_tune_iterations))
+    }
+    
+    # Validate tune_param
+    if (!tune_param %in% c("regularization", "rashomon_bound_multiplier", "both")) {
+      stop("tune_param must be 'regularization', 'rashomon_bound_multiplier', or 'both'")
+    }
+    
+    # Set default search ranges
+    if (is.null(tune_search_range)) {
+      if (tune_param == "regularization") {
+        if (loss_function == "log_loss") {
+          tune_search_range <- c(0.1, 1.0)
+        } else {
+          tune_search_range <- c(0.01, 0.5)
+        }
+      } else if (tune_param == "rashomon_bound_multiplier") {
+        tune_search_range <- c(0.01, 0.5)
+      } else {
+        # Both - use ranges for regularization
+        if (loss_function == "log_loss") {
+          tune_search_range <- c(0.1, 1.0)
+        } else {
+          tune_search_range <- c(0.01, 0.5)
+        }
+      }
+    }
+    
+    # Store original parameters
+    orig_regularization <- regularization
+    orig_rashomon_multiplier <- rashomon_bound_multiplier
+    
+    # Binary search for parameters that yield intersecting trees
+    best_result <- NULL
+    best_n_intersecting <- 0
+    iterations <- 0
+    
+    # For "both", we'll tune regularization first, then rashomon_bound_multiplier
+    if (tune_param == "both") {
+      # First tune regularization
+      low_reg <- tune_search_range[1]
+      high_reg <- tune_search_range[2]
+      
+      while (iterations < max_tune_iterations && (high_reg - low_reg) > 0.001) {
+        iterations <- iterations + 1
+        mid_reg <- (low_reg + high_reg) / 2
+        regularization <- mid_reg
+        
+        if (verbose) {
+          cat(sprintf("Iteration %d: regularization=%.3f, rashomon_bound_multiplier=%.3f\n",
+                     iterations, regularization, rashomon_bound_multiplier))
+        }
+        
+        # Try with current parameters
+        result <- try_cross_fitted_rashomon_internal(
+          X, y, K, loss_function, regularization, rashomon_bound_multiplier,
+          single_tree, fold_indices, verbose, ...
+        )
+        
+        if (is.null(result)) {
+          # Error occurred, try more restrictive parameters
+          high_reg <- mid_reg
+          next
+        }
+        
+        if (result$n_intersecting > 0) {
+          if (verbose) {
+            cat(sprintf("  -> SUCCESS: Found %d intersecting tree(s)!\n", result$n_intersecting))
+          }
+          return(result)
+        }
+        
+        # Adjust search range - if no intersecting trees, try higher regularization
+        # (higher regularization = simpler trees = more likely to intersect)
+        if (result$n_intersecting == 0) {
+          high_reg <- mid_reg  # Increase regularization (move toward higher values)
+        } else {
+          low_reg <- mid_reg  # Found intersecting trees, can try lower regularization
+        }
+        
+        if (result$n_intersecting > best_n_intersecting) {
+          best_result <- result
+          best_n_intersecting <- result$n_intersecting
+        }
+      }
+      
+      # If still no intersecting trees, try tuning rashomon_bound_multiplier
+      if (best_n_intersecting == 0) {
+        regularization <- orig_regularization
+        low_mult <- 0.01
+        high_mult <- 0.5
+        
+        while (iterations < max_tune_iterations && (high_mult - low_mult) > 0.001) {
+          iterations <- iterations + 1
+          mid_mult <- (low_mult + high_mult) / 2
+          rashomon_bound_multiplier <- mid_mult
+          
+          if (verbose) {
+            cat(sprintf("Iteration %d: regularization=%.3f, rashomon_bound_multiplier=%.3f\n",
+                       iterations, regularization, rashomon_bound_multiplier))
+          }
+          
+          result <- try_cross_fitted_rashomon_internal(
+            X, y, K, loss_function, regularization, rashomon_bound_multiplier,
+            single_tree, fold_indices, verbose, ...
+          )
+          
+          if (is.null(result)) {
+            # Error occurred, try more permissive parameters
+            low_mult <- mid_mult
+            next
+          }
+          
+          if (result$n_intersecting > 0) {
+            if (verbose) {
+              cat(sprintf("  -> SUCCESS: Found %d intersecting tree(s)!\n", result$n_intersecting))
+            }
+            return(result)
+          }
+          
+          # Lower multiplier = more trees = more likely to intersect
+          if (result$n_intersecting == 0) {
+            low_mult <- mid_mult  # Decrease multiplier (move toward lower values)
+          } else {
+            high_mult <- mid_mult  # Found intersecting trees, can try higher multiplier
+          }
+          
+          if (result$n_intersecting > best_n_intersecting) {
+            best_result <- result
+            best_n_intersecting <- result$n_intersecting
+          }
+        }
+      }
+    } else {
+      # Tune single parameter
+      low <- tune_search_range[1]
+      high <- tune_search_range[2]
+      
+      while (iterations < max_tune_iterations && (high - low) > 0.001) {
+        iterations <- iterations + 1
+        mid <- (low + high) / 2
+        
+        if (tune_param == "regularization") {
+          regularization <- mid
+        } else {
+          rashomon_bound_multiplier <- mid
+        }
+        
+        if (verbose) {
+          cat(sprintf("Iteration %d: regularization=%.3f, rashomon_bound_multiplier=%.3f\n",
+                     iterations, regularization, rashomon_bound_multiplier))
+        }
+        
+        # Try with current parameters
+        result <- try_cross_fitted_rashomon_internal(
+          X, y, K, loss_function, regularization, rashomon_bound_multiplier,
+          single_tree, fold_indices, verbose, ...
+        )
+        
+        if (is.null(result)) {
+          # Error occurred, adjust search range based on parameter
+          if (tune_param == "regularization") {
+            high <- mid  # Try more restrictive
+          } else {
+            low <- mid  # Try more permissive
+          }
+          next
+        }
+        
+        if (result$n_intersecting > 0) {
+          if (verbose) {
+            cat(sprintf("  -> SUCCESS: Found %d intersecting tree(s)!\n", result$n_intersecting))
+          }
+          return(result)
+        }
+        
+        # Adjust search range
+        if (tune_param == "regularization") {
+          # Higher regularization = simpler trees = more likely to intersect
+          if (result$n_intersecting == 0) {
+            high <- mid  # Increase regularization (move toward higher values)
+          } else {
+            low <- mid  # Found intersecting trees, can try lower regularization
+          }
+        } else {
+          # Lower multiplier = more trees = more likely to intersect
+          if (result$n_intersecting == 0) {
+            low <- mid  # Decrease multiplier (move toward lower values)
+          } else {
+            high <- mid  # Found intersecting trees, can try higher multiplier
+          }
+        }
+        
+        if (result$n_intersecting > best_n_intersecting) {
+          best_result <- result
+          best_n_intersecting <- result$n_intersecting
+        }
+      }
+    }
+    
+    # If we found a result (even if not intersecting), return it
+    if (!is.null(best_result)) {
+      if (verbose) {
+        cat(sprintf("\nAuto-tuning completed: Found %d intersecting tree(s) after %d iterations\n",
+                   best_n_intersecting, iterations))
+        if (best_n_intersecting == 0) {
+          cat("Warning: No intersecting trees found. Consider adjusting search range or parameters.\n")
+        }
+      }
+      return(best_result)
+    }
+    
+    # If no result found, fall through to regular execution with original parameters
+    if (verbose) {
+      cat("Auto-tuning failed, using original parameters\n\n")
+    }
+    regularization <- orig_regularization
+    rashomon_bound_multiplier <- orig_rashomon_multiplier
+  }
+  
   # Initialize storage
   fold_models <- vector("list", K)
   rashomon_sets <- vector("list", K)
@@ -143,6 +384,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       loss_function = loss_function,
       regularization = regularization,
       rashomon_bound_multiplier = rashomon_bound_multiplier,
+      single_tree = single_tree,
       verbose = FALSE,
       ...
     )
@@ -188,6 +430,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     K = K,
     loss_function = loss_function,
     regularization = regularization,
+    rashomon_bound_multiplier = rashomon_bound_multiplier,
     X_train = X,
     y_train = y,
     call = match.call()
@@ -196,6 +439,96 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   class(result) <- "cf_rashomon"
   
   return(result)
+}
+
+#' Internal helper function for cross-fitted rashomon (used by auto-tuning)
+#'
+#' @description
+#' Performs cross-fitting with given parameters and returns result.
+#' Used internally by auto-tuning logic.
+#'
+#' @param X Data.frame or matrix of binary features
+#' @param y Vector of binary class labels
+#' @param K Number of folds
+#' @param loss_function Loss function
+#' @param regularization Regularization parameter
+#' @param rashomon_bound_multiplier Rashomon bound multiplier
+#' @param single_tree Whether to fit single tree per fold
+#' @param fold_indices Pre-computed fold indices
+#' @param verbose Whether to print progress
+#' @param ... Additional parameters
+#'
+#' @return cf_rashomon object or NULL on error
+#'
+#' @keywords internal
+try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regularization,
+                                               rashomon_bound_multiplier, single_tree,
+                                               fold_indices, verbose, ...) {
+  tryCatch({
+    # Initialize storage
+    fold_models <- vector("list", K)
+    rashomon_sets <- vector("list", K)
+    rashomon_sizes <- integer(K)
+    
+    # Fit model for each fold
+    for (k in 1:K) {
+      # Get training data (all folds except k)
+      test_idx <- fold_indices[[k]]
+      train_idx <- setdiff(1:nrow(X), test_idx)
+      
+      X_train <- X[train_idx, , drop = FALSE]
+      y_train <- y[train_idx]
+      
+      # Train TreeFARMS model
+      model <- treefarms(
+        X = X_train,
+        y = y_train,
+        loss_function = loss_function,
+        regularization = regularization,
+        rashomon_bound_multiplier = rashomon_bound_multiplier,
+        single_tree = single_tree,
+        verbose = FALSE,
+        ...
+      )
+      
+      # Extract Rashomon set
+      trees <- get_rashomon_trees(model)
+      
+      # Store results
+      fold_models[[k]] <- model
+      rashomon_sets[[k]] <- trees
+      rashomon_sizes[k] <- length(trees)
+    }
+    
+    # Find intersection of trees across all folds
+    intersection_result <- find_tree_intersection(rashomon_sets, verbose = FALSE)
+    
+    # Create result object
+    result <- list(
+      intersecting_trees = intersection_result$intersecting_trees,
+      n_intersecting = intersection_result$n_intersecting,
+      tree_jsons = intersection_result$tree_jsons,
+      fold_models = fold_models,
+      rashomon_sets = rashomon_sets,
+      rashomon_sizes = rashomon_sizes,
+      fold_indices = fold_indices,
+      K = K,
+      loss_function = loss_function,
+      regularization = regularization,
+      rashomon_bound_multiplier = rashomon_bound_multiplier,
+      X_train = X,
+      y_train = y,
+      call = match.call()
+    )
+    
+    class(result) <- "cf_rashomon"
+    return(result)
+  }, error = function(e) {
+    if (verbose) {
+      cat(sprintf("  -> ERROR: %s\n", e$message))
+    }
+    return(NULL)
+  })
 }
 
 #' Create Stratified Folds

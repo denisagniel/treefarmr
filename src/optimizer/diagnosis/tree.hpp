@@ -21,8 +21,8 @@ void Optimizer::diagnostic_tree(int iteration) {
     return;
 }
 bool Optimizer::diagnostic_tree(key_type const & identifier, json & tracer) {
-    auto task_accessor = State::graph.vertices.find(identifier);
-    if (task_accessor == State::graph.vertices.end()) { return false; }
+    auto task_accessor = this->state.graph.vertices.find(identifier);
+    if (task_accessor == this->state.graph.vertices.end()) { return false; }
     Task & task = task_accessor -> second;
 
     json node = json::object();
@@ -39,17 +39,17 @@ bool Optimizer::diagnostic_tree(key_type const & identifier, json & tracer) {
 
     json scores = json::object();
 
-    unsigned int m = State::dataset.width();
+    unsigned int m = this->state.dataset.width();
     unsigned int k = 0;
     float score_k = std::numeric_limits<float>::max();
 
-    auto bounds = State::graph.bounds.find(task.identifier());
-    if (bounds == State::graph.bounds.end()) { return true; }
+    auto bounds = this->state.graph.bounds.find(task.identifier());
+    if (bounds == this->state.graph.bounds.end()) { return true; }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
         int feature = std::get<0>(* iterator);
 
         std::string type, relation, reference;
-        State::dataset.encoder.encoding(feature, type, relation, reference);
+        this->state.dataset.encoder.encoding(feature, type, relation, reference);
         float upper = std::get<2>(* iterator);
         scores[reference] = upper;
         if (upper < score_k) {
@@ -59,18 +59,18 @@ bool Optimizer::diagnostic_tree(key_type const & identifier, json & tracer) {
     }
     unsigned int decoded_index;
     std::string type, relation, reference;
-    State::dataset.encoder.decode(k, & decoded_index);
-    State::dataset.encoder.encoding(k, type, relation, reference);
+    this->state.dataset.encoder.decode(k, & decoded_index);
+    this->state.dataset.encoder.encoding(k, type, relation, reference);
     node["threshold"] = reference;
     node["scores"] = scores;
     tracer["nodes"].push_back(node);
     if (score_k < std::numeric_limits<float>::max()) {
-        auto left_key = State::graph.children.find(std::make_pair(identifier, -(k + 1)));
-        if (left_key != State::graph.children.end()) {    
+        auto left_key = this->state.graph.children.find(std::make_pair(identifier, -(k + 1)));
+        if (left_key != this->state.graph.children.end()) {    
             diagnostic_tree(left_key -> second, tracer);
         }
-        auto right_key = State::graph.children.find(std::make_pair(identifier, k + 1));
-        if (right_key != State::graph.children.end()) {
+        auto right_key = this->state.graph.children.find(std::make_pair(identifier, k + 1));
+        if (right_key != this->state.graph.children.end()) {
             diagnostic_tree(right_key -> second, tracer);
         }
     }

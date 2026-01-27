@@ -8,7 +8,7 @@ bool Optimizer::dispatch(Message const & message, unsigned int id) {
             Bitmask const & capture_set = message.recipient_capture; // The points captured
             Bitmask const & feature_set = message.recipient_feature; // The features (before pruning)
             bool is_root = capture_set.count() == capture_set.size();
-            Task task(capture_set, feature_set, id, rashomon_flag); // A vertex to represent the problem
+            Task task(capture_set, feature_set, id, this->state, rashomon_flag); // A vertex to represent the problem
 
             if (this -> rashomon_flag) { // Extract Rashomon set
                 task.set_rashomon_flag();
@@ -16,10 +16,10 @@ bool Optimizer::dispatch(Message const & message, unsigned int id) {
             }
 
             task.scope(message.scope);
-            task.create_children(id); // Populate the thread's local cache with child instances
-            task.prune_features(id);  // Prune using a set of bounds
+            task.create_children(id, this->state); // Populate the thread's local cache with child instances
+            task.prune_features(id, this->state);  // Prune using a set of bounds
             translation_type order;
-            State::dataset.tile(task.capture_set(), task.feature_set(), task.identifier(), task.order(), id);
+            this->state.dataset.tile(task.capture_set(), task.feature_set(), task.identifier(), task.order(), id, this->state);
 
 
             vertex_accessor vertex;
@@ -28,11 +28,23 @@ bool Optimizer::dispatch(Message const & message, unsigned int id) {
             store_children(vertex -> second, id);
 
             if (is_root) { // Update the optimizer state
-                // float root_upperbound = this -> cart(vertex -> second.capture_set(), vertex -> second.feature_set(), id);
-                // std::cout << "Cart: " << root_upperbound << std::endl;
-                float root_upperbound = 1.0;
+                // Use the root node's actual base_objective as upperbound instead of hardcoded 1.0
+                // This is important for log_loss where the objective can be much larger than 1.0
+                float root_upperbound = vertex -> second.base_objective();
+                if (Configuration::verbose) {
+                    std::cout << "DEBUG: Root node update" << std::endl;
+                    std::cout << "  base_objective(): " << vertex -> second.base_objective() << std::endl;
+                    std::cout << "  lowerbound before update: " << vertex -> second.lowerbound() << std::endl;
+                    std::cout << "  upperbound before update: " << vertex -> second.upperbound() << std::endl;
+                    std::cout << "  root_upperbound: " << root_upperbound << std::endl;
+                    std::cout << "  Configuration::upperbound: " << Configuration::upperbound << std::endl;
+                }
                 if (Configuration::upperbound > 0.0) { root_upperbound = std::min(root_upperbound, Configuration::upperbound); }
                 vertex -> second.update(vertex -> second.lowerbound(), root_upperbound, -1);
+                if (Configuration::verbose) {
+                    std::cout << "  lowerbound after update: " << vertex -> second.lowerbound() << std::endl;
+                    std::cout << "  upperbound after update: " << vertex -> second.upperbound() << std::endl;
+                }
                 this -> root = vertex -> second.identifier();
                 this -> translator = vertex -> second.order();
                 global_update = update_root(vertex -> second.lowerbound(), vertex -> second.upperbound());
@@ -43,7 +55,7 @@ bool Optimizer::dispatch(Message const & message, unsigned int id) {
             }
 
             if (message.scope >= vertex -> second.upperscope()) {
-                vertex -> second.send_explorers(message.scope, id);
+                vertex -> second.send_explorers(message.scope, id, this->state);
             }
 
             break;
@@ -90,24 +102,24 @@ bool Optimizer::dispatch(Message const & message, unsigned int id) {
 
 bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int id) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= this->state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(this->state.locals.size()));
     }
     float lower = task.base_objective(), upper = task.base_objective();
     int optimal_feature = -1;
-    auto bounds = State::graph.bounds.find(task.identifier());
-    if (bounds == State::graph.bounds.end()) { return task.update(lower, upper, optimal_feature); }
+    auto bounds = this->state.graph.bounds.find(task.identifier());
+    if (bounds == this->state.graph.bounds.end()) { return task.update(lower, upper, optimal_feature); }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
         int feature = std::get<0>(* iterator);
 
         if (signals.get(feature)) { // An update is pending
             bool ready = true;
             for (int k = 0; k < 2; ++k) {
-                auto key = State::graph.children.find(std::make_pair(task.identifier(), k ?  -(feature + 1) : (feature + 1)));
-                if (key != State::graph.children.end()) {
-                    auto child = State::graph.vertices.find(key -> second);
-                    if (child != State::graph.vertices.end()) {
-                        State::locals[id].neighbourhood[2 * feature + k] = child -> second;
+                auto key = this->state.graph.children.find(std::make_pair(task.identifier(), k ?  -(feature + 1) : (feature + 1)));
+                if (key != this->state.graph.children.end()) {
+                    auto child = this->state.graph.vertices.find(key -> second);
+                    if (child != this->state.graph.vertices.end()) {
+                        this->state.locals[id].neighbourhood[2 * feature + k] = child -> second;
                         ready = ready && true;
                     } else {
                         ready = false;
@@ -119,8 +131,8 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
 
             if (ready) {
                 float split_lower, split_upper;
-                Task const & left = State::locals[id].neighbourhood[2 * feature];
-                Task const & right = State::locals[id].neighbourhood[2 * feature + 1];
+                Task const & left = this->state.locals[id].neighbourhood[2 * feature];
+                Task const & right = this->state.locals[id].neighbourhood[2 * feature + 1];
 
                 if (Configuration::rule_list) {
                     float lower_negative = left.lowerbound() + right.base_objective();
@@ -150,7 +162,7 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
                 j_upper = std::get<2>(*iterator);
                 ++iterator;
 
-                float distance = State::dataset.distance(task.capture_set(), i, j, id);
+                float distance = this->state.dataset.distance(task.capture_set(), i, j, id, this->state);
                 std::get<1>(* iterator) = std::max(std::get<1>(* iterator), j_lower - distance);
                 std::get<2>(* iterator) = std::min(std::get<2>(* iterator), j_upper + distance);
             }
@@ -162,11 +174,11 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
                 ++iterator;
                 if (iterator != bounds -> second.end()) {
                     j = std::get<0>(*iterator);
-                    j_lower = std::get<1>(*iterator);
-                    j_upper = std::get<2>(*iterator);
+                    j_lower = std::get<1>(* iterator);
+                    j_upper = std::get<2>(* iterator);
                     --iterator;
 
-                    float distance = State::dataset.distance(task.capture_set(), i, j, id);
+                    float distance = this->state.dataset.distance(task.capture_set(), i, j, id, this->state);
                     std::get<1>(* iterator) = std::max(std::get<1>(* iterator), j_lower - distance);
                     std::get<2>(* iterator) = std::min(std::get<2>(* iterator), j_upper + distance);
                 } else {
@@ -189,23 +201,27 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
 }
 
 bool Optimizer::load_parents(Tile const & identifier, adjacency_accessor & parents) {
-    parents = State::graph.edges.find(identifier);
-    return parents != State::graph.edges.end();
+    parents = this->state.graph.edges.find(identifier);
+    return parents != this->state.graph.edges.end();
 }
 
 bool Optimizer::load_self(Tile const & identifier, vertex_accessor & self) {
-    self = State::graph.vertices.find(identifier);
-    return self != State::graph.vertices.end();
+    self = this->state.graph.vertices.find(identifier);
+    return self != this->state.graph.vertices.end();
 }
 
 bool Optimizer::store_self(Tile const & identifier, Task const & value, vertex_accessor & self) {
-    auto result = State::graph.vertices.insert(std::make_pair(identifier, value));
+    auto result = this->state.graph.vertices.insert(std::make_pair(identifier, value));
     self = result.first;
     return result.second;
 }
 
 void Optimizer::store_children(Task & task, unsigned int id) {
-    auto bounds_result = State::graph.bounds.insert(std::make_pair(task.identifier(), bound_list()));
+    // Bounds check to prevent segfault
+    if (id >= this->state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(this->state.locals.size()));
+    }
+    auto bounds_result = this->state.graph.bounds.insert(std::make_pair(task.identifier(), bound_list()));
     if (!bounds_result.second) { return; }
     auto bounds = bounds_result.first;
     int optimal_feature = -1;
@@ -216,16 +232,16 @@ void Optimizer::store_children(Task & task, unsigned int id) {
 
             if (Configuration::feature_transform == false) {
                 for (int sign = -1; sign <= 1; sign += 2) {
-                    key_type child_key(State::locals[id].neighbourhood[2 * j + (sign < 0 ? 0 : 1)].capture_set(), 0);
-                    auto child = State::graph.vertices.find(child_key);
-                    if (child != State::graph.vertices.end()) {
-                        State::locals[id].neighbourhood[2 * j + (sign < 0 ? 0 : 1)] = child -> second;
+                    key_type child_key(this->state.locals[id].neighbourhood[2 * j + (sign < 0 ? 0 : 1)].capture_set(), 0);
+                    auto child = this->state.graph.vertices.find(child_key);
+                    if (child != this->state.graph.vertices.end()) {
+                        this->state.locals[id].neighbourhood[2 * j + (sign < 0 ? 0 : 1)] = child -> second;
                     }
                 }
             }
 
-            Task & left = State::locals[id].neighbourhood[2 * j];
-            Task & right = State::locals[id].neighbourhood[2 * j + 1];
+            Task & left = this->state.locals[id].neighbourhood[2 * j];
+            Task & right = this->state.locals[id].neighbourhood[2 * j + 1];
 
             float split_lower, split_upper;
             if (Configuration::rule_list) {
@@ -254,12 +270,12 @@ void Optimizer::link_to_parent(Tile const & parent, Bitmask const & features, Bi
     for (int j_begin = 0, j_end = 0; features.scan_range(true, j_begin, j_end); j_begin = j_end) {
         for (int j = j_begin; j < j_end; ++j) {
             int feature = (signs.get(j) ? 1 : -1) * (j + 1);
-            State::graph.translations.insert(std::make_pair(std::make_pair(parent, feature), order)); // insert translation
-            State::graph.children.insert(std::make_pair(std::make_pair(parent, feature), self)); // insert forward look-up entry
-            auto edge_result = State::graph.edges.insert(std::make_pair(self, adjacency_set()));
+            this->state.graph.translations.insert(std::make_pair(std::make_pair(parent, feature), order)); // insert translation
+            this->state.graph.children.insert(std::make_pair(std::make_pair(parent, feature), self)); // insert forward look-up entry
+            auto edge_result = this->state.graph.edges.insert(std::make_pair(self, adjacency_set()));
             parents = edge_result.first; // insert backward look-up entry
             std::pair<adjacency_iterator, bool> insertion = parents -> second.insert(
-                std::make_pair(parent, std::make_pair(Bitmask(State::dataset.width(), false), scope)));
+                std::make_pair(parent, std::make_pair(Bitmask(this->state.dataset.width(), false), scope)));
             insertion.first -> second.first.set(j, true);
             insertion.first -> second.second = std::min(insertion.first -> second.second, scope);
         }
@@ -268,19 +284,25 @@ void Optimizer::link_to_parent(Tile const & parent, Bitmask const & features, Bi
 
 void Optimizer::signal_exploiters(adjacency_accessor & parents, Task & self, unsigned int id) {
     // Bounds check to prevent segfault
-    if (id >= State::locals.size()) {
-        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(State::locals.size()));
+    if (id >= this->state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(this->state.locals.size()));
     }
     if (self.uncertainty() != 0 && self.lowerbound() < self.lowerscope() - std::numeric_limits<float>::epsilon()) { return; }
     for (adjacency_iterator iterator = parents -> second.begin(); iterator != parents -> second.end(); ++iterator) {
         if (iterator -> second.first.count() == 0) { continue; }
         if (self.lowerbound() < iterator -> second.second - std::numeric_limits<float>::epsilon() && self.uncertainty() > 0) { continue; }
-        State::locals[id].outbound_message.exploitation(
+        // Priority calculation: for log_loss, use support (prioritize higher support)
+        // For misclassification loss, use support - lowerbound (prioritize higher support with lower bounds)
+        // Note: For log_loss, lowerbound can be large (entropy * n_points + regularization), so we use support alone
+        float priority = (Configuration::loss_function == LOG_LOSS) 
+            ? self.support() 
+            : (self.support() - self.lowerbound());
+        this->state.locals[id].outbound_message.exploitation(
             self.identifier(), // sender tile
             iterator -> first, // recipient tile
             iterator -> second.first, // recipient features
-            self.support() - self.lowerbound()); // priority
-        State::queue.push(State::locals[id].outbound_message);
+            priority); // priority
+        this->state.queue.push(this->state.locals[id].outbound_message);
         // iterator -> second.first.clear(); // reset the dependencies so we don't repeat exploits
     }
 }

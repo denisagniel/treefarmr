@@ -20,8 +20,8 @@ void Optimizer::diagnostic_trace(int iteration, key_type const & focal_point) {
     return;
 }
 bool Optimizer::diagnostic_trace(key_type const & identifier, json & tracer, key_type const & focal_point) {
-    auto task_accessor = State::graph.vertices.find(identifier);
-    if (task_accessor == State::graph.vertices.end()) { return false; }
+    auto task_accessor = this->state.graph.vertices.find(identifier);
+    if (task_accessor == this->state.graph.vertices.end()) { return false; }
     Task & task = task_accessor -> second;
 
     json node = json::object();
@@ -34,13 +34,13 @@ bool Optimizer::diagnostic_trace(key_type const & identifier, json & tracer, key
     node["focused"] = (task.identifier() == focal_point);
     tracer["nodes"].push_back(node);
 
-    auto bounds = State::graph.bounds.find(task.identifier());
-    if (bounds == State::graph.bounds.end()) { return true; }
+    auto bounds = this->state.graph.bounds.find(task.identifier());
+    if (bounds == this->state.graph.bounds.end()) { return true; }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
         int feature = std::get<0>(* iterator);
 
-        auto left_key = State::graph.children.find(std::make_pair(identifier, -(feature + 1)));
-        if (left_key != State::graph.children.end()) {
+        auto left_key = this->state.graph.children.find(std::make_pair(identifier, -(feature + 1)));
+        if (left_key != this->state.graph.children.end()) {
             json link = json::object();
             link["source"] = identifier.to_string();
             link["target"] = left_key -> second.to_string();
@@ -49,8 +49,8 @@ bool Optimizer::diagnostic_trace(key_type const & identifier, json & tracer, key
             tracer["links"].push_back(link);
             diagnostic_trace(left_key -> second, tracer, focal_point);
         }
-        auto right_key = State::graph.children.find(std::make_pair(identifier, feature + 1));
-        if (right_key != State::graph.children.end()) {
+        auto right_key = this->state.graph.children.find(std::make_pair(identifier, feature + 1));
+        if (right_key != this->state.graph.children.end()) {
             json link = json::object();
             link["source"] = identifier.to_string();
             link["target"] = right_key -> second.to_string();

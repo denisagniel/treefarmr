@@ -4,10 +4,10 @@
 #' Analysis and visualization functions for Rashomon sets and cross-fitted results.
 #' Provides diagnostic tools for understanding model stability and tree characteristics.
 
-# Load required packages
-if (!requireNamespace("ggplot2", quietly = TRUE)) {
-  stop("Package 'ggplot2' is required for Rashomon analysis. Install with: install.packages('ggplot2')")
-}
+# Load required packages (checked at runtime within functions that need them)
+# if (!requireNamespace("ggplot2", quietly = TRUE)) {
+#   stop("Package 'ggplot2' is required for Rashomon analysis. Install with: install.packages('ggplot2')")
+# }
 
 #' Plot Rashomon Set Sizes
 #'
@@ -228,7 +228,7 @@ get_tree_rules <- function(tree_json, feature_names = NULL) {
     # Internal node
     feature_idx <- node$feature
     feature_name <- if (!is.null(feature_names) && feature_idx < length(feature_names)) {
-      feature_names[feature_idx + 1]  # Python uses 0-based indexing
+      feature_names[feature_idx + 1]  # Feature index is 0-based in JSON, convert to 1-based for R
     } else {
       paste0("feature_", feature_idx)
     }

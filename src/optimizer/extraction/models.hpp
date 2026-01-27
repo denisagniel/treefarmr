@@ -25,9 +25,21 @@ void Optimizer::models(std::unordered_set< Model > & results) {
          Model * model = new Model(**iterator);
          count++;
         
+        // Print readable summary
+        float model_objective = (**iterator).loss() + (**iterator).complexity();
+        std::cout << "Model " << count << " (Objective: " << std::fixed << std::setprecision(3) << model_objective;
+        std::cout << " = Loss: " << std::fixed << std::setprecision(3) << (**iterator).loss();
+        std::cout << " + Complexity: " << std::fixed << std::setprecision(3) << (**iterator).complexity() << ")" << std::endl;
+        (**iterator).print_readable(std::cout, 0);
+        std::cout << std::endl;
+        
         std::string serialization;
-        (**iterator).serialize(serialization, 2);
+                    (**iterator).serialize(serialization, 2, this->state);
+        #ifdef USING_RCPP
+        Rcpp::Rcout << serialization << std::endl;
+        #else
         std::cout << serialization << std::endl;
+        #endif
         results.insert(**iterator);
         delete model;
     }
@@ -48,8 +60,8 @@ void Optimizer::models(key_type const & identifier, std::unordered_set< std::sha
 }
 
 void Optimizer::models_inner(key_type const & identifier, std::unordered_set< std::shared_ptr<Model>, std::hash< std::shared_ptr<Model> >, std::equal_to< std::shared_ptr<Model> > > & results, float scope) {
-    auto task_accessor = State::graph.vertices.find(identifier);
-    if (task_accessor == State::graph.vertices.end()) { return; }
+    auto task_accessor = this->state.graph.vertices.find(identifier);
+    if (task_accessor == this->state.graph.vertices.end()) { return; }
     Task & task = task_accessor -> second;
     //std::cout << "Base Condition: " << task.base_objective() << " <= " << task.upperbound() << " = " << (int)(task.base_objective() <= task.upperbound()) << std::endl;
 
@@ -61,14 +73,14 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
         // std::shared_ptr<key_type> stump(new Tile(set));
         // Model stump_key(stump_set); // shallow variant
         // Model * stump_address = new Model(stump_set);
-        std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set()))));
+        std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set())), this->state));
         model -> identify(identifier);
         
         model -> translate_self(task.order());
         results.insert(model);
     }   
-    auto bounds = State::graph.bounds.find(identifier);
-    if (bounds == State::graph.bounds.end()) { return; }
+    auto bounds = this->state.graph.bounds.find(identifier);
+    if (bounds == this->state.graph.bounds.end()) { return; }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
 
         if (std::get<2>(* iterator) > task.upperbound() + std::numeric_limits<float>::epsilon()) { continue; }
@@ -80,17 +92,17 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
 
         float left_lowerbound = 0, right_lowerbound = 0;
 
-        auto left_key = State::graph.children.find(std::make_pair(identifier, -(feature + 1)));
-        bool left_has_key = (left_key != State::graph.children.end());
-        auto left_child = left_has_key ? State::graph.vertices.find(left_key->second) : State::graph.vertices.end();
-        bool left_has_child = (left_child != State::graph.vertices.end());
+        auto left_key = this->state.graph.children.find(std::make_pair(identifier, -(feature + 1)));
+        bool left_has_key = (left_key != this->state.graph.children.end());
+        auto left_child = left_has_key ? this->state.graph.vertices.find(left_key->second) : this->state.graph.vertices.end();
+        bool left_has_child = (left_child != this->state.graph.vertices.end());
         if (left_has_child) {
             left_lowerbound = left_child->second.lowerbound();
         } else if (!left_has_key) {
             Bitmask subset(task.capture_set());
-            State::dataset.subset(feature, false, subset);
+            this->state.dataset.subset(feature, false, subset);
             unsigned int count = subset.count();
-            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset))));
+            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
             float leaf_objective = model->loss() + model->complexity();
             left_lowerbound = leaf_objective;
             negatives.insert(model);
@@ -98,17 +110,17 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
             continue;
         }
 
-        auto right_key = State::graph.children.find(std::make_pair(identifier, feature + 1));
-        bool right_has_key = (right_key != State::graph.children.end());
-        auto right_child = right_has_key ? State::graph.vertices.find(right_key->second) : State::graph.vertices.end();
-        bool right_has_child = (right_child != State::graph.vertices.end());
+        auto right_key = this->state.graph.children.find(std::make_pair(identifier, feature + 1));
+        bool right_has_key = (right_key != this->state.graph.children.end());
+        auto right_child = right_has_key ? this->state.graph.vertices.find(right_key->second) : this->state.graph.vertices.end();
+        bool right_has_child = (right_child != this->state.graph.vertices.end());
         if (right_has_child) {
             right_lowerbound = right_child->second.lowerbound();
         } else if (!right_has_key) {
             Bitmask subset(task.capture_set());
-            State::dataset.subset(feature, true, subset);
+            this->state.dataset.subset(feature, true, subset);
             unsigned int count = subset.count();
-            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset))));
+            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
             float leaf_objective = model->loss() + model->complexity();
             right_lowerbound = leaf_objective;
             positives.insert(model);
@@ -143,18 +155,18 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
                     
                     std::shared_ptr<Model> negative(* negative_it);
                     std::shared_ptr<Model> positive(* positive_it);
-                    std::shared_ptr<Model> model(new Model(feature, negative, positive));
+                    std::shared_ptr<Model> model(new Model(feature, negative, positive, this->state));
                     model -> identify(identifier);
                     model -> translate_self(task.order());
                     if ((** negative_it).identified()) {
-                        auto negative_translation = State::graph.translations.find(std::make_pair(identifier, -(feature + 1)));
-                        if (negative_translation != State::graph.translations.end()) {
+                        auto negative_translation = this->state.graph.translations.find(std::make_pair(identifier, -(feature + 1)));
+                        if (negative_translation != this->state.graph.translations.end()) {
                             model -> translate_negatives(negative_translation -> second);
                         }
                     }
                     if ((** positive_it).identified()) {
-                        auto positive_translation = State::graph.translations.find(std::make_pair(identifier, feature + 1));
-                        if (positive_translation != State::graph.translations.end()) {
+                        auto positive_translation = this->state.graph.translations.find(std::make_pair(identifier, feature + 1));
+                        if (positive_translation != this->state.graph.translations.end()) {
                             model -> translate_positives(positive_translation -> second);
                         }
                     }

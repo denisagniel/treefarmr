@@ -3,16 +3,49 @@
 # Set C++ standard
 CXX_STD = CXX11
 
-# Get RcppParallel flags
-PKG_CPPFLAGS = -I../inst/include -Wall -Wextra $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::CxxFlags()")
+# Compiler flags
+PKG_CPPFLAGS = -I../inst/include -Wall -Wextra
+# CRITICAL FIX: Prevent Rcpp global stream initialization during static init
+# This prevents installation hangs by ensuring Rcpp never generates static initializers
+# for Rcpp::Rcout and Rcpp::Rcerr
+PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
+# Enable sanitizers for debugging (comment out for production)
+# AddressSanitizer: detects memory errors (use-after-free, buffer overflow, etc.)
+# UndefinedBehaviorSanitizer: detects undefined behavior
+# LeakSanitizer: included with AddressSanitizer
+# 
+# To enable ASan for debugging, uncomment the following lines:
+# PKG_CXXFLAGS = -Wall -Wextra -fsanitize=address -fno-omit-frame-pointer -g -O0
+# PKG_LIBS = -lpthread -lgmp -fsanitize=address
+#
+# Or use the test script: tests/run_with_asan.sh (recommended - sets flags via environment)
 PKG_CXXFLAGS = -Wall -Wextra
 
-# Link against required libraries (RcppParallel provides TBB)
-PKG_LIBS = -lpthread -lgmp $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::LdFlags()")
+# Link against required libraries
+# Enable sanitizer linking (comment out for production)
+# PKG_LIBS = -lpthread -lgmp -fsanitize=address,undefined
+PKG_LIBS = -lpthread -lgmp
 
-# Include directories
-PKG_CPPFLAGS += -I../inst/include
+# CRITICAL FIX: Explicitly exclude RcppParallel/TBB libraries
+# R's build system may auto-link RcppParallel when Rcpp is in LinkingTo,
+# but we don't use TBB (removed in favor of std::unordered_map with mutex).
+# Filter out TBB libraries to prevent unnecessary linking.
+PKG_LIBS := $(filter-out -ltbb -ltbbmalloc,$(PKG_LIBS))
+
+# Add GMP paths for Homebrew installations on macOS
+ifeq ($(shell uname),Darwin)
+  ifneq ($(wildcard /opt/homebrew/include/gmp.h),)
+    PKG_CPPFLAGS += -I/opt/homebrew/include
+    PKG_LIBS += -L/opt/homebrew/lib
+  else ifneq ($(wildcard /usr/local/include/gmp.h),)
+    PKG_CPPFLAGS += -I/usr/local/include
+    PKG_LIBS += -L/usr/local/lib
+  endif
+endif
 
 # Remove main.cpp from compilation (it's for CLI, not library)
 SOURCES = $(wildcard *.cpp)
 SOURCES := $(filter-out main.cpp, $(SOURCES))
+
+# Build shared library
+all: $(SHLIB)

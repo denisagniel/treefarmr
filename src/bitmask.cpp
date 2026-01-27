@@ -1,6 +1,23 @@
 #include "bitmask.hpp"
 #include <cmath>
 #include <cstring>
+#include <cstdio>
+
+// REMOVED: __attribute__((constructor)) functions cause installation hangs
+// These functions run during static initialization (before R_init_treefarmr())
+// and perform file I/O, which can deadlock during R's lazy loading database creation.
+// The original treeFarms codebase does not have these constructor functions.
+// If debugging is needed, use checkpoints in R_init_treefarmr() or .onLoad() instead.
+// static void __attribute__((constructor)) before_bitmask_static_init() {
+//     fprintf(stderr, "[TREEFARMR_CHECKPOINT] BEFORE bitmask.cpp static initialization\n");
+//     fflush(stderr);
+//     FILE* f = fopen("/tmp/treefarmr_load.log", "a");
+//     if (f) {
+//         fprintf(f, "[CHECKPOINT] BEFORE bitmask.cpp static initialization\n");
+//         fflush(f);
+//         fclose(f);
+//     }
+// }
 
 // ********************************
 // ** Function Module Definition **
@@ -20,6 +37,18 @@ const bitblock Bitmask::bits_per_range = log2((double)(8 * sizeof(rangeblock)));
 std::allocator< bitblock > Bitmask::allocator = std::allocator< bitblock >();
 bool Bitmask::integrity_check = true;
 bool Bitmask::precomputed = false;
+
+// REMOVED: __attribute__((constructor)) functions cause installation hangs
+// static void __attribute__((constructor)) after_bitmask_static_init() {
+//     fprintf(stderr, "[TREEFARMR_CHECKPOINT] AFTER bitmask.cpp static initialization\n");
+//     fflush(stderr);
+//     FILE* f = fopen("/tmp/treefarmr_load.log", "a");
+//     if (f) {
+//         fprintf(f, "[CHECKPOINT] AFTER bitmask.cpp static initialization\n");
+//         fflush(f);
+//         fclose(f);
+//     }
+// }
 
 // @param blocks: the blocks containing bits
 // @param size: the number of bits which are represented in blocks

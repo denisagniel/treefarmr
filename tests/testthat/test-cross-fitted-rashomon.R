@@ -362,3 +362,82 @@ test_that("cross_fitted_rashomon fold models structure", {
     expect_true(inherits(result$fold_models[[i]], "treefarms_model"))
   }
 })
+
+test_that("cross_fitted_rashomon with single_tree=TRUE works", {
+  # Test with single_tree = TRUE (exactly one tree per fold)
+  result <- cross_fitted_rashomon(pattern_data$X, pattern_data$y, 
+                                 K = 3,
+                                 loss_function = "misclassification", 
+                                 regularization = 0.01,
+                                 single_tree = TRUE,
+                                 verbose = FALSE)
+  
+  # Check that all folds have exactly 1 tree
+  for (k in 1:result$K) {
+    fold_model <- result$fold_models[[k]]
+    expect_equal(fold_model$n_trees, 1, 
+                 info = paste("Fold", k, "should have exactly 1 tree"))
+    
+    trees <- get_rashomon_trees(fold_model)
+    expect_equal(length(trees), 1,
+                 info = paste("Fold", k, "should have exactly 1 tree in rashomon set"))
+  }
+  
+  # Rashomon sizes should all be 1
+  expect_true(all(result$rashomon_sizes == 1))
+})
+
+test_that("cross_fitted_rashomon with single_tree=FALSE works", {
+  # Test with single_tree = FALSE (rashomon sets per fold)
+  result <- cross_fitted_rashomon(pattern_data$X, pattern_data$y, 
+                                 K = 3,
+                                 loss_function = "misclassification", 
+                                 regularization = 0.01,
+                                 rashomon_bound_multiplier = 0.05,
+                                 single_tree = FALSE,
+                                 verbose = FALSE)
+  
+  # Check that all folds have at least 1 tree
+  for (k in 1:result$K) {
+    fold_model <- result$fold_models[[k]]
+    expect_true(fold_model$n_trees >= 1,
+                info = paste("Fold", k, "should have at least 1 tree"))
+    
+    trees <- get_rashomon_trees(fold_model)
+    expect_true(length(trees) >= 1,
+                info = paste("Fold", k, "should have at least 1 tree in rashomon set"))
+    
+    # Number of trees should match
+    expect_equal(fold_model$n_trees, length(trees),
+                 info = paste("Fold", k, "n_trees should match rashomon set size"))
+  }
+  
+  # Rashomon sizes should all be >= 1
+  expect_true(all(result$rashomon_sizes >= 1))
+})
+
+test_that("cross_fitted_rashomon single_tree parameter defaults correctly", {
+  # Test default behavior (single_tree = FALSE)
+  result_default <- cross_fitted_rashomon(pattern_data$X, pattern_data$y, 
+                                         K = 3,
+                                         loss_function = "misclassification", 
+                                         regularization = 0.01,
+                                         rashomon_bound_multiplier = 0.05,
+                                         verbose = FALSE)
+  
+  # Should allow rashomon sets (may have multiple trees)
+  expect_true(all(result_default$rashomon_sizes >= 1))
+  
+  # Compare with explicit single_tree = FALSE
+  result_explicit <- cross_fitted_rashomon(pattern_data$X, pattern_data$y, 
+                                           K = 3,
+                                           loss_function = "misclassification", 
+                                           regularization = 0.01,
+                                           rashomon_bound_multiplier = 0.05,
+                                           single_tree = FALSE,
+                                           verbose = FALSE)
+  
+  # Both should have same structure
+  expect_equal(result_default$K, result_explicit$K)
+  expect_equal(length(result_default$fold_models), length(result_explicit$fold_models))
+})

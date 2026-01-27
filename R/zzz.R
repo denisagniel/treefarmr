@@ -2,6 +2,11 @@
 #'
 #' @description
 #' Package initialization hooks for treefarms package
+#'
+#' @import Rcpp
+#' @import jsonlite
+#' @useDynLib treefarmr, .registration = TRUE
+NULL
 
 #' Package onLoad hook
 #'
@@ -10,31 +15,26 @@
 #'
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
-  # Set package options
+  # CHECKPOINT: Entry to .onLoad()
+  tryCatch({
+    log_file <- file("/tmp/treefarmr_load.log", "a")
+    cat("[CHECKPOINT] .onLoad() ENTRY\n", file = log_file)
+    close(log_file)
+  }, error = function(e) {})
+  
+  # Set package options (minimal, safe operations only)
   options(
     treefarms.verbose = FALSE,
     treefarms.default_regularization = 0.1,
     treefarms.default_rashomon_bound_multiplier = 0.05
   )
   
-  # Initialize RcppParallel for proper TBB initialization
-  if (requireNamespace("RcppParallel", quietly = TRUE)) {
-    RcppParallel::setThreadOptions(numThreads = "auto")
-  }
-  
-  # Check for required packages
-  required_packages <- c("Rcpp", "jsonlite", "RcppParallel")
-  missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
-  
-  if (length(missing_packages) > 0) {
-    packageStartupMessage(
-      "Warning: The following required packages are not installed: ",
-      paste(missing_packages, collapse = ", "),
-      "\nPlease install them with: install.packages(c('",
-      paste(missing_packages, collapse = "', '"),
-      "'))"
-    )
-  }
+  # CHECKPOINT: Before exit from .onLoad()
+  tryCatch({
+    log_file <- file("/tmp/treefarmr_load.log", "a")
+    cat("[CHECKPOINT] .onLoad() EXIT\n", file = log_file)
+    close(log_file)
+  }, error = function(e) {})
   
   invisible()
 }
@@ -46,14 +46,27 @@
 #'
 #' @keywords internal
 .onAttach <- function(libname, pkgname) {
+  # CHECKPOINT: Entry to .onAttach()
+  tryCatch({
+    log_file <- file("/tmp/treefarmr_load.log", "a")
+    cat("[CHECKPOINT] .onAttach() ENTRY\n", file = log_file)
+    close(log_file)
+  }, error = function(e) {})
+  
   packageStartupMessage(
     "TreeFARMS R Package v", 
     utils::packageVersion(pkgname),
     "\n",
     "Tree-based Fast and Accurate Rule Set Models with Log-Loss and Probabilities\n",
-    "Using RcppParallel for thread-safe parallel execution\n",
     "For help, see: help(package = '", pkgname, "')"
   )
+  
+  # CHECKPOINT: Exit from .onAttach()
+  tryCatch({
+    log_file <- file("/tmp/treefarmr_load.log", "a")
+    cat("[CHECKPOINT] .onAttach() EXIT\n", file = log_file)
+    close(log_file)
+  }, error = function(e) {})
   
   invisible()
 }
@@ -64,15 +77,11 @@
 #'
 #' @keywords internal
 .onUnload <- function(libpath) {
-  # CRITICAL: Clean up C++ static state BEFORE RcppParallel shuts down TBB
-  tryCatch({
-    .Call("_treefarms_cleanup_static_state")
-  }, error = function(e) {
-    # Ignore if already cleaned or if function doesn't exist yet
-  })
+  # Note: State is now instance-based, not static, so no cleanup needed
+  # Each Optimizer instance manages its own State, which is cleaned up automatically
   
-  # Clean up any temporary files
-  temp_files <- list.files(tempdir(), pattern = "^temp_.*\\.(csv|json)$", full.names = TRUE)
+  # Clean up any temporary files (from both direct calls and subprocess calls)
+  temp_files <- list.files(tempdir(), pattern = "^(temp_|treefarms_).*\\.(csv|json|txt)$", full.names = TRUE)
   if (length(temp_files) > 0) {
     tryCatch({
       unlink(temp_files)

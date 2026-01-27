@@ -6,8 +6,8 @@ void Optimizer::diagnose_non_convergence(void) {
 bool Optimizer::diagnose_non_convergence(key_type const & key) {
     if (Configuration::diagnostics == false) { return false; }
 
-    auto task = State::graph.vertices.find(key);
-    if (task == State::graph.vertices.end()) {
+    auto task = this->state.graph.vertices.find(key);
+    if (task == this->state.graph.vertices.end()) {
         std::cout << "Missing a downward call:" << std::endl;
         std::cout << key.to_string() << std::endl;
         return true;
@@ -20,17 +20,17 @@ bool Optimizer::diagnose_non_convergence(key_type const & key) {
     std::cout << task -> second.inspect() << std::endl;
 
     unsigned int reasons = 0;
-    auto bounds = State::graph.bounds.find(task -> second.identifier());
-    if (bounds == State::graph.bounds.end()) { return false; }
+    auto bounds = this->state.graph.bounds.find(task -> second.identifier());
+    if (bounds == this->state.graph.bounds.end()) { return false; }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
         int feature = std::get<0>(* iterator);
         bool ready;
         float lower = 0.0, upper = 0.0;
         for (int sign = -1; sign <= 1; sign += 2) {
-            auto key = State::graph.children.find(std::make_pair(task -> second.identifier(), sign * (feature + 1)));
-            if (key != State::graph.children.end()) {
-                auto child = State::graph.vertices.find(key -> second);
-                ready = ready && (child != State::graph.vertices.end());
+            auto key = this->state.graph.children.find(std::make_pair(task -> second.identifier(), sign * (feature + 1)));
+            if (key != this->state.graph.children.end()) {
+                auto child = this->state.graph.vertices.find(key -> second);
+                ready = ready && (child != this->state.graph.vertices.end());
                 if (ready) {
                     lower += child -> second.lowerbound();
                     upper += child -> second.upperbound();
@@ -62,11 +62,11 @@ bool Optimizer::diagnose_non_convergence(key_type const & key) {
         
         {
             bool found = false;
-            auto key = State::graph.children.find(std::make_pair(task -> second.identifier(), -(feature + 1)));
-            if (key != State::graph.children.end()) {
+            auto key = this->state.graph.children.find(std::make_pair(task -> second.identifier(), -(feature + 1)));
+            if (key != this->state.graph.children.end()) {
                 float uncertainty = 0.0;
-                auto subtask = State::graph.vertices.find(key -> second);
-                if (subtask != State::graph.vertices.end()) {
+                auto subtask = this->state.graph.vertices.find(key -> second);
+                if (subtask != this->state.graph.vertices.end()) {
                     found  = true;
                     
                     if (task -> second.identifier().to_string() == "55 : 0000001101001001010111010111010111110010010101001101100000000100100100101001101011101011111001001010100110110011110011010110011101010101111101011100100100011011010011000101101000001010101010111010101110010010001101101001111111111111111111111101111111011111101101000111111100111111111010110111101110111110101111100100101011011010011111111111111111111111111111111111111111010100111111001111111111111111111111111111111111110111100010011111100111111111111111111101110101111101011110100100011011010011111011111111101111111110111110101111010010001101101001111111111111111111111111011111111111001001010100110100111111111111111111111111111110101111100100101010011010011111111111111111111010111110111011101111101100011111001111111111111111111110101011111010111101001000110110100111111111111111111111111111111111111110110111010010010011111111011111111111011111111111111101111101110011011001111111111111111111111111111011101110111110110001111100111111111111111111111111111111111111100100101011011010011111110010111110111010111110111011101111101110010110001111111111111010111010101011101010111001001000110110100111111111111111111111111111111111111111111111110111100011111111111111111111111111111110111110010010001101101001111111111111111111111111111011101110111110011011111000111111111111111111111111101111111111111111100111101100011100111111101111010111011111010101110010011001101101001111111111111111111111111111111111111111111111111011000111111111111111111111111111111111111111111111111110010011111111110111110111010111110111011001101101110010010001111111111111111111111111111101110111001001000110110100111111111111111111111111111111110111011111010101110100011111111111111111111010111110111011101111101110010010001111111111111011101110101111101010111001001000110110100111111111111111111111111111111111111101101100111011010011111111111111110111110111110111011101101101010110110001111111111111111111111111111101111111011011111100100100111111111111111110111011101110111011101101100011011010011111111111111111111111101101111111011101101010110010010111111111111111111111111101110111011110111111101000001011111111111111111111111110111011100111011111110100100101111111111110111111101111111111101011101101010110010001111111111111111111111111101110111011110111101011001001011111101101111101011101011001110100011011011100100100101111111111101111011111111111011111110110111111001001001111111111111111110101110100110111000110110111001001001011111111111111111111111110111011000111011010101100100101111111011111111111011111011101110111101111111000000001111111111111111110111110100110111001110110111011001001011111100101111101010101010001010100011011011100100100101111111111111111111110111100101010001101101110010010001111111111111111110111110100110101000110110111001001001011111101101111101011101010001010100011011011101100100101111111111111111101101101101111101011101111011110110010111111111111111111111110110111110001110111101111000000111111111111111111111111010011011100111011111110000000101111111111110111101100101000101000001101101010110010010") {
@@ -86,11 +86,11 @@ bool Optimizer::diagnose_non_convergence(key_type const & key) {
         }
         {
             bool found = false;
-            auto key = State::graph.children.find(std::make_pair(task -> second.identifier(), (feature + 1)));
-            if (key != State::graph.children.end()) {
+            auto key = this->state.graph.children.find(std::make_pair(task -> second.identifier(), (feature + 1)));
+            if (key != this->state.graph.children.end()) {
                 float uncertainty = 0.0;
-                auto subtask = State::graph.vertices.find(key -> second);
-                if (subtask != State::graph.vertices.end()) {
+                auto subtask = this->state.graph.vertices.find(key -> second);
+                if (subtask != this->state.graph.vertices.end()) {
                     found  = true;
                     std::cout << "Right Bounds: [" << subtask -> second.lowerbound() << ", " << subtask -> second.upperbound() << "], Right Scope: [" << subtask -> second.lowerscope() << ", " << subtask -> second.upperscope() << "]" << std::endl;
                     uncertainty = subtask -> second.uncertainty();
