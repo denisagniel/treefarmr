@@ -1,7 +1,7 @@
 # TreeFARMR
 
-[![R-CMD-check](https://github.com/your-org/treefarmr/workflows/R-CMD-check/badge.svg)](https://github.com/your-org/treefarmr/actions)
-[![Coverage](https://codecov.io/gh/your-org/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/your-org/treefarmr)
+[![R-CMD-check](https://github.com/denisagniel/treefarmr/workflows/R-CMD-check/badge.svg)](https://github.com/denisagniel/treefarmr/actions)
+[![Coverage](https://codecov.io/gh/denisagniel/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/denisagniel/treefarmr)
 [![CRAN](https://www.r-pkg.org/badges/version/treefarmr)](https://cran.r-project.org/package=treefarmr)
 
 R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models) with support for log-loss optimization and probability predictions. This package provides direct Rcpp bindings to the integrated C++ implementation, eliminating external dependencies for easier distribution and better performance.
@@ -34,12 +34,8 @@ install.packages(c("Rcpp", "jsonlite", "devtools"))
 ### Install TreeFARMR Package
 
 ```r
-# Install from source
-devtools::install("path/to/treefarmr")
-
-# Or if using roxygen2 for documentation
-devtools::document()
-devtools::install()
+# Install from GitHub
+devtools::install_github("denisagniel/treefarmr")
 ```
 
 ## Quick Start
@@ -115,13 +111,7 @@ model_auto <- treefarms(X, y, regularization = NULL)
 model_auto <- treefarms(X, y, regularization = NULL, target_trees = 3, max_trees = 5)
 ```
 
-### 3. Parallel Execution
-```r
-# Use multiple threads for faster training
-model <- treefarms(X, y, worker_limit = 4, regularization = 0.1)
-```
-
-### 4. Single Tree vs Rashomon Set
+### 3. Single Tree vs Rashomon Set
 ```r
 # Fit exactly one tree (guaranteed n_trees = 1)
 model_single <- fit_tree(X, y, regularization = 0.1)
@@ -136,7 +126,7 @@ trees <- get_rashomon_trees(model_rashomon)
 cat("Found", length(trees), "trees in rashomon set\n")
 ```
 
-### 5. Cross-Fitted Rashomon Sets
+### 4. Cross-Fitted Rashomon Sets
 ```r
 # Cross-fitting with single tree per fold
 result_single <- cross_fitted_rashomon(X, y, K = 5, regularization = 0.1, single_tree = TRUE)
@@ -165,7 +155,7 @@ Fit exactly one optimal tree. This is the most common use case.
 - `y`: Vector of binary class labels (0/1)
 - `loss_function`: "misclassification" or "log_loss" (default: "misclassification")
 - `regularization`: Model complexity control (default: 0.1, NULL for auto-tuning)
-- `worker_limit`: Number of parallel workers (default: 1)
+- `worker_limit`: Number of workers (default: 1)
 - `verbose`: Print training progress (default: FALSE)
 
 **Returns:** List with model object, predictions, probabilities, accuracy, and metadata. Guaranteed `n_trees = 1`.
@@ -180,7 +170,7 @@ Fit a TreeFARMS model with a full rashomon set (multiple near-optimal trees).
 - `loss_function`: "misclassification" or "log_loss" (default: "misclassification")
 - `regularization`: Model complexity control (default: 0.1, NULL for auto-tuning)
 - `rashomon_bound_multiplier`: Rashomon set size control (default: 0.05, NULL for auto-tuning)
-- `worker_limit`: Number of parallel workers (default: 1)
+- `worker_limit`: Number of workers (default: 1)
 - `verbose`: Print training progress (default: FALSE)
 
 **Returns:** List with model object, predictions, probabilities, accuracy, and metadata. `n_trees >= 1` (number of trees in rashomon set).
@@ -197,7 +187,7 @@ Train a TreeFARMS model. Convenience wrapper that defaults to `single_tree = TRU
 - `rashomon_bound_multiplier`: Rashomon set parameter (default: 0.05, NULL for auto-tuning)
 - `target_trees`: Target number of trees for auto-tuning (default: 1)
 - `max_trees`: Maximum acceptable trees for auto-tuning (default: 5)
-- `worker_limit`: Number of parallel workers (default: 1)
+- `worker_limit`: Number of workers (default: 1)
 - `verbose`: Print training progress (default: FALSE)
 - `single_tree`: If TRUE, fit exactly one tree (default: TRUE)
 
@@ -273,6 +263,6 @@ If you use TreeFARMR in your research, please cite:
   title = {TreeFARMR: Tree-based Fast and Accurate Rule Set Models for R},
   author = {TreeFARMR Development Team},
   year = {2024},
-  url = {https://code.rand.org/personal-packages/treefarmr}
+  url = {https://github.com/denisagniel/treefarmr}
 }
 ```

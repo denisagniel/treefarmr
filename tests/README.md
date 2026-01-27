@@ -11,8 +11,7 @@ The test suite is organized into several categories:
 3. **Log-Loss Tests**: Log-loss specific functionality
 4. **Edge Case Tests**: Invalid inputs, extreme values, special cases
 5. **Stress Tests**: Large datasets, many features, repeated operations
-6. **Memory Tests**: Memory safety with ASan, Valgrind, and R-specific tools
-7. **Installation Tests**: Package loading and initialization
+6. **Installation Tests**: Package loading and initialization
 
 ## Running Tests
 
@@ -47,14 +46,7 @@ test_dir("tests/testthat", filter = "edge")
 
 # Stress tests
 test_dir("tests/testthat", filter = "stress")
-
-# Memory tests (R-specific)
-test_dir("tests/testthat", filter = "memory-r")
 ```
-
-### Memory Instrumentation Tests
-
-See [MEMORY_TESTING.md](MEMORY_TESTING.md) for detailed instructions on running memory instrumentation tests with ASan, Valgrind, and R-specific tools.
 
 ## Test Structure
 
@@ -66,11 +58,7 @@ tests/
 │   ├── test-logloss.R       # Log-loss specific tests
 │   ├── test-edge-cases.R   # Edge case tests
 │   ├── test-stress.R       # Stress tests
-│   ├── test-memory-*.R     # Memory safety tests
 │   └── test-installation.R # Installation/load tests
-├── run_with_asan.sh        # ASan test harness
-├── run_with_valgrind.sh    # Valgrind test harness
-├── run_memory_tests.R      # R memory test runner
 └── run_stress_tests.R      # Stress test runner
 ```
 
@@ -82,7 +70,6 @@ The test suite includes several helper functions:
 - `expect_valid_treefarms_model()`: Validate model structure
 - `expect_valid_probabilities()`: Validate probability outputs
 - `expect_logloss_bounds()`: Validate log-loss probability bounds
-- `run_with_memory_check()`: Run test with memory instrumentation
 - `create_probability_test_data()`: Generate test datasets
 
 See helper files in `testthat/` for details.
@@ -132,13 +119,6 @@ Test datasets are generated using helper functions in `helper-data.R`:
 - Multiple sequential fits
 - Long-running probability computations
 
-### Memory Safety
-
-- Memory leak detection
-- Buffer overrun detection
-- Use-after-free detection
-- Uninitialized memory detection
-
 ## Test Coverage
 
 See [TEST_COVERAGE.md](TEST_COVERAGE.md) for detailed coverage information.
@@ -147,7 +127,6 @@ See [TEST_COVERAGE.md](TEST_COVERAGE.md) for detailed coverage information.
 
 - [FUNCTION_MAPPING.md](FUNCTION_MAPPING.md): Complete function mapping
 - [TEST_SCENARIOS.md](TEST_SCENARIOS.md): Detailed test scenario design
-- [MEMORY_TESTING.md](MEMORY_TESTING.md): Memory instrumentation guide
 
 ## Reproducibility
 
@@ -158,12 +137,6 @@ All tests use fixed random seeds for reproducibility. Test data generators use `
 The test suite is designed to run in CI environments. Some stress tests are skipped on CRAN using `skip_on_cran()`.
 
 ## Troubleshooting
-
-### Tests Fail with Memory Errors
-
-- Run with memory instrumentation (ASan/Valgrind) to identify issues
-- Check for memory leaks in test output
-- Verify garbage collection is working
 
 ### Tests Timeout
 
