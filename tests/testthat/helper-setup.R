@@ -28,7 +28,7 @@ expect_valid_treefarms_model <- function(model, expected_loss_function = NULL) {
   # Check required fields (key must exist; probabilities may be NULL for regression)
   required_fields <- c("model", "predictions", "probabilities", "accuracy",
                        "loss_function", "regularization", "n_trees",
-                       "X_train", "y_train", "training_time", "training_iterations")
+                       "X_train", "training_time", "training_iterations")
 
   for (field in required_fields) {
     expect_true(field %in% names(model),
@@ -43,7 +43,8 @@ expect_valid_treefarms_model <- function(model, expected_loss_function = NULL) {
   expect_true(is.character(model$loss_function), info = "loss_function should be character")
   expect_true(is.numeric(model$regularization), info = "regularization should be numeric")
   expect_true(is.data.frame(model$X_train), info = "X_train should be data.frame")
-  expect_true(is.numeric(model$y_train), info = "y_train should be numeric")
+  expect_true(is.numeric(model$y_train) || is.null(model[["y_train"]]),
+              info = "y_train should be numeric or absent/NULL when training data not stored")
   expect_true(is.numeric(model$training_time), info = "training_time should be numeric")
   expect_true(is.numeric(model$training_iterations), info = "training_iterations should be numeric")
 
@@ -70,11 +71,12 @@ expect_valid_treefarms_model <- function(model, expected_loss_function = NULL) {
                  info = paste("Expected loss function:", expected_loss_function))
   }
 
-  # Predictions: numeric and length match when available (NULL allowed for classification when no stored data)
+  # Predictions: numeric and length match when available (use n_train for sample count)
+  n_train <- if (!is.null(model$n_train)) model$n_train else nrow(model$X_train)
   preds <- model$predictions
   if (!is.null(preds)) {
     expect_true(is.numeric(preds), info = "predictions should be numeric")
-    expect_equal(length(preds), nrow(model$X_train),
+    expect_equal(length(preds), n_train,
                  info = "predictions length should match training data rows")
   }
 
@@ -85,12 +87,12 @@ expect_valid_treefarms_model <- function(model, expected_loss_function = NULL) {
     probs <- model$probabilities
     if (is.null(probs)) {
       # Skip probability and binary-prediction checks when probabilities not available
-      if (!is.null(model$predictions) && length(model$predictions) == nrow(model$X_train)) {
+      if (!is.null(model$predictions) && length(model$predictions) == n_train) {
         expect_true(is.numeric(model$predictions), info = "predictions should be numeric")
       }
     } else {
       expect_true(is.matrix(probs), info = "probabilities should be matrix")
-      expect_equal(nrow(probs), nrow(model$X_train),
+      expect_equal(nrow(probs), n_train,
                    info = "probabilities rows should match training data rows")
       expect_equal(ncol(probs), 2, info = "probabilities should have 2 columns")
       expect_true(all(probs >= 0), info = "probabilities should be >= 0")

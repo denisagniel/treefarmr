@@ -71,7 +71,12 @@
 fit_tree <- function(X, y, loss_function = "misclassification", regularization = 0.1,
                     worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
                     compute_probabilities = FALSE, ...) {
-  
+  warn_if_not_single_tree <- function(n_trees) {
+    if (n_trees != 1) {
+      warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", n_trees))
+    }
+  }
+
   # Call treefarms with single_tree = TRUE to guarantee exactly one tree
   result <- treefarms(
     X = X,
@@ -87,27 +92,16 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
   )
   
   # If auto-tuning was used, result is a list with 'model' field and other auto-tuning metadata
-  # Check if this is an auto-tuning result (has 'iterations' or 'converged' fields)
   if (is.list(result) && ("iterations" %in% names(result) || "converged" %in% names(result))) {
-    # This is an auto-tuning result - extract the model
     if (!"model" %in% names(result)) {
       stop("Auto-tuning result missing 'model' field")
     }
     model_obj <- result$model
-    # Verify that we got exactly one tree
-    if (model_obj$n_trees != 1) {
-      warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", 
-                      model_obj$n_trees))
-    }
+    warn_if_not_single_tree(model_obj$n_trees)
     return(model_obj)
   }
-  
-  # Verify that we got exactly one tree
-  if (result$n_trees != 1) {
-    warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", 
-                    result$n_trees))
-  }
-  
+
+  warn_if_not_single_tree(result$n_trees)
   return(result)
 }
 

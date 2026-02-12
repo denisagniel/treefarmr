@@ -236,7 +236,8 @@ test_that("treefarms with logical y works", {
   })
   
   expect_valid_treefarms_model(model)
-  expect_true(is.numeric(model$y_train))  # Should be converted to numeric
+  # y_train is numeric when stored, or NULL when store_training_data=FALSE
+  expect_true(is.numeric(model$y_train) || is.null(model$y_train))
 })
 
 test_that("treefarms probability bounds are reasonable", {

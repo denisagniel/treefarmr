@@ -206,146 +206,66 @@ get_probabilities_from_tree <- function(tree_json, X) {
   }
   
   n_samples <- nrow(X)
-  probabilities <- matrix(0, nrow = n_samples, ncol = 2)
-  
-  # Helper function to traverse tree for a single sample
-  # Add depth limit to prevent infinite recursion
-  traverse_tree <- function(node, sample_row, depth = 0, max_depth = 100) {
-    # Safety check: prevent infinite recursion
+  probabilities <- matrix(0.5, nrow = n_samples, ncol = 2)
+  max_depth <- 100L
+
+  leaf_probs_from_node <- function(node) {
+    if (is.null(node) || !is.list(node)) return(c(0.5, 0.5))
+    if (is.null(node$prediction)) return(c(0.5, 0.5))
+    tryCatch({
+      if (!is.null(node$probabilities) && length(node$probabilities) >= 2) {
+        probs <- as.numeric(node$probabilities)
+        if (length(probs) == 2 && all(is.finite(probs)) && all(probs >= 0)) {
+          prob_sum <- sum(probs)
+          if (prob_sum > 0) probs <- probs / prob_sum else probs <- c(0.5, 0.5)
+          return(probs)
+        }
+      }
+      pred <- as.numeric(node$prediction)
+      if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
+    }, error = function(e) {
+      tryCatch({
+        pred <- as.numeric(node$prediction)
+        if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
+      }, error = function(e2) c(0.5, 0.5))
+    })
+  }
+
+  traverse_batch <- function(node, row_indices, depth) {
+    if (length(row_indices) == 0) return()
     if (depth > max_depth) {
       warning("Tree traversal exceeded maximum depth (", max_depth, "). Using default probabilities.")
-      return(c(0.5, 0.5))
+      return()
     }
-    
-    # Safety check: validate node is not NULL
-    if (is.null(node) || !is.list(node)) {
-      return(c(0.5, 0.5))
-    }
-    
-    # If this is a leaf node, return its probabilities
+    if (is.null(node) || !is.list(node)) return()
     if (!is.null(node$prediction)) {
-      tryCatch({
-        if (!is.null(node$probabilities) && length(node$probabilities) >= 2) {
-          # Probabilities are stored as array [P(class=0), P(class=1)]
-          probs <- as.numeric(node$probabilities)
-          # Validate probabilities
-          if (length(probs) == 2 && all(is.finite(probs)) && all(probs >= 0)) {
-            # Normalize to ensure they sum to 1
-            prob_sum <- sum(probs)
-            if (prob_sum > 0) {
-              probs <- probs / prob_sum
-            } else {
-              # If all zeros, use uniform distribution
-              probs <- c(0.5, 0.5)
-            }
-            return(probs)
-          } else {
-            # Invalid probabilities, infer from prediction
-            pred <- as.numeric(node$prediction)
-            if (pred == 0) {
-              return(c(1.0, 0.0))
-            } else {
-              return(c(0.0, 1.0))
-            }
-          }
-        } else {
-          # No probabilities stored, infer from prediction
-          pred <- as.numeric(node$prediction)
-          if (pred == 0) {
-            return(c(1.0, 0.0))
-          } else {
-            return(c(0.0, 1.0))
-          }
-        }
-      }, error = function(e) {
-        # If accessing probabilities fails, infer from prediction
-        tryCatch({
-          pred <- as.numeric(node$prediction)
-          if (pred == 0) {
-            return(c(1.0, 0.0))
-          } else {
-            return(c(0.0, 1.0))
-          }
-        }, error = function(e2) {
-          # If even prediction fails, use default
-          return(c(0.5, 0.5))
-        })
-      })
+      probs <- leaf_probs_from_node(node)
+      probabilities[row_indices, 1] <- probs[1]
+      probabilities[row_indices, 2] <- probs[2]
+      return()
     }
-    
-    # If this is a split node, traverse based on feature value
     if (!is.null(node$feature)) {
-      # Feature index is 0-based in JSON, convert to 1-based for R
-      feature_idx <- as.numeric(node$feature) + 1
-      
-      # Get feature value for this sample
-      if (feature_idx <= ncol(X)) {
-        # Handle both data.frame and matrix
-        if (is.data.frame(X)) {
-          feature_value <- X[sample_row, feature_idx, drop = TRUE]
-        } else {
-          feature_value <- X[sample_row, feature_idx]
-        }
-        
-        # Follow the appropriate branch
-        if (feature_value == 1 || feature_value == TRUE) {
-          # Follow true branch
-          if (!is.null(node$true) && is.list(node$true)) {
-            return(traverse_tree(node$true, sample_row, depth + 1, max_depth))
-          }
-        } else {
-          # Follow false branch
-          if (!is.null(node$false) && is.list(node$false)) {
-            return(traverse_tree(node$false, sample_row, depth + 1, max_depth))
-          }
-        }
-      }
-    }
-    
-    # Fallback: return default probabilities
-    return(c(0.5, 0.5))
-  }
-  
-  # Get probabilities for each sample
-  # Add safety check for very large datasets
-  if (n_samples > 10000) {
-    warning("Large dataset detected (", n_samples, " samples). ",
-            "Probability computation may be slow and memory-intensive.")
-  }
-  
-  # Process samples with error handling and progress tracking
-  for (i in 1:n_samples) {
-    tryCatch({
-      probs <- traverse_tree(tree_json, i, depth = 0, max_depth = 100)
-      # Validate probabilities
-      if (length(probs) == 2 && all(is.finite(probs)) && all(probs >= 0) && all(probs <= 1)) {
-        # Normalize to ensure they sum to 1
-        prob_sum <- sum(probs)
-        if (prob_sum > 0) {
-          probs <- probs / prob_sum
-        } else {
-          probs <- c(0.5, 0.5)
-        }
-        probabilities[i, ] <- probs
+      feature_idx <- as.integer(as.numeric(node$feature) + 1)
+      if (feature_idx < 1 || feature_idx > ncol(X)) return()
+      if (is.data.frame(X)) {
+        feature_vals <- X[row_indices, feature_idx, drop = TRUE]
       } else {
-        # Invalid probabilities, use default
-        probabilities[i, ] <- c(0.5, 0.5)
+        feature_vals <- X[row_indices, feature_idx]
       }
-    }, error = function(e) {
-      # If traversal fails, use default probabilities
-      warning("Error traversing tree for sample ", i, ": ", e$message)
-      probabilities[i, ] <<- c(0.5, 0.5)
-    })
-    
-    # Periodic garbage collection for large datasets
-    if (n_samples > 1000 && i %% 100 == 0) {
-      gc(verbose = FALSE)
+      go_true <- (feature_vals == 1 | feature_vals == TRUE)
+      true_idx <- row_indices[go_true]
+      false_idx <- row_indices[!go_true]
+      if (length(true_idx) > 0 && !is.null(node$true) && is.list(node$true)) {
+        traverse_batch(node$true, true_idx, depth + 1)
+      }
+      if (length(false_idx) > 0 && !is.null(node$false) && is.list(node$false)) {
+        traverse_batch(node$false, false_idx, depth + 1)
+      }
     }
   }
-  
-  # Set column names
+
+  traverse_batch(tree_json, seq_len(n_samples), 0L)
   colnames(probabilities) <- c("P(class=0)", "P(class=1)")
-  
   return(probabilities)
 }
 
@@ -371,37 +291,38 @@ get_fitted_from_tree <- function(tree_json, X) {
     return(rep(NA_real_, nrow(X)))
   }
   n_samples <- nrow(X)
-  fitted <- numeric(n_samples)
-  traverse_leaf <- function(node, sample_row, depth = 0, max_depth = 100) {
-    if (depth > max_depth) return(NA_real_)
-    if (is.null(node) || !is.list(node)) return(NA_real_)
+  fitted <- rep(NA_real_, n_samples)
+  max_depth <- 100L
+
+  traverse_batch_fitted <- function(node, row_indices, depth) {
+    if (length(row_indices) == 0) return()
+    if (depth > max_depth) return()
+    if (is.null(node) || !is.list(node)) return()
     if (!is.null(node$prediction)) {
-      return(as.numeric(node$prediction))
+      val <- as.numeric(node$prediction)
+      fitted[row_indices] <<- val
+      return()
     }
     if (!is.null(node$feature)) {
-      feature_idx <- as.numeric(node$feature) + 1
-      if (feature_idx <= ncol(X)) {
-        if (is.data.frame(X)) {
-          feature_value <- X[sample_row, feature_idx, drop = TRUE]
-        } else {
-          feature_value <- X[sample_row, feature_idx]
-        }
-        if (feature_value == 1 || feature_value == TRUE) {
-          if (!is.null(node$true) && is.list(node$true)) {
-            return(traverse_leaf(node$true, sample_row, depth + 1, max_depth))
-          }
-        } else {
-          if (!is.null(node$false) && is.list(node$false)) {
-            return(traverse_leaf(node$false, sample_row, depth + 1, max_depth))
-          }
-        }
+      feature_idx <- as.integer(as.numeric(node$feature) + 1)
+      if (feature_idx < 1 || feature_idx > ncol(X)) return()
+      if (is.data.frame(X)) {
+        feature_vals <- X[row_indices, feature_idx, drop = TRUE]
+      } else {
+        feature_vals <- X[row_indices, feature_idx]
+      }
+      go_true <- (feature_vals == 1 | feature_vals == TRUE)
+      true_idx <- row_indices[go_true]
+      false_idx <- row_indices[!go_true]
+      if (length(true_idx) > 0 && !is.null(node$true) && is.list(node$true)) {
+        traverse_batch_fitted(node$true, true_idx, depth + 1)
+      }
+      if (length(false_idx) > 0 && !is.null(node$false) && is.list(node$false)) {
+        traverse_batch_fitted(node$false, false_idx, depth + 1)
       }
     }
-    return(NA_real_)
   }
-  for (i in seq_len(n_samples)) {
-    fitted[i] <- traverse_leaf(tree, i, depth = 0, max_depth = 100)
-  }
+  traverse_batch_fitted(tree, seq_len(n_samples), 0L)
   fitted
 }
 
@@ -423,7 +344,11 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
   if (!is.numeric(y) && !is.logical(y)) {
     stop("y must be numeric or logical")
   }
-  
+
+  if (nrow(X) == 0) {
+    stop("X must have at least one row")
+  }
+
   if (length(y) != nrow(X)) {
     stop("Length of y must match number of rows in X")
   }
@@ -482,11 +407,14 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
     X <- as.data.frame(X)
   }
   
-  # Check for binary features
-  for (col in names(X)) {
-    if (!all(X[[col]] %in% c(0, 1))) {
-      stop(paste("Feature", col, "must contain only binary values (0 and 1)"))
-    }
+  # Check for binary features (vectorized)
+  m <- as.matrix(X)
+  bad <- !m %in% c(0L, 1L) & !is.na(m)
+  if (any(bad)) {
+    idx <- which(bad)[1L]
+    col_idx <- ((idx - 1L) %/% nrow(m)) + 1L
+    col <- names(X)[col_idx]
+    stop(paste("Feature", col, "must contain only binary values (0 and 1)"))
   }
   
   # Convert y to numeric if logical
@@ -526,48 +454,32 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
   data_df <- X
   data_df$class <- y
   
-  # Convert to CSV string
-  csv_string <- paste(capture.output(write.csv(data_df, stdout(), row.names = FALSE)), collapse = "\n")
+  # Build CSV string in one pass (no capture.output(write.csv))
+  header <- paste(names(data_df), collapse = ",")
+  body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
+  csv_string <- paste(c(header, body), collapse = "\n")
   
-  # Use direct Rcpp bindings with RcppParallel TBB initialization
+  fit_result <- .treefarms_fit_with_csv(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities)
+  return(fit_result)
+}
+
+.treefarms_fit_with_csv <- function(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities) {
+  config_json <- jsonlite::toJSON(config, auto_unbox = TRUE)
+  verbose <- isTRUE(config$verbose)
+  is_regression <- config$loss_function %in% c("squared_error", "regression")
+  loss_function <- config$loss_function
+  regularization <- config$regularization
   tryCatch({
-    # Capture stdout to extract tree JSON using sink()
-    # Now that C++ uses Rcpp::Rcout, sink() should capture it
-    stdout_file <- tempfile(fileext = ".txt")
-    sink(stdout_file, type = "output", split = FALSE)
-    tryCatch({
-      # Call C++ function directly (no process isolation needed)
-      json_output_raw <- treefarms_fit_with_config_cpp(csv_string, config_json)
-      # Convert to character string if it's a CharacterVector
-      if (is.character(json_output_raw) && length(json_output_raw) == 1) {
-        json_output <- as.character(json_output_raw)[1]
-      } else if (is.character(json_output_raw)) {
-        json_output <- paste(json_output_raw, collapse = "")
-      } else {
-        json_output <- as.character(json_output_raw)
-      }
-    }, finally = {
-      sink()
-    })
-    
-    # Read captured stdout
-    stdout_capture <- if (file.exists(stdout_file)) {
-      readLines(stdout_file, warn = FALSE)
+    json_output_raw <- treefarms_fit_with_config_cpp(csv_string, config_json)
+    if (is.character(json_output_raw) && length(json_output_raw) == 1) {
+      json_output <- as.character(json_output_raw)[1]
+    } else if (is.character(json_output_raw)) {
+      json_output <- paste(json_output_raw, collapse = "")
     } else {
-      character(0)
+      json_output <- as.character(json_output_raw)
     }
-    unlink(stdout_file)
     
-    # Note: C++ code now returns JSON string directly for both log-loss and misclassification
-    # No need for file-based handling anymore
-    
-    # DEBUG: Print what was captured
     if (verbose) {
-      cat("DEBUG: stdout_capture length:", length(stdout_capture), "\n")
-      if (length(stdout_capture) > 0) {
-        cat("DEBUG: First few lines of stdout_capture:\n")
-        cat(paste(head(stdout_capture, 5), collapse = "\n"), "\n")
-      }
       cat("DEBUG: json_output is null:", is.null(json_output), "\n")
       cat("DEBUG: json_output is empty:", json_output == "", "\n")
       if (!is.null(json_output) && json_output != "") {
@@ -619,20 +531,9 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
       }
     }
     
-    # Extract tree JSON from captured stdout
-    tree_json <- extract_tree_from_stdout(stdout_capture)
-    
-    if (verbose) {
-      cat("DEBUG: tree_json is null:", is.null(tree_json), "\n")
-      if (!is.null(tree_json)) {
-        cat("DEBUG: tree_json has feature:", !is.null(tree_json$feature), "\n")
-        cat("DEBUG: tree_json has prediction:", !is.null(tree_json$prediction), "\n")
-      }
-    }
-    
-    # If tree JSON not captured from stdout, try to extract from result_data
-    # result_data might be a ModelSet structure with "storage" array, or a direct tree
-    if (is.null(tree_json) && !is.null(result_data)) {
+    # Extract tree from returned JSON (result_data)
+    tree_json <- NULL
+    if (!is.null(result_data)) {
       # First, check if result_data has a "trees" field (from ModelSet::serialize with models)
       if (!is.null(result_data$trees) && is.list(result_data$trees) && length(result_data$trees) > 0) {
         # Extract the first tree from the trees array
@@ -658,6 +559,13 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
         if (is.list(result_data[[1]]) && (!is.null(result_data[[1]]$feature) || !is.null(result_data[[1]]$prediction))) {
           tree_json <- result_data[[1]]
         }
+      }
+    }
+    if (verbose) {
+      cat("DEBUG: tree_json is null:", is.null(tree_json), "\n")
+      if (!is.null(tree_json)) {
+        cat("DEBUG: tree_json has feature:", !is.null(tree_json$feature), "\n")
+        cat("DEBUG: tree_json has prediction:", !is.null(tree_json$prediction), "\n")
       }
     }
     
@@ -871,6 +779,9 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
         accuracy <- mean(predictions == y)
       } else if (has_tree) {
         if (verbose) cat("DEBUG: Skipping immediate probability computation (lazy evaluation)\n")
+        probs <- get_probabilities_from_tree(tree_to_use, X)
+        predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
+        accuracy <- mean(predictions == y)
       } else {
         if (verbose) cat("DEBUG: No tree available, using default values\n")
         if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
@@ -881,7 +792,9 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
         accuracy <- mean(predictions == y)
       }
 
+      cache <- new.env()
       compute_probabilities_lazy <- function() {
+        if (exists("probabilities", cache, inherits = FALSE)) return(cache$probabilities)
         if (is.null(stored_tree)) {
           n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
           if (n_samples == 0) return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
@@ -895,30 +808,35 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
         if (n_samples > 500) {
           batch_size <- min(500, n_samples)
           n_batches <- ceiling(n_samples / batch_size)
-          probabilities <- matrix(0.0, nrow = n_samples, ncol = 2)
+          probs <- matrix(0.0, nrow = n_samples, ncol = 2)
           for (i in 1:n_batches) {
             start_idx <- (i - 1) * batch_size + 1
             end_idx <- min(i * batch_size, n_samples)
             batch_X <- stored_X[start_idx:end_idx, , drop = FALSE]
-            probabilities[start_idx:end_idx, ] <- get_probabilities_from_tree(stored_tree, batch_X)
-            if (i %% 5 == 0) gc(verbose = FALSE)
+            probs[start_idx:end_idx, ] <- get_probabilities_from_tree(stored_tree, batch_X)
           }
-          colnames(probabilities) <- c("P(class=0)", "P(class=1)")
-          return(probabilities)
+          colnames(probs) <- c("P(class=0)", "P(class=1)")
+        } else {
+          probs <- get_probabilities_from_tree(stored_tree, stored_X)
         }
-        return(get_probabilities_from_tree(stored_tree, stored_X))
+        cache$probabilities <- probs
+        cache$predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
+        cache$accuracy <- if (!is.null(stored_y)) mean(cache$predictions == stored_y) else NA_real_
+        return(cache$probabilities)
       }
       compute_predictions_lazy <- function() {
-        probs <- compute_probabilities_lazy()
-        ifelse(probs[, 2] >= 0.5, 1, 0)
+        if (exists("predictions", cache, inherits = FALSE)) return(cache$predictions)
+        compute_probabilities_lazy()
+        return(cache$predictions)
       }
       compute_accuracy_lazy <- function() {
+        if (exists("accuracy", cache, inherits = FALSE)) return(cache$accuracy)
         if (is.null(stored_y)) {
           stop("Cannot compute accuracy: training data not stored. ",
                "Re-train with store_training_data=TRUE")
         }
-        preds <- compute_predictions_lazy()
-        mean(preds == stored_y)
+        compute_predictions_lazy()
+        return(cache$accuracy)
       }
       result <- list(
         model = model_obj,
@@ -934,12 +852,18 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
         predictions = predictions,
         accuracy = accuracy
       )
+      result$.cache <- cache
     }
     
-    # Always store training data for predict() to work
-    # Store feature names/column structure even if not storing full data
-    result$X_train <- X
-    result$y_train <- y
+    # Training sample count (for print/summary and tests)
+    result$n_train <- nrow(X)
+    if (store_training_data) {
+      result$X_train <- X
+      result$y_train <- y
+    } else {
+      result$X_train <- X[integer(0), , drop = FALSE]
+      result$y_train <- NULL
+    }
     
     # Set class
     class(result) <- "treefarms_model"
@@ -1121,9 +1045,10 @@ print.treefarms_model <- function(x, ...) {
     cat("Training accuracy: (not available - training data not stored)\n")
   })
   
-  # Get training data info if available
+  # Get training data info (n_train always set; X_train has structure for predict)
+  n_samp <- if (!is.null(x$n_train)) x$n_train else nrow(x$X_train)
   if (!is.null(x$X_train)) {
-    cat("Training samples:", nrow(x$X_train), "\n")
+    cat("Training samples:", n_samp, "\n")
     cat("Features:", ncol(x$X_train), "\n")
   } else {
     cat("Training data: (not stored)\n")

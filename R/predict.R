@@ -43,11 +43,10 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
     stop("newdata contains missing values")
   }
   
-  # Check for non-binary values
-  for (col in names(newdata)) {
-    if (!all(newdata[[col]] %in% c(0, 1))) {
-      stop("newdata must contain only binary values")
-    }
+  # Check for non-binary values (vectorized)
+  m <- as.matrix(newdata)
+  if (any(!m %in% c(0L, 1L) & !is.na(m))) {
+    stop("newdata must contain only binary values (0 and 1)")
   }
   
   # Get tree structure from model object
@@ -148,11 +147,10 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     stop("newdata contains missing values")
   }
   
-  # Check for non-binary values
-  for (col in names(newdata)) {
-    if (!all(newdata[[col]] %in% c(0, 1))) {
-      stop("newdata must contain only binary values")
-    }
+  # Check for non-binary values (vectorized)
+  m <- as.matrix(newdata)
+  if (any(!m %in% c(0L, 1L) & !is.na(m))) {
+    stop("newdata must contain only binary values (0 and 1)")
   }
   
   n_rows <- nrow(newdata)

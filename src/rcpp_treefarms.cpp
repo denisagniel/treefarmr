@@ -71,24 +71,20 @@ static void crash_handler(int sig) {
     raise(sig);
 }
 
-// Helper function to log with atomic counter (survives crashes)
-// Use multiple defensive mechanisms
+// Helper function to log with atomic counter when verbose (survives crashes)
 static void atomic_log(const std::string& message) {
+    if (!Configuration::verbose) return;
     try {
         int counter = log_counter.fetch_add(1);
-        // Try multiple logging methods for maximum reliability
-        // Method 1: File I/O with fopen (more reliable than ofstream)
         FILE* f = fopen("/tmp/crash_log.txt", "a");
         if (f) {
             fprintf(f, "%d: %s\n", counter, message.c_str());
             fflush(f);
             fclose(f);
         }
-        // Method 2: stderr (might be captured but worth trying)
         fprintf(stderr, "ATOMIC_LOG[%d]: %s\n", counter, message.c_str());
         fflush(stderr);
     } catch (...) {
-        // If logging itself crashes, at least try stderr
         fprintf(stderr, "ATOMIC_LOG_FAILED\n");
         fflush(stderr);
     }
@@ -150,31 +146,24 @@ int treefarms_status_cpp() {
 
 // [[Rcpp::export]]
 Rcpp::CharacterVector treefarms_fit_with_config_cpp(std::string data_csv, std::string configuration) {
+    json config_json;
+    try {
+        config_json = json::parse(configuration);
+        if (config_json.contains("verbose")) {
+            Configuration::verbose = config_json["verbose"].get<bool>();
+        }
+        if (config_json.contains("loss_function") && config_json["loss_function"] == "log_loss") {
+            Configuration::worker_limit = 1;
+        }
+    } catch (...) {
+        // Fall back to stream-based configure later
+    }
     init_signal_handlers();
-    atomic_log("Entered treefarms_fit_with_config_cpp");
+    if (Configuration::verbose) atomic_log("Entered treefarms_fit_with_config_cpp");
     std::string result = "{}";
     try {
-        atomic_log("Inside try block");
+        if (Configuration::verbose) atomic_log("Inside try block");
         
-        // CRITICAL FIX: Parse configuration JSON first to check for LOG_LOSS
-        // Set worker_limit BEFORE calling configure() to ensure State::initialize() uses correct value
-        json config_json;
-        try {
-            config_json = json::parse(configuration);
-            // Check if loss_function is log_loss and set worker_limit BEFORE configure
-            if (config_json.contains("loss_function") && 
-                config_json["loss_function"] == "log_loss") {
-                // Set worker_limit to 1 BEFORE configure() so State::initialize() uses it
-                Configuration::worker_limit = 1;
-                atomic_log("Set worker_limit=1 for log-loss BEFORE configure");
-            }
-        } catch (...) {
-            // If JSON parsing fails, fall back to stream-based configure
-            atomic_log("JSON parse failed, using stream-based configure");
-        }
-        
-        // Configure
-        atomic_log("About to configure");
         std::istringstream config_stream(configuration);
         GOSDT::configure(config_stream);
         atomic_log("Configuration complete");
@@ -211,7 +200,7 @@ Rcpp::CharacterVector treefarms_fit_with_config_cpp(std::string data_csv, std::s
         
         // Verify result string is valid before return
         atomic_log("Verifying result string");
-        if (fit_result.empty() || fit_result.length() == 0) {
+        if (fit_result.empty()) {
             fit_result = "{}";
             atomic_log("Result was empty, set to {}");
         }

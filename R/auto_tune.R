@@ -69,12 +69,26 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
     cat("Loss function:", loss_function, "\n\n")
   }
   
+  # Build CSV string once for reuse in the loop
+  data_df <- as.data.frame(X)
+  data_df$class <- y
+  header <- paste(names(data_df), collapse = ",")
+  body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
+  csv_string <- paste(c(header, body), collapse = "\n")
+  base_config <- list(
+    loss_function = loss_function,
+    verbose = FALSE,
+    worker_limit = 1L,
+    rashomon = TRUE
+  )
+  
   # Binary search to find optimal parameter
   low <- search_range[1]
   high <- search_range[2]
   iterations <- 0
   best_result <- NULL
   best_trees <- 0
+  fit_with_csv <- get(".treefarms_fit_with_csv", envir = asNamespace("treefarmr"))
   
   while (iterations < max_iterations && (high - low) > 0.001) {
     iterations <- iterations + 1
@@ -96,12 +110,15 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
                   iterations, regularization, rashomon_bound_multiplier))
     }
     
-    # Train model using Rcpp functions
+    config <- c(base_config, list(
+      regularization = regularization,
+      rashomon_bound_multiplier = rashomon_bound_multiplier
+    ))
+    
+    # Train model using internal fit (reuses csv_string)
     tryCatch({
-      model <- treefarms(X, y, loss_function = loss_function,
-                        regularization = regularization,
-                        rashomon_bound_multiplier = rashomon_bound_multiplier,
-                        verbose = FALSE, ...)
+      model <- fit_with_csv(csv_string, config, X, y,
+                           single_tree = FALSE, store_training_data = FALSE, compute_probabilities = FALSE)
       n_trees <- model$n_trees
       
       if (verbose) {

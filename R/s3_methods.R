@@ -233,7 +233,8 @@ print.treefarms_model <- function(x, ...) {
   cat("Regularization:", x$regularization, "\n")
   cat("Number of trees:", x$n_trees, "\n")
   cat("Training accuracy:", round(x$accuracy, 4), "\n")
-  cat("Training samples:", nrow(x$X_train), "\n")
+  n_samp <- if (!is.null(x$n_train)) x$n_train else nrow(x$X_train)
+  cat("Training samples:", n_samp, "\n")
   cat("Features:", ncol(x$X_train), "\n")
   
   # Get feature names from column names if available
@@ -455,7 +456,8 @@ print.treefarms_logloss_model <- function(x, ...) {
   cat("Regularization:", x$regularization, "\n")
   cat("Number of trees:", x$n_trees, "\n")
   cat("Training accuracy:", round(x$accuracy, 4), "\n")
-  cat("Training samples:", nrow(x$X_train), "\n")
+  n_samp <- if (!is.null(x$n_train)) x$n_train else nrow(x$X_train)
+  cat("Training samples:", n_samp, "\n")
   cat("Features:", ncol(x$X_train), "\n")
   
   if (x$n_trees > 0) {
@@ -518,7 +520,8 @@ summary.treefarms_logloss_model <- function(object, ...) {
   
   # Training data information
   cat("Training Data:\n")
-  cat("  Samples:", nrow(object$X_train), "\n")
+  n_samp <- if (!is.null(object$n_train)) object$n_train else nrow(object$X_train)
+  cat("  Samples:", n_samp, "\n")
   cat("  Features:", ncol(object$X_train), "\n")
   cat("  Class distribution:\n")
   class_counts <- table(object$y_train)
@@ -572,7 +575,8 @@ summary.cf_rashomon <- function(object, ...) {
   
   # Data information
   cat("Data:\n")
-  cat("  Samples:", nrow(object$X_train), "\n")
+  n_samp <- if (!is.null(object$n_train)) object$n_train else nrow(object$X_train)
+  cat("  Samples:", n_samp, "\n")
   cat("  Features:", ncol(object$X_train), "\n\n")
   
   # Fold results

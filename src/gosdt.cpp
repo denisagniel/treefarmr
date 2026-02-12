@@ -28,8 +28,9 @@
 // Atomic counter for crash-resistant logging in GOSDT
 static std::atomic<int> gosdt_log_counter(1000);  // Start at 1000 to distinguish from rcpp logs
 
-// Helper function to log with atomic counter (survives crashes)
+// Helper function to log with atomic counter when verbose (survives crashes)
 static void gosdt_atomic_log(const std::string& message) {
+    if (!Configuration::verbose) return;
     int counter = gosdt_log_counter.fetch_add(1);
     std::ofstream log_file("/tmp/crash_log.txt", std::ios::app);
     if (log_file.is_open()) {
