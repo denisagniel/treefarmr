@@ -5,9 +5,8 @@
 #' TreeFARMS finds optimal decision trees using either misclassification loss or log-loss (cross-entropy).
 #'
 #' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
-#' @param y A vector of binary class labels (0/1).
-#' @param loss_function Character string specifying the loss function to use.
-#'   Options: "misclassification" (default) or "log_loss".
+#' @param y For classification: binary (0/1). For regression: numeric vector (use \code{loss_function = "squared_error"}).
+#' @param loss_function Character string: \code{"misclassification"} (default), \code{"log_loss"}, or \code{"squared_error"} (regression; alias \code{"regression"}). For \code{"squared_error"}, \code{y} may be continuous and prediction returns fitted values (leaf means).
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
 #' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative).
@@ -350,16 +349,70 @@ get_probabilities_from_tree <- function(tree_json, X) {
   return(probabilities)
 }
 
+#' Get fitted values from a regression tree
+#'
+#' Traverses the tree for each row in X and returns the leaf mean (fitted value) for regression trees.
+#' @param tree_json Tree structure (list or list of trees; for Rashomon set uses first tree)
+#' @param X New data (data.frame or matrix) with same binary features as training
+#' @return Numeric vector of fitted values, one per row of X
+#' @export
+get_fitted_from_tree <- function(tree_json, X) {
+  if (is.null(tree_json)) {
+    return(rep(NA_real_, nrow(X)))
+  }
+  if (!is.list(tree_json)) {
+    return(rep(NA_real_, nrow(X)))
+  }
+  if (!is.null(tree_json$feature) || !is.null(tree_json$prediction)) {
+    tree <- tree_json
+  } else if (length(tree_json) >= 1 && is.list(tree_json[[1]])) {
+    tree <- tree_json[[1]]
+  } else {
+    return(rep(NA_real_, nrow(X)))
+  }
+  n_samples <- nrow(X)
+  fitted <- numeric(n_samples)
+  traverse_leaf <- function(node, sample_row, depth = 0, max_depth = 100) {
+    if (depth > max_depth) return(NA_real_)
+    if (is.null(node) || !is.list(node)) return(NA_real_)
+    if (!is.null(node$prediction)) {
+      return(as.numeric(node$prediction))
+    }
+    if (!is.null(node$feature)) {
+      feature_idx <- as.numeric(node$feature) + 1
+      if (feature_idx <= ncol(X)) {
+        if (is.data.frame(X)) {
+          feature_value <- X[sample_row, feature_idx, drop = TRUE]
+        } else {
+          feature_value <- X[sample_row, feature_idx]
+        }
+        if (feature_value == 1 || feature_value == TRUE) {
+          if (!is.null(node$true) && is.list(node$true)) {
+            return(traverse_leaf(node$true, sample_row, depth + 1, max_depth))
+          }
+        } else {
+          if (!is.null(node$false) && is.list(node$false)) {
+            return(traverse_leaf(node$false, sample_row, depth + 1, max_depth))
+          }
+        }
+      }
+    }
+    return(NA_real_)
+  }
+  for (i in seq_len(n_samples)) {
+    fitted[i] <- traverse_leaf(tree, i, depth = 0, max_depth = 100)
+  }
+  fitted
+}
+
 #' @export
 treefarms <- function(X, y, loss_function = "misclassification", regularization = 0.1, 
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
 worker_limit = 1L, verbose = FALSE, store_training_data = NULL, 
 compute_probabilities = FALSE, single_tree = TRUE, ...) {
   
-  # Auto-detect if training data should be stored
-  # For log-loss models, store training data by default since probabilities are often needed
   if (is.null(store_training_data)) {
-    store_training_data <- (loss_function == "log_loss")
+    store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
   }
   
   # Input validation
@@ -376,12 +429,18 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
   }
   
   
-  if (!all(y %in% c(0, 1))) {
-    stop("y must contain only binary values (0 and 1)")
+  is_regression <- loss_function %in% c("squared_error", "regression")
+  if (!is_regression && !all(y %in% c(0, 1))) {
+    stop("y must contain only binary values (0 and 1) for classification")
   }
-  
-  if (!loss_function %in% c("misclassification", "log_loss")) {
-    stop("loss_function must be either 'misclassification' or 'log_loss'")
+  if (is_regression && !is.numeric(y)) {
+    stop("y must be numeric for squared_error (regression)")
+  }
+  if (!loss_function %in% c("misclassification", "log_loss", "squared_error", "regression")) {
+    stop("loss_function must be 'misclassification', 'log_loss', 'squared_error', or 'regression'")
+  }
+  if (loss_function == "regression") {
+    loss_function <- "squared_error"
   }
   
   if (!is.numeric(worker_limit) || length(worker_limit) != 1 || worker_limit < 1) {
@@ -747,147 +806,135 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
       cat("DEBUG: has_tree:", has_tree, "\n")
     }
     
-    # Lazy probability computation: only compute if explicitly requested
-    probabilities <- NULL
-    predictions <- NULL
-    accuracy <- NULL
-    
-    if (compute_probabilities && has_tree) {
-      # Extract probabilities from tree structure
-      if (verbose) {
-        cat("DEBUG: Computing probabilities immediately\n")
-      }
-      probabilities <- get_probabilities_from_tree(tree_to_use, X)
-      
-      if (verbose) {
-        cat("DEBUG: Probabilities extracted, shape:", nrow(probabilities), "x", ncol(probabilities), "\n")
-        cat("DEBUG: First few probabilities:\n")
-        print(head(probabilities, 3))
-      }
-      
-      # Derive predictions from probabilities (argmax)
-      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
-      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
-      accuracy <- mean(predictions == y)
-    } else if (has_tree) {
-      # Lazy evaluation: create a function to compute probabilities on-demand
-      # For now, we'll compute predictions lazily too
-      # Store tree and data reference for later computation
-      if (verbose) {
-        cat("DEBUG: Skipping immediate probability computation (lazy evaluation)\n")
-      }
-    } else {
-      # No tree available, use default values
-      if (verbose) {
-        cat("DEBUG: No tree available, using default values\n")
-      }
-      # Check if this is due to a serialization failure
-      if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
-        warning("Model training may have failed or serialization returned empty result. ",
-                "This could indicate a memory issue or crash during training. ",
-                "Try reducing dataset size or adjusting regularization.")
-      }
-      # Even without tree, we can provide default predictions
-      predictions <- rep(0, length(y))
-      accuracy <- mean(predictions == y)
-    }
-    
     # Store tree structure for lazy computation
     stored_tree <- tree_to_use
     stored_X <- if (store_training_data) X else NULL
     stored_y <- if (store_training_data) y else NULL
-    
+
     # Validate tree structure before storing
     if (!is.null(stored_tree) && !validate_tree_structure(stored_tree)) {
       warning("Tree structure validation failed. Probabilities may not be available.")
       stored_tree <- NULL
     }
-    
-    # Create lazy probability computation function with memory checks
-    compute_probabilities_lazy <- function() {
-      if (is.null(stored_tree)) {
-        n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
-        if (n_samples == 0) {
-          return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
-        }
-        return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+
+    # Lazy probability computation: only compute if explicitly requested
+    probabilities <- NULL
+    predictions <- NULL
+    accuracy <- NULL
+
+    if (is_regression) {
+      # Regression: fitted values and MSE
+      compute_predictions_lazy <- function() {
+        if (is.null(stored_X)) return(rep(NA_real_, length(y)))
+        if (is.null(stored_tree)) return(rep(NA_real_, nrow(stored_X)))
+        get_fitted_from_tree(stored_tree, stored_X)
       }
-      # Need X to compute probabilities - use stored X_train if available
-      if (is.null(stored_X)) {
-        stop("Cannot compute probabilities: training data not stored. ",
-             "Re-train with store_training_data=TRUE or provide newdata to predict()")
+      compute_probabilities_lazy <- NULL
+      compute_accuracy_lazy <- function() {
+        if (is.null(stored_y)) return(NA_real_)
+        preds <- compute_predictions_lazy()
+        if (is.null(preds) || length(preds) == 0) return(NA_real_)
+        mean((stored_y - preds)^2)
       }
-      
-      # Check memory before computing probabilities
-      n_samples <- nrow(stored_X)
-      
-      # For large datasets, compute in batches to avoid memory issues
-      # Use n_samples threshold directly (500 samples) instead of memory estimate
-      # Memory estimate was wrong: 1000 samples = 16KB, not 10MB
-      if (n_samples > 500) {
-        # Use batching for large datasets
-        batch_size <- min(500, n_samples)
-        n_batches <- ceiling(n_samples / batch_size)
-        probabilities <- matrix(0.0, nrow = n_samples, ncol = 2)
-        
-        for (i in 1:n_batches) {
-          start_idx <- (i - 1) * batch_size + 1
-          end_idx <- min(i * batch_size, n_samples)
-          batch_X <- stored_X[start_idx:end_idx, , drop = FALSE]
-          
-          # Compute probabilities for this batch
-          batch_probs <- get_probabilities_from_tree(stored_tree, batch_X)
-          probabilities[start_idx:end_idx, ] <- batch_probs
-          
-          # Force garbage collection after each batch to free memory
-          if (i %% 5 == 0) {
-            gc(verbose = FALSE)
-          }
-        }
-        
-        colnames(probabilities) <- c("P(class=0)", "P(class=1)")
-        return(probabilities)
+      if (has_tree && !is.null(X) && nrow(X) > 0) {
+        predictions <- get_fitted_from_tree(stored_tree, X)
+        accuracy <- mean((y - predictions)^2)
       } else {
-        # For smaller datasets, compute all at once
+        predictions <- rep(NA_real_, length(y))
+        accuracy <- NA_real_
+      }
+      probabilities <- NULL
+      result <- list(
+        model = model_obj,
+        loss_function = loss_function,
+        regularization = regularization,
+        n_trees = n_trees,
+        training_time = result_list$time,
+        training_iterations = result_list$iterations,
+        .compute_probabilities = compute_probabilities_lazy,
+        .compute_predictions = compute_predictions_lazy,
+        .compute_accuracy = compute_accuracy_lazy,
+        probabilities = probabilities,
+        predictions = predictions,
+        accuracy = accuracy
+      )
+    } else {
+      # Classification
+      if (compute_probabilities && has_tree) {
+        if (verbose) cat("DEBUG: Computing probabilities immediately\n")
+        probabilities <- get_probabilities_from_tree(tree_to_use, X)
+        if (verbose) {
+          cat("DEBUG: Probabilities extracted, shape:", nrow(probabilities), "x", ncol(probabilities), "\n")
+          print(head(probabilities, 3))
+        }
+        predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
+        accuracy <- mean(predictions == y)
+      } else if (has_tree) {
+        if (verbose) cat("DEBUG: Skipping immediate probability computation (lazy evaluation)\n")
+      } else {
+        if (verbose) cat("DEBUG: No tree available, using default values\n")
+        if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
+          warning("Model training may have failed or serialization returned empty result. ",
+                  "Try reducing dataset size or adjusting regularization.")
+        }
+        predictions <- rep(0, length(y))
+        accuracy <- mean(predictions == y)
+      }
+
+      compute_probabilities_lazy <- function() {
+        if (is.null(stored_tree)) {
+          n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
+          if (n_samples == 0) return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
+          return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+        }
+        if (is.null(stored_X)) {
+          stop("Cannot compute probabilities: training data not stored. ",
+               "Re-train with store_training_data=TRUE or provide newdata to predict()")
+        }
+        n_samples <- nrow(stored_X)
+        if (n_samples > 500) {
+          batch_size <- min(500, n_samples)
+          n_batches <- ceiling(n_samples / batch_size)
+          probabilities <- matrix(0.0, nrow = n_samples, ncol = 2)
+          for (i in 1:n_batches) {
+            start_idx <- (i - 1) * batch_size + 1
+            end_idx <- min(i * batch_size, n_samples)
+            batch_X <- stored_X[start_idx:end_idx, , drop = FALSE]
+            probabilities[start_idx:end_idx, ] <- get_probabilities_from_tree(stored_tree, batch_X)
+            if (i %% 5 == 0) gc(verbose = FALSE)
+          }
+          colnames(probabilities) <- c("P(class=0)", "P(class=1)")
+          return(probabilities)
+        }
         return(get_probabilities_from_tree(stored_tree, stored_X))
       }
-    }
-    
-    # Create lazy prediction computation function
-    compute_predictions_lazy <- function() {
-      probs <- compute_probabilities_lazy()
-      ifelse(probs[, 2] >= 0.5, 1, 0)
-    }
-    
-    # Create lazy accuracy computation function
-    compute_accuracy_lazy <- function() {
-      if (is.null(stored_y)) {
-        stop("Cannot compute accuracy: training data not stored. ",
-             "Re-train with store_training_data=TRUE")
+      compute_predictions_lazy <- function() {
+        probs <- compute_probabilities_lazy()
+        ifelse(probs[, 2] >= 0.5, 1, 0)
       }
-      preds <- compute_predictions_lazy()
-      mean(preds == stored_y)
+      compute_accuracy_lazy <- function() {
+        if (is.null(stored_y)) {
+          stop("Cannot compute accuracy: training data not stored. ",
+               "Re-train with store_training_data=TRUE")
+        }
+        preds <- compute_predictions_lazy()
+        mean(preds == stored_y)
+      }
+      result <- list(
+        model = model_obj,
+        loss_function = loss_function,
+        regularization = regularization,
+        n_trees = n_trees,
+        training_time = result_list$time,
+        training_iterations = result_list$iterations,
+        .compute_probabilities = compute_probabilities_lazy,
+        .compute_predictions = compute_predictions_lazy,
+        .compute_accuracy = compute_accuracy_lazy,
+        probabilities = probabilities,
+        predictions = predictions,
+        accuracy = accuracy
+      )
     }
-    
-    # Create result object with simple list for caching
-    # Use a list instead of environment to avoid potential memory issues
-    # Cache will be stored directly in the result list
-    result <- list(
-      model = model_obj,
-      loss_function = loss_function,
-      regularization = regularization,
-      n_trees = n_trees,
-      training_time = result_list$time,
-      training_iterations = result_list$iterations,
-      # Lazy computation functions (internal use)
-      .compute_probabilities = compute_probabilities_lazy,
-      .compute_predictions = compute_predictions_lazy,
-      .compute_accuracy = compute_accuracy_lazy,
-      # Store computed values if they were computed immediately
-      probabilities = probabilities,
-      predictions = predictions,
-      accuracy = accuracy
-    )
     
     # Always store training data for predict() to work
     # Store feature names/column structure even if not storing full data
@@ -1024,17 +1071,22 @@ predict_treefarms <- function(object, newdata, type = "class", ...) {
     }
   }
   
-  # Extract probabilities from tree structure
+  # Regression: return fitted values
+  if (identical(object$loss_function, "squared_error")) {
+    if (!is.null(tree_to_use)) {
+      return(get_fitted_from_tree(tree_to_use, newdata))
+    }
+    return(rep(NA_real_, nrow(newdata)))
+  }
+  
+  # Extract probabilities from tree structure (classification)
   if (!is.null(tree_to_use)) {
     probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
     if (type == "class") {
-      # Derive predictions from probabilities (argmax)
-      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
       predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
       return(predictions)
     } else {
-      # Return probabilities
       return(probabilities)
     }
   } else {

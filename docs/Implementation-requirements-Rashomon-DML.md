@@ -59,7 +59,7 @@ If the implementation currently only returns “intersecting” trees from one f
 
 **Requirement:** If DML with continuous outcome \(Y\) is a target, the implementation must support squared-error (or regression) loss so that \(m_0\) and \(m_1\) can be fit with the same Rashomon/intersection workflow. At minimum: support for propensity (binary) and for outcome regression (squared error or equivalent).
 
-*Note (treefarmr):* Currently only binary nuisances are supported (misclassification and log_loss). DML with continuous outcome \(Y\) (e.g. \(m_0\), \(m_1\)) requires squared-error loss; squared-error (regression) loss is planned as future work.
+*Note (treefarmr):* Squared-error (regression) loss is supported: use \code{loss_function = "squared_error"} or \code{"regression"} in \code{treefarms()}, \code{fit_tree()}, \code{fit_rashomon()}, and \code{cross_fitted_rashomon()}. For regression, \code{y} is continuous and prediction returns fitted values (leaf means). The same Rashomon/intersection/refit workflow applies.
 
 ---
 
@@ -94,7 +94,7 @@ If the implementation currently only returns “intersecting” trees from one f
 | 2 | Met | R-side sieve: `get_rashomon_trees(..., max_leaves=M)`, `cross_fitted_rashomon(..., max_leaves=M)`; `count_leaves_tree()`. C++ has `depth_budget`. |
 | 3 | Met | Structure-only intersection in `find_tree_intersection()`; `refit_structure_on_data()`; `cf_rashomon` stores `fold_refits` and `intersecting_structures`. |
 | 4 | Met | Theory-consistent defaults documented in requirements doc and in `?cross_fitted_rashomon`, `?fit_rashomon`; \(\lambda\) in `cv_regularization()`. |
-| 5 | Not met | Binary losses only (misclassification, log_loss). Squared-error for outcome regression is future work. |
+| 5 | Met | \code{loss_function = "squared_error"} (or \code{"regression"}); continuous \code{y}; prediction returns fitted values. Same workflow for \code{refit_structure_on_data()}, \code{cross_fitted_rashomon()}, \code{predict.cf_rashomon()}. |
 | 6 | Met | `predict.cf_rashomon(..., fold_indices=)` and `fold_id_per_row`; fold-specific refits used when `fold_indices` provided. |
 
 *This document can be used by any implementer to align code with the paper. Update the addendum as the codebase changes.*

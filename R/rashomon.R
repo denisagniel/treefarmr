@@ -172,11 +172,17 @@ refit_structure_on_data <- function(structure, X, y) {
   }
   row_indices <- seq_len(n)
 
+  is_regression <- !all(y %in% c(0L, 1L)) && is.numeric(y)
   fill_leaf_values <- function(node, indices) {
     if (is.null(node) || !is.list(node)) {
+      if (is_regression) return(list(prediction = 0))
       return(list(prediction = 0L, probabilities = c(1, 0)))
     }
     if (!is.null(node$prediction)) {
+      if (is_regression) {
+        leaf_mean <- if (length(indices) > 0) mean(y[indices], na.rm = TRUE) else 0
+        return(list(prediction = leaf_mean))
+      }
       p1 <- mean(y[indices], na.rm = TRUE)
       if (length(indices) == 0) p1 <- 0.5
       p1 <- max(0, min(1, p1))

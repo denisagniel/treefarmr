@@ -13,6 +13,15 @@ Encoder::Encoder(std::istream & input) {
     // reindex(tokens); // Determine an efficient ordering of encoding rules
 
     encode(tokens, this -> binary_rows); // Encode the tokenized data using the encoding rules
+
+    if (Configuration::loss_function == SQUARED_ERROR && this -> number_of_columns > 0) {
+        const unsigned int n = this -> number_of_rows;
+        const unsigned int m = this -> number_of_columns;
+        this -> regression_targets_.resize(n);
+        for (unsigned int i = 0; i < n; ++i) {
+            this -> regression_targets_[i] = (float)atof(tokens[i][m - 1].c_str());
+        }
+    }
 }
 
 // Tests whether a string should be considered an integer
@@ -171,8 +180,11 @@ void Encoder::parse(std::vector< std::vector< std::string > > const & rows) {
     }
 
     // Override Type Inference for Target Column
-    // This ensures use of equality encoding instead of threshold encoding
-    inferred_types[m - 1] = "Categorical";
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        inferred_types[m - 1] = "Rational";
+    } else {
+        inferred_types[m - 1] = "Categorical";
+    }
 }
 
 void Encoder::limit_precision(std::vector< std::set< std::string > > & values) const {
@@ -231,7 +243,12 @@ void Encoder::build(void) {
         unsigned int initial_size = codex.size();
         if (inferred_type == "Redundant") {
             continue; // Empty Encoding List
-        } else if (inferred_type == "Binary") {
+        }
+        if (j == m - 1 && Configuration::loss_function == SQUARED_ERROR) {
+            this -> number_of_binary_targets = 0;
+            continue;
+        }
+        if (inferred_type == "Binary") {
             auto it = value_set.begin();
             if (j < m - 1) { ++it; }
             for (; it != value_set.end(); ++it) {
@@ -278,7 +295,11 @@ void Encoder::build(void) {
         }
         unsigned int final_size = codex.size();
         if (j == m - 1) {
-            this -> number_of_binary_targets = final_size - initial_size;
+            if (Configuration::loss_function == SQUARED_ERROR) {
+                this -> number_of_binary_targets = 0;
+            } else {
+                this -> number_of_binary_targets = final_size - initial_size;
+            }
         }
     }
     this -> codex = codex;
@@ -495,4 +516,8 @@ unsigned int Encoder::binary_features(void) const {
 
 unsigned int Encoder::binary_targets(void) const {
     return this -> number_of_binary_targets;
+}
+
+std::vector< float > const & Encoder::regression_targets(void) const {
+    return this -> regression_targets_;
 }

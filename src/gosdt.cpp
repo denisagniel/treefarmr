@@ -240,13 +240,12 @@ void GOSDT::fit(std::istream & data_source, std::string & result) {
                 gosdt_atomic_log("JSON parsing complete");
                 // For log-loss, return JSON string directly (same as non-log-loss)
                 // Testing showed that direct string passing works fine and avoids file I/O complexity
-                if (Configuration::loss_function == LOG_LOSS) {
-                    gosdt_atomic_log("Log-loss detected, using string dump");
+                if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
+                    gosdt_atomic_log("Log-loss/regression: using string dump");
                     serialized_result = node.dump(0);
                     gosdt_atomic_log("String dump completed, length=" + std::to_string(serialized_result.length()));
                 } else {
                     gosdt_atomic_log("Non-log-loss path, using string dump");
-                    // For non-log-loss, use string as before
                     serialized_result = node.dump(0);
                     gosdt_atomic_log("String dump completed, length=" + std::to_string(serialized_result.length()));
                 }
@@ -261,8 +260,8 @@ void GOSDT::fit(std::istream & data_source, std::string & result) {
                 gosdt_atomic_log("Rashomon mode (rashomon=true)");
                 // Rashomon mode: use full serialization
                 // For log-loss, return JSON string directly (same as non-log-loss)
-                if (Configuration::loss_function == LOG_LOSS) {
-                    gosdt_atomic_log("Rashomon + log-loss, using string");
+                if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
+                    gosdt_atomic_log("Rashomon + log-loss/regression, using string");
                     ModelSet::serialize(results, models, serialized_result, 0, *serialization_state);
                     gosdt_atomic_log("ModelSet::serialize returned, length=" + std::to_string(serialized_result.length()));
                 } else {
@@ -535,9 +534,8 @@ void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & model
         }
 
     }
-    // For log-loss: Don't reset - delay cleanup
-    // Cleanup will happen on package unload
-    if (Configuration::loss_function != LOG_LOSS) {
+    // For log-loss / regression: Don't reset - delay cleanup
+    if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
         optimizer.reset_except_dataset();
     }
 }
@@ -611,8 +609,8 @@ void GOSDT::fit_rashomon(Optimizer & optimizer, float rashomon_bound, results_t 
         std::cout << "Memory usage after extraction: " << getCurrentRSS() / 1000000 << std::endl;
     }
 
-    // For log-loss: Don't reset - delay cleanup
-    if (Configuration::loss_function != LOG_LOSS) {
+    // For log-loss / regression: Don't reset - delay cleanup
+    if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
         optimizer.reset_except_dataset();
     }
 }

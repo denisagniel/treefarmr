@@ -291,11 +291,8 @@ void Optimizer::signal_exploiters(adjacency_accessor & parents, Task & self, uns
     for (adjacency_iterator iterator = parents -> second.begin(); iterator != parents -> second.end(); ++iterator) {
         if (iterator -> second.first.count() == 0) { continue; }
         if (self.lowerbound() < iterator -> second.second - std::numeric_limits<float>::epsilon() && self.uncertainty() > 0) { continue; }
-        // Priority calculation: for log_loss, use support (prioritize higher support)
-        // For misclassification loss, use support - lowerbound (prioritize higher support with lower bounds)
-        // Note: For log_loss, lowerbound can be large (entropy * n_points + regularization), so we use support alone
-        float priority = (Configuration::loss_function == LOG_LOSS) 
-            ? self.support() 
+        float priority = (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR)
+            ? self.support()
             : (self.support() - self.lowerbound());
         this->state.locals[id].outbound_message.exploitation(
             self.identifier(), // sender tile

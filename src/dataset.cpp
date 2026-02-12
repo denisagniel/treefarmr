@@ -34,6 +34,7 @@ void Dataset::load(std::istream & data_source) {
 void Dataset::clear(void) {
     this -> features.clear();
     this -> targets.clear();
+    this -> target_values.clear();
     this -> rows.clear();
     this -> feature_rows.clear();
     this -> target_rows.clear();
@@ -49,10 +50,9 @@ void Dataset::clear(void) {
 void Dataset::construct_bitmasks(std::istream & data_source) {
     this -> encoder = Encoder(data_source);
     std::vector< Bitmask > rows = this -> encoder.read_binary_rows();
-    unsigned int number_of_samples = this -> encoder.samples(); // Number of samples in the dataset
-    unsigned int number_of_rows = 0; // Number of samples after compressions
-    unsigned int number_of_binary_features = this -> encoder.binary_features(); // Number of source features
-    unsigned int number_of_binary_targets = this -> encoder.binary_targets(); // Number of target features
+    unsigned int number_of_samples = this -> encoder.samples();
+    unsigned int number_of_binary_features = this -> encoder.binary_features();
+    unsigned int number_of_binary_targets = this -> encoder.binary_targets();
     this -> _size = number_of_samples;
 
     this -> rows = this -> encoder.read_binary_rows();
@@ -61,6 +61,10 @@ void Dataset::construct_bitmasks(std::istream & data_source) {
     this -> feature_rows.resize(number_of_samples, number_of_binary_features);
     this -> targets.resize(number_of_binary_targets, number_of_samples);
     this -> target_rows.resize(number_of_samples, number_of_binary_targets);
+
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        this -> target_values = this -> encoder.regression_targets();
+    }
 
     for (unsigned int i = 0; i < number_of_samples; ++i) {
         for (unsigned int j = 0; j < number_of_binary_features; ++j) {
@@ -76,6 +80,9 @@ void Dataset::construct_bitmasks(std::istream & data_source) {
 };
 
 void Dataset::construct_cost_matrix(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     this -> costs.resize(depth(), std::vector< float >(depth(), 0.0));
     if (Configuration::costs != "") { // Customized cost matrix
         std::ifstream input_stream(Configuration::costs);
@@ -158,6 +165,9 @@ void Dataset::parse_cost_matrix(std::istream & input_stream) {
 };
 
 void Dataset::aggregate_cost_matrix(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     this -> match_costs.resize(depth(), 0.0);
     this -> mismatch_costs.resize(depth(), std::numeric_limits<float>::max());
     this -> max_costs.resize(depth(), -std::numeric_limits<float>::max());
@@ -177,6 +187,9 @@ void Dataset::aggregate_cost_matrix(void) {
 }
 
 void Dataset::construct_majority(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     std::vector< Bitmask > keys(height(), width());
     for (unsigned int i = 0; i < height(); ++i) {
         for (unsigned int j = 0; j < width(); ++j) {
@@ -276,6 +289,34 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
     // Bounds check to prevent segfault
     if (id >= state.locals.size()) {
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
+    }
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        unsigned int n = capture_set.count();
+        info = 0.0f;
+        potential = 0.0f;
+        target_index = 0;
+        if (n == 0) {
+            min_loss = 0.0f;
+            max_loss = 0.0f;
+            return;
+        }
+        float sum_y = 0.0f;
+        for (unsigned int i = 0; i < height(); ++i) {
+            if (capture_set.get(i)) {
+                sum_y += this -> target_values[i];
+            }
+        }
+        float mean_y = sum_y / (float)n;
+        float sse = 0.0f;
+        for (unsigned int i = 0; i < height(); ++i) {
+            if (capture_set.get(i)) {
+                float d = this -> target_values[i] - mean_y;
+                sse += d * d;
+            }
+        }
+        min_loss = sse;
+        max_loss = sse;
+        return;
     }
     Bitmask & buffer = state.locals[id].columns[0];
     // Use heap allocation instead of alloca for thread safety
@@ -387,6 +428,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
 }
 
 void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN, State & state) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        TP = 0;
+        TN = 0;
+        return;
+    }
     // Bounds check to prevent segfault
     if (id >= state.locals.size()) {
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
@@ -407,11 +453,20 @@ void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned i
 }
 
 void Dataset::get_total_P_N(unsigned int & P, unsigned int & N) {
+    if (Configuration::loss_function == SQUARED_ERROR || targets.size() < 2) {
+        P = 0;
+        N = 0;
+        return;
+    }
     P = targets.at(1).count();
     N = targets.at(0).count();
 }
 
 void Dataset::get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id, State & state) const {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        distribution.clear();
+        return;
+    }
     // CRITICAL: Bounds check to prevent segfault
     if (id >= state.locals.size()) {
         std::string error_msg = "Worker ID out of bounds: " + std::to_string(id) 

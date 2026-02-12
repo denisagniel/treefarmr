@@ -169,6 +169,8 @@ void Configuration::configure(json config) {
                     Configuration::loss_function = MISCLASSIFICATION;
                 } else if (loss_func == "log_loss") {
                     Configuration::loss_function = LOG_LOSS;
+                } else if (loss_func == "squared_error" || loss_func == "regression") {
+                    Configuration::loss_function = SQUARED_ERROR;
                 } else {
                     throw std::invalid_argument("Unknown loss function: " + loss_func);
                 }
@@ -228,7 +230,7 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["rashomon_bound_multiplier"] = Configuration::rashomon_bound_multiplier;
     obj["rashomon_bound_adder"] = Configuration::rashomon_bound_adder;
     obj["rashomon_ignore_trivial_extensions"] = Configuration::rashomon_ignore_trivial_extensions;
-    obj["loss_function"] = (Configuration::loss_function == MISCLASSIFICATION) ? "misclassification" : "log_loss";
+    obj["loss_function"] = (Configuration::loss_function == MISCLASSIFICATION) ? "misclassification" : (Configuration::loss_function == LOG_LOSS ? "log_loss" : "squared_error");
 
     return obj.dump(spacing);
 }

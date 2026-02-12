@@ -51,7 +51,6 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
   }
   
   # Get tree structure from model object
-  # Use tree_json if available, otherwise use result_data
   tree_to_use <- if (!is.null(object$model$tree_json)) {
     object$model$tree_json
   } else if (!is.null(object$model$result_data)) {
@@ -60,7 +59,16 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
     NULL
   }
   
-  # Extract probabilities from tree structure
+  # Regression: return fitted values (leaf means)
+  if (identical(object$loss_function, "squared_error")) {
+    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("treefarmr"))
+    if (!is.null(tree_to_use)) {
+      return(get_fitted_from_tree(tree_to_use, newdata))
+    }
+    return(rep(NA_real_, nrow(newdata)))
+  }
+  
+  # Extract probabilities from tree structure (classification)
   if (!is.null(tree_to_use)) {
     probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
@@ -149,7 +157,39 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   n_rows <- nrow(newdata)
   
-  # DML: fold-specific predictions using fold_refits
+  # Regression: return fitted values (vector)
+  if (identical(object$loss_function, "squared_error")) {
+    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("treefarmr"))
+    if (!is.null(fold_indices)) {
+      if (length(fold_indices) != n_rows) {
+        stop("fold_indices must have length nrow(newdata)")
+      }
+      if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
+        stop("object has no fold_refits; refit is required for fold-specific prediction")
+      }
+      fitted <- rep(NA_real_, n_rows)
+      for (k in 1:object$K) {
+        idx_k <- which(fold_indices == k)
+        if (length(idx_k) == 0) next
+        refit_tree <- object$fold_refits[[k]][[1L]]
+        fitted[idx_k] <- get_fitted_from_tree(refit_tree, newdata[idx_k, , drop = FALSE])
+      }
+      na_rows <- which(is.na(fitted))
+      if (length(na_rows) > 0) {
+        warning("Some fold_indices were not in 1:K; using fold 1 refit for those rows")
+        refit_1 <- object$fold_refits[[1L]][[1L]]
+        fitted[na_rows] <- get_fitted_from_tree(refit_1, newdata[na_rows, , drop = FALSE])
+      }
+      return(fitted)
+    }
+    if (!is.null(object$fold_refits) && length(object$fold_refits) > 0) {
+      refit_tree <- object$fold_refits[[1L]][[1L]]
+      return(get_fitted_from_tree(refit_tree, newdata))
+    }
+    return(predict(object$fold_models[[1]], newdata, ...))
+  }
+  
+  # DML: fold-specific predictions using fold_refits (classification)
   if (!is.null(fold_indices)) {
     if (length(fold_indices) != n_rows) {
       stop("fold_indices must have length nrow(newdata)")

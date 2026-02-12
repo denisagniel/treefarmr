@@ -16,66 +16,92 @@ reset_test_threads <- function() {
 
 # Helper function to validate treefarmr model structure
 expect_valid_treefarms_model <- function(model, expected_loss_function = NULL) {
+  # Normalize expected loss for comparison
+  if (!is.null(expected_loss_function) && expected_loss_function == "regression") {
+    expected_loss_function <- "squared_error"
+  }
+
   # Check class
-  expect_true(inherits(model, "treefarms_model"), 
+  expect_true(inherits(model, "treefarms_model"),
               info = "Model should inherit from treefarms_model")
-  
-  # Check required fields
-  required_fields <- c("model", "predictions", "probabilities", "accuracy", 
-                      "loss_function", "regularization", "n_trees", 
-                      "X_train", "y_train", "training_time", "training_iterations")
-  
+
+  # Check required fields (key must exist; probabilities may be NULL for regression)
+  required_fields <- c("model", "predictions", "probabilities", "accuracy",
+                       "loss_function", "regularization", "n_trees",
+                       "X_train", "y_train", "training_time", "training_iterations")
+
   for (field in required_fields) {
-    expect_true(field %in% names(model), 
+    expect_true(field %in% names(model),
                 info = paste("Missing field:", field))
   }
-  
+
+  # Determine if regression from model or expected argument
+  is_regression <- identical(model$loss_function, "squared_error")
+
   # Check data types
   expect_true(is.numeric(model$n_trees), info = "n_trees should be numeric")
-  expect_true(is.numeric(model$accuracy), info = "accuracy should be numeric")
   expect_true(is.character(model$loss_function), info = "loss_function should be character")
   expect_true(is.numeric(model$regularization), info = "regularization should be numeric")
   expect_true(is.data.frame(model$X_train), info = "X_train should be data.frame")
   expect_true(is.numeric(model$y_train), info = "y_train should be numeric")
   expect_true(is.numeric(model$training_time), info = "training_time should be numeric")
   expect_true(is.numeric(model$training_iterations), info = "training_iterations should be numeric")
-  
-  # Check value ranges
-  expect_true(model$accuracy >= 0 && model$accuracy <= 1, 
-              info = "accuracy should be between 0 and 1")
+
+  # Accuracy: numeric, NA, or NULL (when lazy and training data not stored)
+  acc <- model$accuracy
+  expect_true(is.numeric(acc) || (length(acc) == 1L && is.na(acc)) || is.null(acc),
+              info = "accuracy should be numeric, NA, or NULL")
+  if (!is.null(acc) && !is.na(acc)) {
+    if (!is_regression) {
+      expect_true(acc >= 0 && acc <= 1, info = "accuracy should be between 0 and 1")
+    } else {
+      expect_true(acc >= 0, info = "accuracy (MSE) should be non-negative")
+    }
+  }
+
   expect_true(model$n_trees >= 0, info = "n_trees should be non-negative")
   expect_true(model$regularization >= 0, info = "regularization should be non-negative")
   expect_true(model$training_time >= 0, info = "training_time should be non-negative")
   expect_true(model$training_iterations >= 0, info = "training_iterations should be non-negative")
-  
+
   # Check loss function if specified
   if (!is.null(expected_loss_function)) {
     expect_equal(model$loss_function, expected_loss_function,
                  info = paste("Expected loss function:", expected_loss_function))
   }
-  
-  # Check predictions and probabilities
-  expect_true(is.numeric(model$predictions), info = "predictions should be numeric")
-  expect_true(is.matrix(model$probabilities), info = "probabilities should be matrix")
-  expect_equal(length(model$predictions), nrow(model$X_train),
-               info = "predictions length should match training data rows")
-  expect_equal(nrow(model$probabilities), nrow(model$X_train),
-               info = "probabilities rows should match training data rows")
-  expect_equal(ncol(model$probabilities), 2,
-               info = "probabilities should have 2 columns")
-  
-  # Check probability bounds
-  expect_true(all(model$probabilities >= 0), info = "probabilities should be >= 0")
-  expect_true(all(model$probabilities <= 1), info = "probabilities should be <= 1")
-  
-  # Check probability sums
-  row_sums <- rowSums(model$probabilities)
-  expect_true(all(abs(row_sums - 1) < 1e-10), 
-              info = "probability rows should sum to 1")
-  
-  # Check predictions are binary
-  expect_true(all(model$predictions %in% c(0, 1)), 
-              info = "predictions should be binary (0 or 1)")
+
+  # Predictions: numeric and length match when available (NULL allowed for classification when no stored data)
+  preds <- model$predictions
+  if (!is.null(preds)) {
+    expect_true(is.numeric(preds), info = "predictions should be numeric")
+    expect_equal(length(preds), nrow(model$X_train),
+                 info = "predictions length should match training data rows")
+  }
+
+  if (is_regression) {
+    # Regression: no probability checks; predictions are fitted values (numeric vector)
+  } else {
+    # Classification: probabilities optional when NULL (lazy, no stored data)
+    probs <- model$probabilities
+    if (is.null(probs)) {
+      # Skip probability and binary-prediction checks when probabilities not available
+      if (!is.null(model$predictions) && length(model$predictions) == nrow(model$X_train)) {
+        expect_true(is.numeric(model$predictions), info = "predictions should be numeric")
+      }
+    } else {
+      expect_true(is.matrix(probs), info = "probabilities should be matrix")
+      expect_equal(nrow(probs), nrow(model$X_train),
+                   info = "probabilities rows should match training data rows")
+      expect_equal(ncol(probs), 2, info = "probabilities should have 2 columns")
+      expect_true(all(probs >= 0), info = "probabilities should be >= 0")
+      expect_true(all(probs <= 1), info = "probabilities should be <= 1")
+      row_sums <- rowSums(probs)
+      expect_true(all(abs(row_sums - 1) < 1e-10),
+                  info = "probability rows should sum to 1")
+      expect_true(all(model$predictions %in% c(0, 1)),
+                  info = "predictions should be binary (0 or 1)")
+    }
+  }
 }
 
 # Helper function to validate predictions
@@ -90,11 +116,13 @@ expect_valid_predictions <- function(pred, n_samples, type = "class") {
     expect_equal(ncol(pred), 2, info = "Probabilities should have 2 columns")
     expect_true(all(pred >= 0), info = "Probabilities should be >= 0")
     expect_true(all(pred <= 1), info = "Probabilities should be <= 1")
-    
-    # Check probability sums
     row_sums <- rowSums(pred)
-    expect_true(all(abs(row_sums - 1) < 1e-10), 
+    expect_true(all(abs(row_sums - 1) < 1e-10),
                 info = "Probability rows should sum to 1")
+  } else if (type == "response") {
+    expect_true(is.numeric(pred), info = "Response (fitted) predictions should be numeric")
+    expect_equal(length(pred), n_samples, info = "Prediction length should match samples")
+    expect_true(all(is.finite(pred)), info = "Response predictions should be finite")
   }
 }
 

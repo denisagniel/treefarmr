@@ -8,7 +8,7 @@ using json = nlohmann::json;
 
 enum CoveredSetExtraction {F1, BACC, AUC};
 
-enum LossFunction {MISCLASSIFICATION, LOG_LOSS};
+enum LossFunction {MISCLASSIFICATION, LOG_LOSS, SQUARED_ERROR};
 
 // Static configuration object used to modifie the algorithm behaviour
 // By design, all running instances of the algorithm within the same process must share the same configuration

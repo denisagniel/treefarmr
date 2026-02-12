@@ -68,6 +68,11 @@ model_misclass <- treefarms(X, y, loss_function = "misclassification", regulariz
 # Train with log-loss
 model_logloss <- treefarms(X, y, loss_function = "log_loss", regularization = 0.1)
 
+# Regression (squared-error loss): continuous outcome, prediction = fitted values
+y_cont <- 2 + 3*X$feature_1 - X$feature_2 + rnorm(n, 0, 0.5)
+model_reg <- treefarms(X, y_cont, loss_function = "squared_error", regularization = 0.1, single_tree = TRUE)
+fitted <- predict(model_reg$model, X)  # vector of fitted values
+
 # View model summary
 print(model_logloss)
 
@@ -210,14 +215,6 @@ Make predictions using a trained model.
 - **Target**: Must be binary (0/1) only
 - **No missing values**: All data must be complete
 - **Consistent feature names**: New data must have same feature names as training data
-
-## Probability Characteristics
-
-TreeFARMR probabilities are:
-- **Bounded away from 0 and 1**: Typically range [0.2, 0.8]
-- **Well-calibrated**: Correlate highly with true underlying probabilities
-- **Consistent**: Same calculation used in training and prediction
-- **Meaningful**: Reflect actual uncertainty in the data
 
 ## Testing
 

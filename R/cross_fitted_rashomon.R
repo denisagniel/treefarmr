@@ -7,7 +7,7 @@
 #' @param X Data.frame or matrix of binary features (0/1)
 #' @param y Vector of binary class labels (0/1)
 #' @param K Number of folds for cross-fitting. Default: 5
-#' @param loss_function Loss function: "misclassification" or "log_loss". Default: "misclassification"
+#' @param loss_function Loss function: "misclassification", "log_loss", or "squared_error" (regression). Default: "misclassification"
 #' @param regularization Model complexity penalty. Default: 0.1
 #' @param rashomon_bound_multiplier Rashomon set size control (multiplicative). Default: 0.05
 #' @param rashomon_bound_adder Additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
@@ -103,8 +103,15 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     stop("Length of y must match number of rows in X")
   }
   
-  if (!all(y %in% c(0, 1))) {
-    stop("y must contain only binary values (0 and 1)")
+  if (!loss_function %in% c("misclassification", "log_loss", "squared_error", "regression")) {
+    stop("loss_function must be 'misclassification', 'log_loss', or 'squared_error'")
+  }
+  if (loss_function == "regression") loss_function <- "squared_error"
+  if (loss_function != "squared_error" && !all(y %in% c(0, 1))) {
+    stop("y must contain only binary values (0 and 1) for classification")
+  }
+  if (loss_function == "squared_error" && !is.numeric(y)) {
+    stop("y must be numeric for squared_error (regression)")
   }
   
   if (K < 2) {
@@ -156,7 +163,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     # Set default search ranges
     if (is.null(tune_search_range)) {
       if (tune_param == "regularization") {
-        if (loss_function == "log_loss") {
+        if (loss_function == "log_loss" || loss_function == "squared_error") {
           tune_search_range <- c(0.1, 1.0)
         } else {
           tune_search_range <- c(0.01, 0.5)
@@ -164,8 +171,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       } else if (tune_param == "rashomon_bound_multiplier") {
         tune_search_range <- c(0.01, 0.5)
       } else {
-        # Both - use ranges for regularization
-        if (loss_function == "log_loss") {
+        if (loss_function == "log_loss" || loss_function == "squared_error") {
           tune_search_range <- c(0.1, 1.0)
         } else {
           tune_search_range <- c(0.01, 0.5)

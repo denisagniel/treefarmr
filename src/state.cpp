@@ -35,12 +35,11 @@ void State::initialize(std::istream & data_source, unsigned int workers) {
     if (dataset.height() == 0) {
         throw std::runtime_error("Dataset height must be > 0 after load()");
     }
-    if (dataset.depth() == 0) {
+    if (dataset.depth() == 0 && Configuration::loss_function != SQUARED_ERROR) {
         throw std::runtime_error("Dataset depth must be > 0 after load()");
     }
     assert(dataset.height() > 0 && "Dataset height must be > 0");
     assert(dataset.width() >= 0 && "Dataset width must be >= 0");
-    assert(dataset.depth() > 0 && "Dataset depth must be > 0");
     
     // Clear graph containers
     graph.clear();
@@ -79,11 +78,11 @@ void State::initialize(std::istream & data_source, unsigned int workers) {
         unsigned int w = dataset.width();
         unsigned int d = dataset.depth();
         
-        if (h == 0 || d == 0) {
+        if (h == 0 || (d == 0 && Configuration::loss_function != SQUARED_ERROR)) {
             throw std::runtime_error("Invalid dataset dimensions: h=" + std::to_string(h) + 
                                    " w=" + std::to_string(w) + " d=" + std::to_string(d));
         }
-        assert(h > 0 && w >= 0 && d > 0 && "Dataset dimensions must be valid");
+        assert(h > 0 && w >= 0 && "Dataset dimensions must be valid");
         
         // CRITICAL: Check alignment of local state element before initialization
         void* leptr = &locals[i];
@@ -124,7 +123,7 @@ void State::reset_except_dataset(void) {
     unsigned int workers = (locals.size() > 0) ? locals.size() : 1;
     
     // Verify dataset is valid before initializing locals
-    if (dataset.height() > 0 && dataset.depth() > 0) {
+    if (dataset.height() > 0 && (dataset.depth() > 0 || Configuration::loss_function == SQUARED_ERROR)) {
         locals.resize(workers);
         for (unsigned int i = 0; i < workers; ++i) {
             locals[i].initialize(dataset.height(), dataset.width(), dataset.depth());

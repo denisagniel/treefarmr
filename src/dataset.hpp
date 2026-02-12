@@ -97,6 +97,9 @@ public:
     
     float get_mismatch_cost() const;
 
+    // Regression: continuous target values (one per sample). Empty when not SQUARED_ERROR.
+    std::vector< float > const & get_target_values() const { return target_values; }
+
 private:
     static bool index_comparator(const std::pair< unsigned int, unsigned int > & left, const std::pair< unsigned int, unsigned int > & right);
 
@@ -112,6 +115,7 @@ private:
 
     std::vector< Bitmask > features; // Binary representation of columns
     std::vector< Bitmask > targets; // Binary representation of columns
+    std::vector< float > target_values; // Regression: continuous y, one per sample (when loss == SQUARED_ERROR)
     std::vector< Bitmask > rows; // Binary representation of rows
     std::vector< Bitmask > feature_rows; // Binary representation of rows
     std::vector< Bitmask > target_rows; // Binary representation of rows

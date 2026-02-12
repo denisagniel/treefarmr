@@ -9,6 +9,7 @@
 #include "optimizer/extraction/rash_models.hpp"
 #include "configuration.hpp"
 #include <cstdint>  // For uintptr_t
+#include <limits>
 
 Optimizer::Optimizer(void) {
     return;
@@ -274,6 +275,7 @@ void Optimizer::export_models(std::string suffix) {
 }
 
 float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id) {
+    if (!capture_set.valid()) { return std::numeric_limits<float>::max(); }
     Bitmask left(state.dataset.height());
     Bitmask right(state.dataset.height());
     float potential, min_loss, max_loss, base_info;
@@ -281,12 +283,8 @@ float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, 
     state.dataset.summary(capture_set, base_info, potential, min_loss, max_loss, target_index, id, state);
     float base_risk = max_loss + Configuration::regularization;
 
-    if (Configuration::loss_function == LOG_LOSS) {
-        // For log-loss (entropy-based), use different pruning criteria
-        // Skip checks that assume misclassification loss (0-1 range)
-        // For log_loss, min_loss == max_loss (both are entropy), so skip that check
-        // Only prune if feature set is empty (no features to split on)
-        // Note: potential is entropy * n_points, so be less aggressive with pruning
+    if (!feature_set.valid()) { return base_risk; }
+    if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
         if (feature_set.empty()) {
             return base_risk;
         }
@@ -310,10 +308,11 @@ float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, 
             state.dataset.subset(j, false, left);
             state.dataset.subset(j, true, right);
 
+            if (!left.valid() || !right.valid()) { continue; }
             if (left.empty() || right.empty()) { continue; }
 
-            state.dataset.summary(capture_set, left_info, potential, min_loss, max_loss, target_index, id, state);
-            state.dataset.summary(capture_set, right_info, potential, min_loss, max_loss, target_index, id, state);
+            state.dataset.summary(left, left_info, potential, min_loss, max_loss, target_index, id, state);
+            state.dataset.summary(right, right_info, potential, min_loss, max_loss, target_index, id, state);
 
             float gain = left_info + right_info - base_info;
             if (gain > information_gain) {
