@@ -98,13 +98,15 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
 #' @param object A cf_rashomon object
 #' @param newdata A data.frame or matrix of new features
 #' @param type Character: "class" or "prob"
-#' @param ensemble Logical: whether to ensemble across all intersecting trees
+#' @param ensemble Logical: whether to ensemble across all intersecting trees (ignored if \code{fold_indices} is provided)
+#' @param fold_indices Optional integer vector of length \code{nrow(newdata)} giving the fold id for each row.
+#'   When provided, predictions use the fold-specific refit \eqn{\tilde{\eta}^{(-k)}} (valid DML). When \code{NULL}, uses fold 1 model (backward compatible).
 #' @param ... Additional arguments
 #'
-#' @return Predictions based on type
+#' @return Predictions based on type. If \code{fold_indices} is provided, each row gets \eqn{\tilde{\eta}^{(-k(i))}(X_i)}.
 #' @export
 predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"), 
-                               ensemble = TRUE, ...) {
+                               ensemble = TRUE, fold_indices = NULL, ...) {
   type <- match.arg(type)
   
   if (object$n_intersecting == 0) {
@@ -145,34 +147,55 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     }
   }
   
+  n_rows <- nrow(newdata)
+  
+  # DML: fold-specific predictions using fold_refits
+  if (!is.null(fold_indices)) {
+    if (length(fold_indices) != n_rows) {
+      stop("fold_indices must have length nrow(newdata)")
+    }
+    if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
+      stop("object has no fold_refits; refit is required for fold-specific prediction")
+    }
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("treefarmr"))
+    probs <- matrix(NA_real_, nrow = n_rows, ncol = 2)
+    for (k in 1:object$K) {
+      idx_k <- which(fold_indices == k)
+      if (length(idx_k) == 0) next
+      refit_tree <- object$fold_refits[[k]][[1L]]
+      probs[idx_k, ] <- get_probabilities_from_tree(refit_tree, newdata[idx_k, , drop = FALSE])
+    }
+    na_rows <- which(is.na(probs[, 1L]))
+    if (length(na_rows) > 0) {
+      warning("Some fold_indices were not in 1:K; using fold 1 refit for those rows")
+      refit_1 <- object$fold_refits[[1L]][[1L]]
+      probs[na_rows, ] <- get_probabilities_from_tree(refit_1, newdata[na_rows, , drop = FALSE])
+    }
+    if (type == "class") {
+      return(ifelse(probs[, 2L] >= 0.5, 1, 0))
+    }
+    return(probs)
+  }
+  
+  # Backward compatible: no fold_indices
   if (ensemble && object$n_intersecting > 1) {
-    # Ensemble predictions across all intersecting trees
     predictions_list <- list()
-    
     for (i in seq_len(object$n_intersecting)) {
-      # Use the first fold model as a template (they should all be similar)
       model <- object$fold_models[[1]]
-      
-      # Get predictions from this model (simplified approach)
       pred <- predict(model, newdata, type = type, ...)
       predictions_list[[i]] <- pred
     }
-    
     if (type == "class") {
-      # Majority vote for class predictions
       pred_matrix <- do.call(cbind, predictions_list)
       final_predictions <- apply(pred_matrix, 1, function(x) {
         as.numeric(names(sort(table(x), decreasing = TRUE))[1])
       })
       return(final_predictions)
     } else {
-      # Average probabilities
       pred_matrix <- do.call(cbind, predictions_list)
-      final_predictions <- rowMeans(pred_matrix)
-      return(final_predictions)
+      return(rowMeans(pred_matrix))
     }
   } else {
-    # Use first intersecting tree
     model <- object$fold_models[[1]]
     return(predict(model, newdata, type = type, ...))
   }

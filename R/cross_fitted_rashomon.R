@@ -9,7 +9,9 @@
 #' @param K Number of folds for cross-fitting. Default: 5
 #' @param loss_function Loss function: "misclassification" or "log_loss". Default: "misclassification"
 #' @param regularization Model complexity penalty. Default: 0.1
-#' @param rashomon_bound_multiplier Rashomon set size control. Default: 0.05
+#' @param rashomon_bound_multiplier Rashomon set size control (multiplicative). Default: 0.05
+#' @param rashomon_bound_adder Additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
+#' @param max_leaves Optional integer. If set, only trees with \eqn{\#\text{leaves} \le} \code{max_leaves} are used (R-side sieve; theory-consistent complexity).
 #' @param single_tree Logical. If TRUE, fit exactly one tree per fold (disable rashomon set).
 #'   Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold computes
 #'   a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via the underlying
@@ -46,6 +48,13 @@
 #' A tree appearing in all K Rashomon sets is nearly-optimal regardless of
 #' which training subset was used, indicating strong stability and generalizability.
 #'
+#' \strong{Theory-consistent defaults (DML):} For alignment with the manuscript,
+#' use small \eqn{\varepsilon} (e.g. \code{rashomon_bound_multiplier = 0.05} or
+#' \code{rashomon_bound_adder}), \eqn{\lambda \propto (\log n)/n} (see
+#' \code{\link{cv_regularization}}), and pass \code{fold_indices} to
+#' \code{predict()} for fold-specific nuisances. See
+#' \file{docs/Implementation-requirements-Rashomon-DML.md}.
+#'
 #' @examples
 #' \dontrun{
 #' # Create binary data
@@ -70,6 +79,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
                                   loss_function = "misclassification",
                                   regularization = 0.1,
                                   rashomon_bound_multiplier = 0.05,
+                                  rashomon_bound_adder = 0,
+                                  max_leaves = NULL,
                                   single_tree = FALSE,
                                   auto_tune_intersecting = FALSE,
                                   tune_param = "regularization",
@@ -190,7 +201,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
         # Try with current parameters
         result <- try_cross_fitted_rashomon_internal(
           X, y, K, loss_function, regularization, rashomon_bound_multiplier,
-          single_tree, fold_indices, verbose, ...
+          rashomon_bound_adder, max_leaves, single_tree, fold_indices, verbose, ...
         )
         
         if (is.null(result)) {
@@ -238,7 +249,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
           
           result <- try_cross_fitted_rashomon_internal(
             X, y, K, loss_function, regularization, rashomon_bound_multiplier,
-            single_tree, fold_indices, verbose, ...
+            rashomon_bound_adder, max_leaves, single_tree, fold_indices, verbose, ...
           )
           
           if (is.null(result)) {
@@ -290,7 +301,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
         # Try with current parameters
         result <- try_cross_fitted_rashomon_internal(
           X, y, K, loss_function, regularization, rashomon_bound_multiplier,
-          single_tree, fold_indices, verbose, ...
+          rashomon_bound_adder, max_leaves, single_tree, fold_indices, verbose, ...
         )
         
         if (is.null(result)) {
@@ -384,13 +395,14 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       loss_function = loss_function,
       regularization = regularization,
       rashomon_bound_multiplier = rashomon_bound_multiplier,
+      rashomon_bound_adder = rashomon_bound_adder,
       single_tree = single_tree,
       verbose = FALSE,
       ...
     )
     
-    # Extract Rashomon set
-    trees <- get_rashomon_trees(model)
+    # Extract Rashomon set (optionally filtered by max_leaves)
+    trees <- get_rashomon_trees(model, max_leaves = max_leaves)
     
     # Store results
     fold_models[[k]] <- model
@@ -403,7 +415,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     
     # Warning if no trees generated
     if (length(trees) == 0) {
-      warning(sprintf("Fold %d: No trees in Rashomon set. Consider adjusting regularization.", k))
+      warning(sprintf("Fold %d: No trees in Rashomon set. Consider adjusting regularization or max_leaves.", k))
     }
   }
   
@@ -418,11 +430,33 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   
   intersection_result <- find_tree_intersection(rashomon_sets, verbose = verbose)
   
+  # Per-fold refits of intersecting structures for DML (eta^(-k))
+  fold_refits <- vector("list", K)
+  if (intersection_result$n_intersecting > 0) {
+    for (k in 1:K) {
+      train_idx <- setdiff(1:n, fold_indices[[k]])
+      X_k <- X[train_idx, , drop = FALSE]
+      y_k <- y[train_idx]
+      fold_refits[[k]] <- lapply(intersection_result$intersecting_structures, function(st) {
+        refit_structure_on_data(st, X_k, y_k)
+      })
+    }
+  }
+  
+  # Fold id per row (for predict with fold_indices)
+  fold_id_per_row <- integer(n)
+  for (k in 1:K) {
+    fold_id_per_row[fold_indices[[k]]] <- k
+  }
+  
   # Create result object
   result <- list(
     intersecting_trees = intersection_result$intersecting_trees,
     n_intersecting = intersection_result$n_intersecting,
     tree_jsons = intersection_result$tree_jsons,
+    intersecting_structures = intersection_result$intersecting_structures,
+    fold_refits = fold_refits,
+    fold_id_per_row = fold_id_per_row,
     fold_models = fold_models,
     rashomon_sets = rashomon_sets,
     rashomon_sizes = rashomon_sizes,
@@ -431,6 +465,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     loss_function = loss_function,
     regularization = regularization,
     rashomon_bound_multiplier = rashomon_bound_multiplier,
+    rashomon_bound_adder = rashomon_bound_adder,
+    max_leaves = max_leaves,
     X_train = X,
     y_train = y,
     call = match.call()
@@ -453,6 +489,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
 #' @param loss_function Loss function
 #' @param regularization Regularization parameter
 #' @param rashomon_bound_multiplier Rashomon bound multiplier
+#' @param rashomon_bound_adder Rashomon bound adder (default 0)
+#' @param max_leaves Optional max leaves sieve (default NULL)
 #' @param single_tree Whether to fit single tree per fold
 #' @param fold_indices Pre-computed fold indices
 #' @param verbose Whether to print progress
@@ -462,8 +500,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
 #'
 #' @keywords internal
 try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regularization,
-                                               rashomon_bound_multiplier, single_tree,
-                                               fold_indices, verbose, ...) {
+                                               rashomon_bound_multiplier, rashomon_bound_adder = 0,
+                                               max_leaves = NULL, single_tree, fold_indices, verbose, ...) {
   tryCatch({
     # Initialize storage
     fold_models <- vector("list", K)
@@ -486,13 +524,14 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
         loss_function = loss_function,
         regularization = regularization,
         rashomon_bound_multiplier = rashomon_bound_multiplier,
+        rashomon_bound_adder = rashomon_bound_adder,
         single_tree = single_tree,
         verbose = FALSE,
         ...
       )
       
-      # Extract Rashomon set
-      trees <- get_rashomon_trees(model)
+      # Extract Rashomon set (optionally filtered by max_leaves)
+      trees <- get_rashomon_trees(model, max_leaves = max_leaves)
       
       # Store results
       fold_models[[k]] <- model
@@ -503,11 +542,31 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
     # Find intersection of trees across all folds
     intersection_result <- find_tree_intersection(rashomon_sets, verbose = FALSE)
     
+    n <- nrow(X)
+    fold_refits <- vector("list", K)
+    if (intersection_result$n_intersecting > 0) {
+      for (k in 1:K) {
+        train_idx <- setdiff(1:n, fold_indices[[k]])
+        X_k <- X[train_idx, , drop = FALSE]
+        y_k <- y[train_idx]
+        fold_refits[[k]] <- lapply(intersection_result$intersecting_structures, function(st) {
+          refit_structure_on_data(st, X_k, y_k)
+        })
+      }
+    }
+    fold_id_per_row <- integer(n)
+    for (k in 1:K) {
+      fold_id_per_row[fold_indices[[k]]] <- k
+    }
+    
     # Create result object
     result <- list(
       intersecting_trees = intersection_result$intersecting_trees,
       n_intersecting = intersection_result$n_intersecting,
       tree_jsons = intersection_result$tree_jsons,
+      intersecting_structures = intersection_result$intersecting_structures,
+      fold_refits = fold_refits,
+      fold_id_per_row = fold_id_per_row,
       fold_models = fold_models,
       rashomon_sets = rashomon_sets,
       rashomon_sizes = rashomon_sizes,
@@ -516,6 +575,8 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
       loss_function = loss_function,
       regularization = regularization,
       rashomon_bound_multiplier = rashomon_bound_multiplier,
+      rashomon_bound_adder = rashomon_bound_adder,
+      max_leaves = max_leaves,
       X_train = X,
       y_train = y,
       call = match.call()

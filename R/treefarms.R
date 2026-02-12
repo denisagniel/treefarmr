@@ -10,8 +10,11 @@
 #'   Options: "misclassification" (default) or "log_loss".
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
-#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size.
+#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative).
 #'   Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.
+#'   Rashomon bound = optimum * (1 + rashomon_bound_multiplier). Ignored if \code{rashomon_bound_adder} is non-zero.
+#' @param rashomon_bound_adder Numeric value for additive Rashomon bound. Default: 0.
+#'   If non-zero, Rashomon bound = optimum + rashomon_bound_adder and \code{rashomon_bound_multiplier} is not used.
 #' @param target_trees Integer: target number of trees when auto-tuning (default: 1).
 #' @param max_trees Integer: maximum acceptable number of trees when auto-tuning (default: 5).
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
@@ -349,7 +352,7 @@ get_probabilities_from_tree <- function(tree_json, X) {
 
 #' @export
 treefarms <- function(X, y, loss_function = "misclassification", regularization = 0.1, 
-rashomon_bound_multiplier = 0.05, target_trees = 1, max_trees = 5,
+rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
 worker_limit = 1L, verbose = FALSE, store_training_data = NULL, 
 compute_probabilities = FALSE, single_tree = TRUE, ...) {
   
@@ -448,7 +451,13 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
     # Don't set rashomon_bound_multiplier when rashomon is disabled
   } else {
     config$rashomon <- TRUE
-    config$rashomon_bound_multiplier <- rashomon_bound_multiplier
+    if (rashomon_bound_adder != 0) {
+      config$rashomon_bound_adder <- rashomon_bound_adder
+      config$rashomon_bound_multiplier <- 0
+    } else {
+      config$rashomon_bound_multiplier <- rashomon_bound_multiplier
+      config$rashomon_bound_adder <- 0
+    }
   }
   
   # Convert configuration to JSON

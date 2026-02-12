@@ -11,8 +11,8 @@
 #'   Options: "misclassification" (default) or "log_loss".
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
-#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size.
-#'   Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.
+#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.
+#' @param rashomon_bound_adder Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
@@ -47,6 +47,11 @@
 #' The size of the rashomon set is controlled by `rashomon_bound_multiplier`:
 #' - Smaller values (e.g., 0.01) → more trees in the set
 #' - Larger values (e.g., 0.1) → fewer trees in the set
+#'
+#' \strong{Theory-consistent defaults (DML):} Use small \eqn{\varepsilon}
+#' (e.g. \code{rashomon_bound_multiplier = 0.05}), \eqn{\lambda \propto (\log n)/n}
+#' (see \code{\link{cv_regularization}}). See
+#' \file{docs/Implementation-requirements-Rashomon-DML.md}.
 #'
 #' @examples
 #' \dontrun{
@@ -84,7 +89,7 @@
 #'
 #' @export
 fit_rashomon <- function(X, y, loss_function = "misclassification", regularization = 0.1,
-                        rashomon_bound_multiplier = 0.05, worker_limit = 1L, verbose = FALSE,
+                        rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, worker_limit = 1L, verbose = FALSE,
                         store_training_data = NULL, compute_probabilities = FALSE, ...) {
   
   # Call treefarms with single_tree = FALSE to compute rashomon set
@@ -94,6 +99,7 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
     loss_function = loss_function,
     regularization = regularization,
     rashomon_bound_multiplier = rashomon_bound_multiplier,
+    rashomon_bound_adder = rashomon_bound_adder,
     worker_limit = worker_limit,
     verbose = verbose,
     store_training_data = store_training_data,
