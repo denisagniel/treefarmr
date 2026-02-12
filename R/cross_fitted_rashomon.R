@@ -25,6 +25,7 @@
 #'   If NULL, uses default ranges based on loss_function. Default: NULL.
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param verbose Print progress information. Default: TRUE
+#' @param fold_indices Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_folds(y, K)}.
 #' @param ... Additional parameters passed to TreeFARMS
 #'
 #' @return Object of class `cf_rashomon` containing:
@@ -88,6 +89,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
                                   tune_search_range = NULL,
                                   seed = NULL,
                                   verbose = TRUE,
+                                  fold_indices = NULL,
                                   ...) {
   
   # Input validation
@@ -98,7 +100,11 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   if (!is.numeric(y) && !is.logical(y)) {
     stop("y must be numeric or logical")
   }
-  
+
+  if (nrow(X) == 0) {
+    stop("X must have at least one row")
+  }
+
   if (length(y) != nrow(X)) {
     stop("Length of y must match number of rows in X")
   }
@@ -114,17 +120,34 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     stop("y must be numeric for squared_error (regression)")
   }
   
-  if (K < 2) {
-    stop("K must be at least 2")
-  }
-  
-  if (K > nrow(X)) {
-    stop("K cannot be larger than the number of observations")
-  }
-  
   n <- nrow(X)
   
-  # Set seed for reproducibility
+  # Resolve folds: external fold_indices (vector) or create internally
+  if (!is.null(fold_indices)) {
+    if (!is.vector(fold_indices) || length(fold_indices) != n) {
+      stop("fold_indices must be a vector of length nrow(X)")
+    }
+    fold_indices <- as.integer(fold_indices)
+    K <- max(fold_indices, na.rm = TRUE)
+    if (K < 2) {
+      stop("fold_indices must have at least 2 distinct folds (values in 1..K)")
+    }
+    if (any(is.na(fold_indices)) || any(fold_indices < 1L) || any(fold_indices > K)) {
+      stop("fold_indices must contain integers in 1..K only")
+    }
+    fold_indices <- lapply(1:K, function(k) which(fold_indices == k))
+  } else {
+    if (K < 2) {
+      stop("K must be at least 2")
+    }
+    if (K > n) {
+      stop("K cannot be larger than the number of observations")
+    }
+    # Create stratified folds (stratify by outcome)
+    fold_indices <- create_folds(y, K = K)
+  }
+  
+  # Set seed for reproducibility (only affects internal randomness when folds were created internally)
   if (!is.null(seed)) {
     set.seed(seed)
   }
@@ -137,10 +160,6 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     cat(sprintf("Loss function: %s\n", loss_function))
     cat(sprintf("Regularization: %.3f\n\n", regularization))
   }
-  
-  # Create stratified folds
-  # Stratify by outcome to maintain class balance
-  fold_indices <- create_folds(y, K = K)
   
   if (verbose) {
     fold_sizes <- sapply(fold_indices, length)
