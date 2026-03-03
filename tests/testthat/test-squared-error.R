@@ -21,7 +21,6 @@ test_that("squared_error fit and model structure", {
     model <- safe_treefarms(dat$X, dat$y,
                            loss_function = "squared_error",
                            regularization = 0.1,
-                           store_training_data = TRUE,
                            verbose = FALSE)
   })
   expect_valid_treefarms_model(model, "squared_error")

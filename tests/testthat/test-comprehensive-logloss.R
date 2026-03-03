@@ -272,6 +272,10 @@ test_that("Single tree fitting with log-loss - probability accuracy and runtime"
     expect_equal(model$n_trees, 1, info = "fit_tree should return exactly 1 tree")
     expect_equal(model$loss_function, "log_loss")
     expect_true(validation$valid, info = "Probabilities should be valid for log-loss")
+
+    # Clean up memory
+    rm(model, pred_probs, accuracy_metrics, runtime_metrics, validation)
+    gc(verbose = FALSE)
   }
   
   # Test with auto-tuning
@@ -375,9 +379,13 @@ test_that("Cross-fitted single trees with log-loss - probability accuracy and ru
       )
       
       # Validate
-      expect_true(all(result$rashomon_sizes == 1), 
+      expect_true(all(result$rashomon_sizes == 1),
                   info = "Each fold should have exactly 1 tree")
       expect_true(validation$valid)
+
+      # Clean up memory
+      rm(result, fold_probs_list, avg_probs, accuracy_metrics, runtime_metrics, validation)
+      gc(verbose = FALSE)
     }
   }
 })
@@ -450,6 +458,10 @@ test_that("Rashomon set with log-loss - probability accuracy and runtime", {
       expect_true(model$n_trees >= 1, info = "Rashomon set should have at least 1 tree")
       expect_equal(model$loss_function, "log_loss")
       expect_true(validation$valid)
+
+      # Clean up memory
+      rm(model, pred_probs, trees, accuracy_metrics, runtime_metrics, validation)
+      gc(verbose = FALSE)
     }
   }
 })
@@ -519,9 +531,13 @@ test_that("Cross-fitted rashomon set with log-loss - probability accuracy and ru
       )
       
       # Validate
-      expect_true(all(result$rashomon_sizes >= 1), 
+      expect_true(all(result$rashomon_sizes >= 1),
                   info = "Each fold should have at least 1 tree")
       expect_true(validation$valid)
+
+      # Clean up memory
+      rm(result, fold_probs_list, avg_probs, accuracy_metrics, runtime_metrics, validation)
+      gc(verbose = FALSE)
     }
   }
 })
@@ -622,6 +638,10 @@ test_that("Intersecting trees from cross-fitted rashomon set - probability accur
       # Validate structure
       expect_true(is.numeric(result$n_intersecting))
       expect_true(result$n_intersecting >= 0)
+
+      # Clean up memory
+      rm(result, pred_probs, accuracy_metrics, validation, runtime_metrics, additional_info)
+      gc(verbose = FALSE)
     }
   }
 })
@@ -671,8 +691,13 @@ test_that("Single tree fitting with different dataset sizes", {
       validation,
       list(n_samples = nrow(data$X), n_trees = model$n_trees)
     )
-    
+
+
     expect_true(validation$valid)
+
+    # Clean up memory
+    rm(data, model, pred_probs, accuracy_metrics, runtime_metrics, validation)
+    gc(verbose = FALSE)
   }
 })
 

@@ -30,10 +30,9 @@ pattern_data <- list(
 
 test_that("fit_tree basic functionality works", {
   expect_no_error({
-    model <- fit_tree(test_data$X, test_data$y, 
-                     loss_function = "misclassification", 
+    model <- fit_tree(test_data$X, test_data$y,
+                     loss_function = "misclassification",
                      regularization = 0.1,
-                     store_training_data = TRUE,
                      verbose = FALSE)
   })
   
@@ -101,9 +100,9 @@ test_that("fit_tree input validation works", {
 })
 
 test_that("fit_tree returns expected structure", {
-  model <- fit_tree(test_data$X, test_data$y, 
-                   regularization = 0.1, 
-                   store_training_data = TRUE,
+  model <- fit_tree(test_data$X, test_data$y,
+                   regularization = 0.1,
+                   compute_probabilities = TRUE,
                    verbose = FALSE)
   
   # Check required fields
@@ -204,7 +203,6 @@ test_that("fit_tree works with logical y", {
 test_that("fit_tree works with pattern data", {
   model <- fit_tree(pattern_data$X, pattern_data$y, 
                    regularization = 0.1, 
-                   store_training_data = TRUE,
                    verbose = FALSE)
   
   expect_equal(model$n_trees, 1)
@@ -222,8 +220,7 @@ test_that("fit_rashomon basic functionality works", {
                          loss_function = "misclassification", 
                          regularization = 0.1,
                          rashomon_bound_multiplier = 0.05,
-                         store_training_data = TRUE,
-                         verbose = FALSE)
+                               verbose = FALSE)
   })
   
   # Check model structure
@@ -331,7 +328,7 @@ test_that("fit_rashomon returns expected structure", {
   model <- fit_rashomon(test_data$X, test_data$y, 
                        regularization = 0.1, 
                        rashomon_bound_multiplier = 0.05,
-                       store_training_data = TRUE,
+                           compute_probabilities = TRUE,
                        verbose = FALSE)
   
   # Check required fields
@@ -446,8 +443,7 @@ test_that("fit_rashomon works with pattern data", {
   model <- fit_rashomon(pattern_data$X, pattern_data$y, 
                        regularization = 0.1, 
                        rashomon_bound_multiplier = 0.05,
-                       store_training_data = TRUE,
-                       verbose = FALSE)
+                           verbose = FALSE)
   
   expect_true(model$n_trees >= 1)
   expect_true(model$accuracy >= 0)
