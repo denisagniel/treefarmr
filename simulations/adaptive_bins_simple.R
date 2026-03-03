@@ -1,7 +1,8 @@
 # Simple Simulation: Adaptive vs Fixed Bins for Tree Estimation
 # Compare discretization strategies for regression/classification with continuous X
 
-library(treefarmr)
+# Load development version (not installed package)
+devtools::load_all()
 set.seed(2026)
 
 # Simulation parameters
