@@ -25,11 +25,14 @@
 #'   \item{converged}{Whether the search converged to target}
 #'
 #' @export
-auto_tune_treefarms <- function(X, y, loss_function = "misclassification", 
+auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
                                 target_trees = 1, max_trees = 5,
                                 fixed_param = "regularization", fixed_value = 0.1,
                                 search_range = NULL, max_iterations = 20,
-                                verbose = FALSE, ...) {
+                                verbose = FALSE,
+                                discretize_method = "median",
+                                discretize_bins = 2,
+                                discretize_thresholds = NULL, ...) {
   
   # Input validation
   if (!fixed_param %in% c("regularization", "rashomon_bound_multiplier")) {
@@ -60,15 +63,34 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
   }
   
   if (verbose) {
-    cat("Auto-tuning TreeFARMS parameters...\n")
-    cat(sprintf("Target trees: %d, Max trees: %d\n", target_trees, max_trees))
-    cat(sprintf("Fixed %s: %.3f\n", fixed_param, fixed_value))
-    cat(sprintf("Searching %s in range [%.3f, %.3f]\n", 
+    message("Auto-tuning TreeFARMS parameters...\n")
+    message(sprintf("Target trees: %d, Max trees: %d\n", target_trees, max_trees))
+    message(sprintf("Fixed %s: %.3f\n", fixed_param, fixed_value))
+    message(sprintf("Searching %s in range [%.3f, %.3f]\n",
                 ifelse(fixed_param == "regularization", "rashomon_bound_multiplier", "regularization"),
                 search_range[1], search_range[2]))
-    cat("Loss function:", loss_function, "\n\n")
+    message("Loss function:", loss_function, "\n\n")
   }
-  
+
+  # Convert to data.frame if matrix
+  if (is.matrix(X)) {
+    X <- as.data.frame(X)
+  }
+
+  # Store original X for metadata
+  X_original <- X
+
+  # Discretize continuous features
+  discretization_result <- discretize_features(
+    X = X,
+    method = discretize_method,
+    n_bins = discretize_bins,
+    thresholds = discretize_thresholds
+  )
+
+  X <- discretization_result$X_binary
+  discretization_metadata <- discretization_result$metadata
+
   # Build CSV string once for reuse in the loop
   data_df <- as.data.frame(X)
   data_df$class <- y
@@ -106,7 +128,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
     }
     
     if (verbose) {
-      cat(sprintf("Iteration %d: regularization=%.3f, rashomon_bound_multiplier=%.3f\n", 
+      message(sprintf("Iteration %d: regularization=%.3f, rashomon_bound_multiplier=%.3f\n", 
                   iterations, regularization, rashomon_bound_multiplier))
     }
     
@@ -118,17 +140,18 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
     # Train model using internal fit (reuses csv_string)
     tryCatch({
       model <- fit_with_csv(csv_string, config, X, y,
-                           single_tree = FALSE, store_training_data = FALSE, compute_probabilities = FALSE)
+                           single_tree = FALSE, store_training_data = FALSE, compute_probabilities = FALSE,
+                           discretization_metadata, X_original)
       n_trees <- model$n_trees
       
       if (verbose) {
-        cat(sprintf("  -> Found %d trees\n", n_trees))
+        message(sprintf("  -> Found %d trees\n", n_trees))
       }
       
       # Check if this is acceptable
       if (n_trees >= target_trees && n_trees <= max_trees) {
         if (verbose) {
-          cat("  -> SUCCESS: Found acceptable number of trees!\n")
+          message("  -> SUCCESS: Found acceptable number of trees!\n")
         }
         return(list(
           model = model,
@@ -176,7 +199,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
         # Found acceptable range, but not exact target
         # Accept this result
         if (verbose) {
-          cat(sprintf("  -> ACCEPTABLE: Found %d trees (target: %d)\n", n_trees, target_trees))
+          message(sprintf("  -> ACCEPTABLE: Found %d trees (target: %d)\n", n_trees, target_trees))
         }
         return(list(
           model = model,
@@ -190,7 +213,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
       
     }, error = function(e) {
       if (verbose) {
-        cat(sprintf("  -> ERROR: %s\n", e$message))
+        message(sprintf("  -> ERROR: %s\n", e$message))
       }
       # If error, try more restrictive parameters
       if (fixed_param == "regularization") {
@@ -203,7 +226,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
     # Check for convergence to prevent infinite loops
     if (abs(high - low) < 0.001) {
       if (verbose) {
-        cat("Search converged (range too small)\n")
+        message("Search converged (range too small)\n")
       }
       break
     }
@@ -212,7 +235,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
   # If we didn't find exact target, return best result
   if (!is.null(best_result)) {
     if (verbose) {
-      cat(sprintf("\nDid not find exact target (%d trees), but found %d trees\n", 
+      message(sprintf("\nDid not find exact target (%d trees), but found %d trees\n", 
                   target_trees, best_trees))
     }
     return(best_result)

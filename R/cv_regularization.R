@@ -63,6 +63,9 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   if (!is.numeric(y) && !is.logical(y)) {
     stop("y must be numeric or logical")
   }
+  if (nrow(X) == 0) {
+    stop("X must have at least one row")
+  }
   if (length(y) != nrow(X)) {
     stop("Length of y must match number of rows in X")
   }
@@ -97,7 +100,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   for (ii in seq_len(n_lambda)) {
     lam <- lambda_grid[ii]
     if (verbose) {
-      cat(sprintf("lambda = %.6f (%d/%d)\n", lam, ii, n_lambda))
+      message(sprintf("lambda = %.6f (%d/%d)\n", lam, ii, n_lambda))
     }
     for (k in seq_len(K)) {
       val_idx <- fold_indices[[k]]
@@ -134,7 +137,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
 
   if (refit) {
     if (verbose) {
-      cat(sprintf("Refitting on full data with lambda = %.6f\n", best_lambda))
+      message(sprintf("Refitting on full data with lambda = %.6f\n", best_lambda))
     }
     out$model <- fit_tree(X, y, loss_function = loss_function,
                           regularization = best_lambda,

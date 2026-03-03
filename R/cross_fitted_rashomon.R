@@ -143,13 +143,12 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     if (K > n) {
       stop("K cannot be larger than the number of observations")
     }
-    # Create stratified folds (stratify by outcome)
+    # Set seed for reproducibility
+    if (!is.null(seed)) {
+      set.seed(seed)
+    }
+    # Create stratified folds AFTER setting seed
     fold_indices <- create_folds(y, K = K)
-  }
-  
-  # Set seed for reproducibility (only affects internal randomness when folds were created internally)
-  if (!is.null(seed)) {
-    set.seed(seed)
   }
   
   if (verbose) {

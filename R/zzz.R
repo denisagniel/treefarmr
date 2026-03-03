@@ -15,27 +15,13 @@ NULL
 #'
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
-  # CHECKPOINT: Entry to .onLoad()
-  tryCatch({
-    log_file <- file("/tmp/treefarmr_load.log", "a")
-    cat("[CHECKPOINT] .onLoad() ENTRY\n", file = log_file)
-    close(log_file)
-  }, error = function(e) {})
-  
   # Set package options (minimal, safe operations only)
   options(
     treefarms.verbose = FALSE,
     treefarms.default_regularization = 0.1,
     treefarms.default_rashomon_bound_multiplier = 0.05
   )
-  
-  # CHECKPOINT: Before exit from .onLoad()
-  tryCatch({
-    log_file <- file("/tmp/treefarmr_load.log", "a")
-    cat("[CHECKPOINT] .onLoad() EXIT\n", file = log_file)
-    close(log_file)
-  }, error = function(e) {})
-  
+
   invisible()
 }
 
@@ -46,28 +32,14 @@ NULL
 #'
 #' @keywords internal
 .onAttach <- function(libname, pkgname) {
-  # CHECKPOINT: Entry to .onAttach()
-  tryCatch({
-    log_file <- file("/tmp/treefarmr_load.log", "a")
-    cat("[CHECKPOINT] .onAttach() ENTRY\n", file = log_file)
-    close(log_file)
-  }, error = function(e) {})
-  
   packageStartupMessage(
-    "TreeFARMS R Package v", 
+    "TreeFARMS R Package v",
     utils::packageVersion(pkgname),
     "\n",
     "Tree-based Fast and Accurate Rule Set Models with Log-Loss and Probabilities\n",
     "For help, see: help(package = '", pkgname, "')"
   )
-  
-  # CHECKPOINT: Exit from .onAttach()
-  tryCatch({
-    log_file <- file("/tmp/treefarmr_load.log", "a")
-    cat("[CHECKPOINT] .onAttach() EXIT\n", file = log_file)
-    close(log_file)
-  }, error = function(e) {})
-  
+
   invisible()
 }
 

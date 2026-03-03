@@ -15,21 +15,28 @@
 #' @export
 predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), ...) {
   type <- match.arg(type)
-  
+
   # Validate input
   if (!inherits(object, "treefarms_model")) {
     stop("object must be a treefarms_model")
   }
-  
+
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {
     stop("newdata must be a data.frame or matrix")
   }
-  
+
   # Convert matrix to data.frame if needed
   if (is.matrix(newdata)) {
     newdata <- as.data.frame(newdata)
   }
-  
+
+  # Apply discretization if model used continuous features
+  if (!is.null(object$discretization)) {
+    newdata <- apply_discretization(newdata, object$discretization)
+    # Reorder to match training (X_train is already discretized binary names)
+    newdata <- newdata[, colnames(object$X_train), drop = FALSE]
+  }
+
   # Validate feature names
   if (!all(colnames(object$X_train) %in% colnames(newdata))) {
     stop("newdata must have the same features as training data")
@@ -112,28 +119,33 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
 #'
 #' @return Predictions based on type. If \code{fold_indices} is provided, each row gets \eqn{\tilde{\eta}^{(-k(i))}(X_i)}.
 #' @export
-predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"), 
+predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
                                ensemble = TRUE, fold_indices = NULL, ...) {
   type <- match.arg(type)
-  
+
   if (object$n_intersecting == 0) {
     stop("No intersecting trees available for prediction")
   }
-  
+
   # Validate input
   if (!inherits(object, "cf_rashomon")) {
     stop("object must be a cf_rashomon")
   }
-  
+
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {
     stop("newdata must be a data.frame or matrix")
   }
-  
+
   # Convert matrix to data.frame if needed
   if (is.matrix(newdata)) {
     newdata <- as.data.frame(newdata)
   }
-  
+
+  # Apply discretization if model used continuous features
+  if (!is.null(object$discretization)) {
+    newdata <- apply_discretization(newdata, object$discretization)
+  }
+
   # Validate feature names
   if (!all(colnames(object$X_train) %in% colnames(newdata))) {
     stop("newdata must have the same features as training data")
@@ -217,12 +229,19 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   # Backward compatible: no fold_indices
   if (ensemble && object$n_intersecting > 1) {
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("treefarmr"))
     predictions_list <- list()
     for (i in seq_len(object$n_intersecting)) {
-      model <- object$fold_models[[1]]
-      pred <- predict(model, newdata, type = type, ...)
-      predictions_list[[i]] <- pred
+      # Use i-th intersecting tree (not same model repeatedly)
+      tree_json <- object$intersecting_trees[[i]]
+      probs <- get_probabilities_from_tree(tree_json, newdata)
+      if (type == "class") {
+        predictions_list[[i]] <- ifelse(probs[, 2] >= 0.5, 1, 0)
+      } else {
+        predictions_list[[i]] <- probs[, 2]
+      }
     }
+    # Aggregate predictions
     if (type == "class") {
       pred_matrix <- do.call(cbind, predictions_list)
       final_predictions <- apply(pred_matrix, 1, function(x) {
