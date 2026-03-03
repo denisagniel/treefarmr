@@ -96,6 +96,94 @@ print("Probability predictions:")
 print(pred_prob)
 ```
 
+## Working with Continuous Features
+
+TreeFARMS automatically discretizes continuous features using threshold-based splits. No preprocessing required:
+
+```r
+library(treefarmr)
+
+# Continuous features - no preprocessing needed
+set.seed(42)
+X <- data.frame(
+  age = runif(200, 18, 80),
+  income = rnorm(200, 50000, 15000),
+  score = rbeta(200, 2, 5)
+)
+
+y <- as.numeric(X$age > 40 & X$income > 45000)
+
+# Fit tree (automatic discretization at median)
+model <- treefarms(X, y, loss_function = "log_loss")
+
+# Predictions work on continuous data
+X_new <- data.frame(
+  age = c(25, 55, 70),
+  income = c(35000, 60000, 80000),
+  score = c(0.3, 0.6, 0.8)
+)
+
+predictions <- predict(model, X_new, type = "prob")
+print(predictions)
+
+# Inspect discretization thresholds
+print(model$discretization$features$age$thresholds)
+print(model$discretization$features$income$thresholds)
+```
+
+### Custom Thresholds
+
+You can specify custom thresholds for specific features:
+
+```r
+# Use custom thresholds for age and income
+model <- treefarms(
+  X, y,
+  discretize_thresholds = list(
+    age = c(30, 50, 65),      # 3 thresholds for age
+    income = 50000            # 1 threshold for income
+  )
+)
+
+# score will use default median discretization
+```
+
+### Discretization Methods
+
+Two discretization methods are available:
+
+- **Median (default)**: Creates one threshold at the median value
+  ```r
+  model <- treefarms(X, y, discretize_method = "median")
+  # Each continuous feature gets 1 binary indicator
+  ```
+
+- **Quantiles**: Creates multiple thresholds using quantiles
+  ```r
+  model <- treefarms(X, y,
+                    discretize_method = "quantiles",
+                    discretize_bins = 4)
+  # n_bins=4 creates 4 bins with 3 thresholds (quartiles)
+  # Each continuous feature gets 3 binary indicators
+  ```
+
+### Mixed Binary and Continuous Features
+
+TreeFARMS handles mixed feature types automatically:
+
+```r
+X_mixed <- data.frame(
+  is_member = sample(0:1, 200, replace = TRUE),  # Binary
+  age = runif(200, 18, 80),                       # Continuous
+  purchased = sample(0:1, 200, replace = TRUE),  # Binary
+  income = rnorm(200, 50000, 15000)              # Continuous
+)
+
+# Binary features pass through unchanged
+# Continuous features are automatically discretized
+model <- treefarms(X_mixed, y, loss_function = "log_loss")
+```
+
 ## Key Features
 
 ### 1. Loss Function Options

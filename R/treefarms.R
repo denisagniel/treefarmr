@@ -4,7 +4,8 @@
 #' Train TreeFARMS models with support for log-loss optimization and probability predictions.
 #' TreeFARMS finds optimal decision trees using either misclassification loss or log-loss (cross-entropy).
 #'
-#' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
+#' @param X A data.frame or matrix of features. Can contain continuous or
+#'   binary (0/1) features. Continuous features will be automatically discretized.
 #' @param y For classification: binary (0/1). For regression: numeric vector (use \code{loss_function = "squared_error"}).
 #' @param loss_function Character string: \code{"misclassification"} (default), \code{"log_loss"}, or \code{"squared_error"} (regression; alias \code{"regression"}). For \code{"squared_error"}, \code{y} may be continuous and prediction returns fitted values (leaf means).
 #' @param regularization Numeric value controlling model complexity. Higher values
@@ -26,6 +27,12 @@
 #'   Default: TRUE. When TRUE, sets `rashomon = FALSE` to get only the optimal tree.
 #'   When FALSE, computes a full rashomon set. For convenience, use \code{\link{fit_tree}}
 #'   for single trees or \code{\link{fit_rashomon}} for rashomon sets.
+#' @param discretize_method Method for discretizing continuous features:
+#'   "median" (default) or "quantiles".
+#' @param discretize_bins Number of bins for quantile discretization (default: 2).
+#'   Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).
+#' @param discretize_thresholds Optional named list of custom thresholds
+#'   (e.g., list(age = c(30, 50))).
 #' @param ... Additional parameters passed to TreeFARMS configuration.
 #'
 #' @return A list containing:
@@ -327,10 +334,11 @@ get_fitted_from_tree <- function(tree_json, X) {
 }
 
 #' @export
-treefarms <- function(X, y, loss_function = "misclassification", regularization = 0.1, 
+treefarms <- function(X, y, loss_function = "misclassification", regularization = 0.1,
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
-worker_limit = 1L, verbose = FALSE, store_training_data = NULL, 
-compute_probabilities = FALSE, single_tree = TRUE, ...) {
+worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
+compute_probabilities = FALSE, single_tree = TRUE,
+discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL, ...) {
   
   if (is.null(store_training_data)) {
     store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
@@ -399,14 +407,32 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
     return(auto_tune_treefarms(X, y, loss_function = loss_function,
                               target_trees = target_trees, max_trees = max_trees,
                               fixed_param = fixed_param, fixed_value = fixed_value,
-                              verbose = verbose, ...))
+                              verbose = verbose,
+                              discretize_method = discretize_method,
+                              discretize_bins = discretize_bins,
+                              discretize_thresholds = discretize_thresholds,
+                              ...))
   }
   
   # Convert to data.frame if matrix
   if (is.matrix(X)) {
     X <- as.data.frame(X)
   }
-  
+
+  # Store original X for metadata
+  X_original <- X
+
+  # Discretize continuous features
+  discretization_result <- discretize_features(
+    X = X,
+    method = discretize_method,
+    n_bins = discretize_bins,
+    thresholds = discretize_thresholds
+  )
+
+  X <- discretization_result$X_binary
+  discretization_metadata <- discretization_result$metadata
+
   # Check for binary features (vectorized)
   m <- as.matrix(X)
   bad <- !m %in% c(0L, 1L) & !is.na(m)
@@ -459,11 +485,13 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
   body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
   csv_string <- paste(c(header, body), collapse = "\n")
   
-  fit_result <- .treefarms_fit_with_csv(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities)
+  fit_result <- .treefarms_fit_with_csv(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities,
+                                        discretization_metadata, X_original)
   return(fit_result)
 }
 
-.treefarms_fit_with_csv <- function(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities) {
+.treefarms_fit_with_csv <- function(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities,
+                                    discretization_metadata = NULL, X_original = NULL) {
   config_json <- jsonlite::toJSON(config, auto_unbox = TRUE)
   verbose <- isTRUE(config$verbose)
   is_regression <- config$loss_function %in% c("squared_error", "regression")
@@ -864,7 +892,11 @@ compute_probabilities = FALSE, single_tree = TRUE, ...) {
       result$X_train <- X[integer(0), , drop = FALSE]
       result$y_train <- NULL
     }
-    
+
+    # Store discretization metadata
+    result$discretization <- discretization_metadata
+    result$X_original_names <- names(X_original)
+
     # Set class
     class(result) <- "treefarms_model"
     
