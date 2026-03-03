@@ -300,8 +300,11 @@ get_fitted_from_tree <- function(tree_json, X) {
     return(rep(NA_real_, nrow(X)))
   }
   n_samples <- nrow(X)
-  fitted <- rep(NA_real_, n_samples)
   max_depth <- 100L
+
+  # Use environment to hold mutable state (replaces global assignment)
+  state_env <- new.env(parent = emptyenv())
+  state_env$fitted <- rep(NA_real_, n_samples)
 
   traverse_batch_fitted <- function(node, row_indices, depth) {
     if (length(row_indices) == 0) return()
@@ -309,7 +312,7 @@ get_fitted_from_tree <- function(tree_json, X) {
     if (is.null(node) || !is.list(node)) return()
     if (!is.null(node$prediction)) {
       val <- as.numeric(node$prediction)
-      fitted[row_indices] <<- val
+      state_env$fitted[row_indices] <- val  # No <<- needed
       return()
     }
     if (!is.null(node$feature)) {
@@ -332,7 +335,7 @@ get_fitted_from_tree <- function(tree_json, X) {
     }
   }
   traverse_batch_fitted(tree, seq_len(n_samples), 0L)
-  fitted
+  state_env$fitted  # Return from environment
 }
 
 #' @export

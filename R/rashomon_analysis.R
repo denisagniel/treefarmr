@@ -207,24 +207,24 @@ get_tree_rules <- function(tree_json, feature_names = NULL) {
   # Parse the JSON
   tree_data <- jsonlite::fromJSON(tree_json, simplifyVector = FALSE)
   
-  # Extract rules and leaves
-  rules <- list()
-  leaves <- list()
-  features_used <- character(0)
-  
+  # Extract rules and leaves using environment (replaces global assignments)
+  state_env <- new.env(parent = emptyenv())
+  state_env$leaves <- list()
+  state_env$features_used <- character(0)
+
   # Recursive function to extract rules
   extract_rules <- function(node, path = "") {
     if (is.null(node$children) || length(node$children) == 0) {
       # Leaf node
-      leaf_id <- length(leaves) + 1
-      leaves[[leaf_id]] <<- list(
+      leaf_id <- length(state_env$leaves) + 1
+      state_env$leaves[[leaf_id]] <- list(
         path = path,
         prediction = node$prediction,
         loss = if (!is.null(node$loss)) node$loss else NA
       )
       return()
     }
-    
+
     # Internal node
     feature_idx <- node$feature
     feature_name <- if (!is.null(feature_names) && feature_idx < length(feature_names)) {
@@ -232,9 +232,9 @@ get_tree_rules <- function(tree_json, feature_names = NULL) {
     } else {
       paste0("feature_", feature_idx)
     }
-    
-    features_used <<- unique(c(features_used, feature_name))
-    
+
+    state_env$features_used <- unique(c(state_env$features_used, feature_name))
+
     # Process children
     for (i in seq_along(node$children)) {
       child <- node$children[[i]]
@@ -246,15 +246,15 @@ get_tree_rules <- function(tree_json, feature_names = NULL) {
       extract_rules(child, child_path)
     }
   }
-  
+
   # Extract rules from root
   extract_rules(tree_data)
-  
+
   # Create result
   result <- list(
-    rules = leaves,
-    features_used = features_used,
-    n_rules = length(leaves)
+    rules = state_env$leaves,
+    features_used = state_env$features_used,
+    n_rules = length(state_env$leaves)
   )
   
   return(result)
@@ -362,19 +362,19 @@ analyze_cf_rashomon <- function(cf_result, verbose = FALSE) {
   # Feature usage analysis
   if (cf_result$n_intersecting > 0) {
     # Analyze features used in intersecting trees
-    features_used <- list()
+    features_used <- vector("list", length = cf_result$n_intersecting)
     for (i in seq_len(cf_result$n_intersecting)) {
       tree_json <- cf_result$intersecting_trees[[i]]
       # Handle case where tree_json might be a list with json field
       if (is.list(tree_json) && "json" %in% names(tree_json)) {
         tree_json <- tree_json$json
       }
-      tryCatch({
+      features_used[[i]] <- tryCatch({
         tree_rules <- get_tree_rules(tree_json)
-        features_used[[i]] <- tree_rules$features_used
+        tree_rules$features_used
       }, error = function(e) {
         # Skip this tree if there's an error
-        features_used[[i]] <<- character(0)
+        character(0)
       })
     }
     analysis$features_used <- unique(unlist(features_used))

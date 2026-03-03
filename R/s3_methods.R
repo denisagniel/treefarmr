@@ -348,19 +348,21 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
   if (!requireNamespace("DiagrammeR", quietly = TRUE)) {
     stop("Package 'DiagrammeR' is required for interactive tree plots")
   }
-  
-  # Build nodes and edges from tree structure
-  nodes_list <- list()
-  edges_list <- list()
-  node_id_counter <- 0
-  
-  # Recursive function to build graph
+
+  # Create environment to hold mutable state (replaces global assignments)
+  state_env <- new.env(parent = emptyenv())
+  state_env$nodes_list <- list()
+  state_env$edges_list <- list()
+  state_env$node_id_counter <- 0
+
+  # Recursive function to build graph (no more <<-)
   build_graph <- function(node, parent_id = NULL, edge_label = NULL) {
     if (is.null(node)) return(NULL)
-    
-    current_id <- node_id_counter
-    node_id_counter <<- node_id_counter + 1
-    
+
+    # Get current ID and increment counter
+    current_id <- state_env$node_id_counter
+    state_env$node_id_counter <- state_env$node_id_counter + 1
+
     if (node$type == "leaf") {
       # Leaf node
       label <- paste0("Prediction: ", node$prediction)
@@ -370,8 +372,9 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
       if (!is.null(node$probabilities) && length(node$probabilities) > 0) {
         label <- paste0(label, "\nProb: [", paste(sprintf("%.2f", node$probabilities), collapse = ", "), "]")
       }
-      
-      nodes_list[[length(nodes_list) + 1]] <<- list(
+
+      # Append to nodes list in environment
+      state_env$nodes_list[[length(state_env$nodes_list) + 1]] <- list(
         id = current_id,
         label = label,
         type = "leaf"
@@ -379,22 +382,24 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
     } else if (node$type == "split") {
       # Split node
       label <- paste0(node$feature, "\n", node$relation, " ", node$reference)
-      
-      nodes_list[[length(nodes_list) + 1]] <<- list(
+
+      # Append to nodes list in environment
+      state_env$nodes_list[[length(state_env$nodes_list) + 1]] <- list(
         id = current_id,
         label = label,
         type = "split"
       )
-      
+
       # Add edge from parent if exists
       if (!is.null(parent_id)) {
-        edges_list[[length(edges_list) + 1]] <<- list(
+        # Append to edges list in environment
+        state_env$edges_list[[length(state_env$edges_list) + 1]] <- list(
           from = parent_id,
           to = current_id,
           label = edge_label
         )
       }
-      
+
       # Process children
       if (!is.null(node$false)) {
         build_graph(node$false, current_id, "FALSE")
@@ -403,12 +408,16 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
         build_graph(node$true, current_id, "TRUE")
       }
     }
-    
+
     return(current_id)
   }
-  
+
   # Build graph
   build_graph(tree)
+
+  # Extract results from environment
+  nodes_list <- state_env$nodes_list
+  edges_list <- state_env$edges_list
   
   # Convert to DiagrammeR format
   if (length(nodes_list) > 0) {
