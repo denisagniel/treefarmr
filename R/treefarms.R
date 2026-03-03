@@ -510,18 +510,13 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
     }
     
     if (verbose) {
-      cat("DEBUG: json_output is null:", is.null(json_output), "\n")
-      cat("DEBUG: json_output is empty:", json_output == "", "\n")
       if (!is.null(json_output) && json_output != "") {
-        cat("DEBUG: json_output length:", nchar(json_output), "\n")
-        cat("DEBUG: json_output first 200 chars:", substr(json_output, 1, 200), "\n")
       }
     }
     
     # Parse the JSON result first with enhanced error handling
     if (is.null(json_output) || json_output == "") {
       if (verbose) {
-        cat("DEBUG: json_output is null or empty\n")
       }
       result_data <- NULL
     } else {
@@ -529,20 +524,15 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
       json_trimmed <- trimws(json_output)
       if (json_trimmed == "{}" || json_trimmed == "null") {
         if (verbose) {
-          cat("DEBUG: json_output is empty JSON object or null, this may indicate a serialization failure\n")
         }
         result_data <- NULL
       } else {
         tryCatch({
           result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
           if (verbose) {
-            cat("DEBUG: result_data parsed successfully\n")
-            cat("DEBUG: result_data names:", paste(names(result_data), collapse = ", "), "\n")
             if (!is.null(result_data$storage)) {
-              cat("DEBUG: result_data$storage length:", length(result_data$storage), "\n")
             }
             if (!is.null(result_data$trees)) {
-              cat("DEBUG: result_data$trees length:", length(result_data$trees), "\n")
             }
           }
         }, error = function(e) {
@@ -552,9 +542,6 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
                   ". JSON length: ", nchar(json_output),
                   ". First 200 chars: ", substr(json_output, 1, min(200, nchar(json_output))))
           if (verbose) {
-            cat("DEBUG: Error parsing json_output:", e$message, "\n")
-            cat("DEBUG: json_output length:", nchar(json_output), "\n")
-            cat("DEBUG: json_output first 200 chars:", substr(json_output, 1, min(200, nchar(json_output))), "\n")
           }
           result_data <- NULL
         })
@@ -569,7 +556,6 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
         # Extract the first tree from the trees array
         tree_json <- result_data$trees[[1]]
         if (verbose) {
-          cat("DEBUG: Extracted tree from result_data$trees\n")
         }
       } else if (!is.null(result_data$feature) || !is.null(result_data$prediction)) {
         # Check if result_data itself is a tree structure
@@ -592,10 +578,7 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
       }
     }
     if (verbose) {
-      cat("DEBUG: tree_json is null:", is.null(tree_json), "\n")
       if (!is.null(tree_json)) {
-        cat("DEBUG: tree_json has feature:", !is.null(tree_json$feature), "\n")
-        cat("DEBUG: tree_json has prediction:", !is.null(tree_json$prediction), "\n")
       }
     }
     
@@ -709,13 +692,8 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
     tree_to_use <- if (!is.null(tree_json)) tree_json else result_data
     
     if (verbose) {
-      cat("DEBUG: tree_to_use is null:", is.null(tree_to_use), "\n")
       if (!is.null(tree_to_use)) {
-        cat("DEBUG: tree_to_use is list:", is.list(tree_to_use), "\n")
         if (is.list(tree_to_use)) {
-          cat("DEBUG: tree_to_use names:", paste(names(tree_to_use), collapse = ", "), "\n")
-          cat("DEBUG: tree_to_use has feature:", !is.null(tree_to_use$feature), "\n")
-          cat("DEBUG: tree_to_use has prediction:", !is.null(tree_to_use$prediction), "\n")
         }
       }
     }
@@ -741,7 +719,6 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
     }
     
     if (verbose) {
-      cat("DEBUG: has_tree:", has_tree, "\n")
     }
     
     # Store tree structure for lazy computation
@@ -799,21 +776,17 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
     } else {
       # Classification
       if (compute_probabilities && has_tree) {
-        if (verbose) cat("DEBUG: Computing probabilities immediately\n")
         probabilities <- get_probabilities_from_tree(tree_to_use, X)
         if (verbose) {
-          cat("DEBUG: Probabilities extracted, shape:", nrow(probabilities), "x", ncol(probabilities), "\n")
           print(head(probabilities, 3))
         }
         predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
         accuracy <- mean(predictions == y)
       } else if (has_tree) {
-        if (verbose) cat("DEBUG: Skipping immediate probability computation (lazy evaluation)\n")
         probs <- get_probabilities_from_tree(tree_to_use, X)
         predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
         accuracy <- mean(predictions == y)
       } else {
-        if (verbose) cat("DEBUG: No tree available, using default values\n")
         if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
           warning("Model training may have failed or serialization returned empty result. ",
                   "Try reducing dataset size or adjusting regularization.")

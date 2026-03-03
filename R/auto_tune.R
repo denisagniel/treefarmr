@@ -46,7 +46,22 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
   if (max_trees < target_trees) {
     stop("max_trees must be at least target_trees")
   }
-  
+
+  # Validate discretization parameters
+  if (!discretize_method %in% c("median", "quantiles")) {
+    stop("discretize_method must be 'median' or 'quantiles', got: ",
+         discretize_method, call. = FALSE)
+  }
+
+  if (!is.numeric(discretize_bins) || length(discretize_bins) != 1 || discretize_bins < 2) {
+    stop("discretize_bins must be a single numeric value >= 2, got: ",
+         discretize_bins, call. = FALSE)
+  }
+
+  if (!is.null(discretize_thresholds) && !is.numeric(discretize_thresholds)) {
+    stop("discretize_thresholds must be numeric if provided", call. = FALSE)
+  }
+
   # Set default search ranges based on fixed parameter
   if (is.null(search_range)) {
     if (fixed_param == "regularization") {

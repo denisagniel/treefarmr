@@ -144,6 +144,38 @@ tree_structure_to_canonical <- function(tree) {
   stop("Tree node has neither feature nor prediction")
 }
 
+#' Get maximum feature index referenced in tree structure
+#' @noRd
+get_max_feature_index <- function(node) {
+  if (is.null(node) || !is.list(node)) {
+    return(NULL)
+  }
+
+  max_idx <- NULL
+
+  # Check current node
+  if (!is.null(node$feature)) {
+    max_idx <- node$feature
+  }
+
+  # Recursively check children
+  if (!is.null(node$left)) {
+    left_max <- get_max_feature_index(node$left)
+    if (!is.null(left_max)) {
+      max_idx <- if (is.null(max_idx)) left_max else max(max_idx, left_max)
+    }
+  }
+
+  if (!is.null(node$right)) {
+    right_max <- get_max_feature_index(node$right)
+    if (!is.null(right_max)) {
+      max_idx <- if (is.null(max_idx)) right_max else max(max_idx, right_max)
+    }
+  }
+
+  return(max_idx)
+}
+
 #' Refit a tree structure on data (leaf values only)
 #'
 #' @description
@@ -160,15 +192,42 @@ tree_structure_to_canonical <- function(tree) {
 #'   \code{probabilities} fitted on \code{(X, y)}.
 #' @export
 refit_structure_on_data <- function(structure, X, y) {
+  # Validate structure input
+  if (is.null(structure)) {
+    stop("structure cannot be NULL", call. = FALSE)
+  }
+
   if (is.character(structure)) {
     structure <- jsonlite::fromJSON(structure, simplifyVector = FALSE)
   }
+
+  if (!is.list(structure)) {
+    stop("structure must be a list or tree object, got: ",
+         class(structure)[1], call. = FALSE)
+  }
+
   if (is.matrix(X)) {
     X <- as.data.frame(X)
   }
+
+  if (!is.data.frame(X)) {
+    stop("X must be a data.frame or matrix", call. = FALSE)
+  }
+
+  if (!is.numeric(y) && !is.logical(y)) {
+    stop("y must be numeric or logical", call. = FALSE)
+  }
+
   n <- length(y)
   if (nrow(X) != n) {
-    stop("nrow(X) must equal length(y)")
+    stop("nrow(X) must equal length(y)", call. = FALSE)
+  }
+
+  # Check that structure's feature indices don't exceed ncol(X)
+  max_feature <- get_max_feature_index(structure)
+  if (!is.null(max_feature) && max_feature > ncol(X)) {
+    stop("structure references feature index ", max_feature,
+         " but X only has ", ncol(X), " columns", call. = FALSE)
   }
   row_indices <- seq_len(n)
 
