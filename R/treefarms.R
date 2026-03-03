@@ -30,6 +30,8 @@
 #' @param discretize_method Method for discretizing continuous features:
 #'   "median" (default) or "quantiles".
 #' @param discretize_bins Number of bins for quantile discretization (default: 2).
+#'   Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with n
+#'   (theory requires bins → ∞ for optimal rates). Adaptive uses max(2, ceiling(log(n)/3)).
 #'   Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).
 #' @param discretize_thresholds Optional named list of custom thresholds
 #'   (e.g., list(age = c(30, 50))).

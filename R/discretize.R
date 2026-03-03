@@ -7,7 +7,9 @@
 #'
 #' @param X A data.frame of features (continuous or binary)
 #' @param method Discretization method: "median" or "quantiles"
-#' @param n_bins Number of bins for quantile discretization (creates n_bins-1 thresholds)
+#' @param n_bins Number of bins for quantile discretization (creates n_bins-1 thresholds).
+#'   Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with sample size.
+#'   Adaptive uses: max(2, ceiling(log(n) / 3)).
 #' @param thresholds Optional named list of user-provided thresholds for specific features
 #'
 #' @return A list with two elements:
@@ -30,8 +32,21 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
     stop("method must be 'median' or 'quantiles'")
   }
 
+  # Handle adaptive n_bins
+  if (is.character(n_bins)) {
+    if (n_bins == "adaptive") {
+      n <- nrow(X)
+      # Theory: need bins ~ log(n) to allow tree complexity to grow with n
+      # Practical choice: max(2, ceiling(log(n) / 3))
+      n_bins <- max(2, ceiling(log(n) / 3))
+      if (n_bins < 2) n_bins <- 2  # Safety
+    } else {
+      stop("n_bins must be numeric >= 2 or 'adaptive'")
+    }
+  }
+
   if (!is.numeric(n_bins) || n_bins < 2) {
-    stop("n_bins must be a numeric value >= 2")
+    stop("n_bins must be a numeric value >= 2 or 'adaptive'")
   }
 
   # Fast path: Check if all features are already binary

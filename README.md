@@ -167,6 +167,16 @@ Two discretization methods are available:
   # Each continuous feature gets 3 binary indicators
   ```
 
+- **Adaptive bins** (recommended for theory): Bins grow with sample size
+  ```r
+  model <- treefarms(X, y,
+                    discretize_method = "quantiles",
+                    discretize_bins = "adaptive")
+  # Bins = max(2, ceiling(log(n)/3))
+  # Required for theoretical convergence rate guarantees
+  # Allows tree complexity to grow with n
+  ```
+
 ### Mixed Binary and Continuous Features
 
 TreeFARMS handles mixed feature types automatically:

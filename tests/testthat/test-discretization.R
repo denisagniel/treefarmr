@@ -470,3 +470,109 @@ test_that("Consistency: discrete and continuous training produce same tree", {
 
   expect_equal(pred_cont, pred_bin)
 })
+
+
+test_that("Adaptive discretization: bins grow with sample size", {
+  setup_test_environment()
+  on.exit(teardown_test_environment())
+
+  # Small sample
+  set.seed(123)
+  X_small <- data.frame(x1 = runif(50))
+  y_small <- sample(0:1, 50, replace = TRUE)
+
+  model_small <- treefarms(X_small, y_small,
+                          discretize_method = "quantiles",
+                          discretize_bins = "adaptive")
+
+  n_bins_small <- model_small$discretization$n_bins
+  n_thresholds_small <- length(model_small$discretization$features$x1$thresholds)
+
+  # Expected: max(2, ceiling(log(50) / 3)) = max(2, ceiling(3.91 / 3)) = max(2, 2) = 2
+  expect_equal(n_bins_small, 2)
+
+  # Large sample
+  set.seed(123)
+  X_large <- data.frame(x1 = runif(1000))
+  y_large <- sample(0:1, 1000, replace = TRUE)
+
+  model_large <- treefarms(X_large, y_large,
+                          discretize_method = "quantiles",
+                          discretize_bins = "adaptive")
+
+  n_bins_large <- model_large$discretization$n_bins
+  n_thresholds_large <- length(model_large$discretization$features$x1$thresholds)
+
+  # Expected: max(2, ceiling(log(1000) / 3)) = max(2, ceiling(6.91 / 3)) = max(2, 3) = 3
+  expect_equal(n_bins_large, 3)
+
+  # Bins should increase with sample size
+  expect_true(n_bins_large >= n_bins_small)
+  expect_true(n_thresholds_large >= n_thresholds_small)
+})
+
+
+test_that("Adaptive discretization: predictions work correctly", {
+  setup_test_environment()
+  on.exit(teardown_test_environment())
+
+  set.seed(123)
+  X <- data.frame(
+    x1 = runif(500, 0, 10),
+    x2 = rnorm(500, 5, 2)
+  )
+  y <- as.numeric(X$x1 > 5 & X$x2 > 5)
+
+  # Fit with adaptive bins
+  model <- treefarms(X, y,
+                    discretize_method = "quantiles",
+                    discretize_bins = "adaptive",
+                    loss_function = "log_loss")
+
+  # Check model is valid
+  expect_valid_treefarms_model(model)
+
+  # Check that bins were computed adaptively
+  expect_true(model$discretization$n_bins >= 2)
+
+  # Expected: max(2, ceiling(log(500) / 3)) = max(2, ceiling(6.21 / 3)) = 3
+  expect_equal(model$discretization$n_bins, 3)
+
+  # Predictions should work
+  X_new <- data.frame(
+    x1 = runif(50, 0, 10),
+    x2 = rnorm(50, 5, 2)
+  )
+  pred <- predict(model, X_new, type = "prob")
+  expect_valid_predictions(pred, 50, type = "prob")
+})
+
+
+test_that("Adaptive vs fixed bins: both work", {
+  setup_test_environment()
+  on.exit(teardown_test_environment())
+
+  set.seed(123)
+  X <- data.frame(x1 = runif(200))
+  y <- sample(0:1, 200, replace = TRUE)
+
+  # Fixed bins
+  model_fixed <- treefarms(X, y, discretize_bins = 4)
+  expect_equal(model_fixed$discretization$n_bins, 4)
+
+  # Adaptive bins
+  model_adaptive <- treefarms(X, y, discretize_bins = "adaptive")
+  # Expected: max(2, ceiling(log(200) / 3)) = max(2, ceiling(5.3 / 3)) = 2
+  expect_equal(model_adaptive$discretization$n_bins, 2)
+
+  # Both should produce valid models
+  expect_valid_treefarms_model(model_fixed)
+  expect_valid_treefarms_model(model_adaptive)
+
+  # Both should predict
+  pred_fixed <- predict(model_fixed, X, type = "class")
+  pred_adaptive <- predict(model_adaptive, X, type = "class")
+
+  expect_equal(length(pred_fixed), 200)
+  expect_equal(length(pred_adaptive), 200)
+})
