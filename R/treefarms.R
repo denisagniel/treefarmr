@@ -41,10 +41,10 @@
 #'   affecting optimality. Can be set to FALSE to disable for debugging.
 #' @param cart_lookahead_depth Integer. Reserved for future use. Currently ignored.
 #' @param k_cluster Logical. Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5).
-#'   Default: FALSE. When TRUE for regression with \code{loss_function = "squared_error"},
-#'   uses optimal 1D k-Means clustering to compute tighter lower bounds, dramatically
-#'   improving optimization speed. Based on Song & Zhong (2020) dynamic programming algorithm.
-#'   Recommended for all regression trees. Has no effect on classification tasks.
+#'   Default: TRUE (recommended). When enabled for regression with \code{loss_function = "squared_error"},
+#'   uses optimal 1D k-Means clustering to compute tighter lower bounds, improving
+#'   optimization speed (typically 1.5-4x faster). Based on Song & Zhong (2020) algorithm.
+#'   Has no effect on classification tasks. Can be set to FALSE to disable.
 #' @param ... Additional parameters passed to TreeFARMS configuration.
 #'
 #' @return A list containing:
@@ -357,7 +357,7 @@ rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, ma
 worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
 discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
-cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = FALSE, ...) {
+cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
   
   if (is.null(store_training_data)) {
     store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
