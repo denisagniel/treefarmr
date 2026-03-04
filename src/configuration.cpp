@@ -69,6 +69,11 @@ bool Configuration::rashomon_ignore_trivial_extensions = true;
 
 LossFunction Configuration::loss_function = MISCLASSIFICATION;
 
+bool Configuration::cart_lookahead = false;
+unsigned int Configuration::cart_lookahead_depth = 0;
+
+bool Configuration::k_cluster = false;
+
 // REMOVED: __attribute__((constructor)) functions cause installation hangs
 // static void __attribute__((constructor)) after_config_static_init() {
 //     fprintf(stderr, "[TREEFARMR_CHECKPOINT] AFTER configuration.cpp static initialization\n");
@@ -176,6 +181,10 @@ void Configuration::configure(json config) {
                 }
             }
 
+    if (config.contains("cart_lookahead")) { Configuration::cart_lookahead = config["cart_lookahead"]; }
+    if (config.contains("cart_lookahead_depth")) { Configuration::cart_lookahead_depth = config["cart_lookahead_depth"]; }
+
+    if (config.contains("k_cluster")) { Configuration::k_cluster = config["k_cluster"]; }
 
 }
 
@@ -231,6 +240,9 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["rashomon_bound_adder"] = Configuration::rashomon_bound_adder;
     obj["rashomon_ignore_trivial_extensions"] = Configuration::rashomon_ignore_trivial_extensions;
     obj["loss_function"] = (Configuration::loss_function == MISCLASSIFICATION) ? "misclassification" : (Configuration::loss_function == LOG_LOSS ? "log_loss" : "squared_error");
+    obj["cart_lookahead"] = Configuration::cart_lookahead;
+    obj["cart_lookahead_depth"] = Configuration::cart_lookahead_depth;
+    obj["k_cluster"] = Configuration::k_cluster;
 
     return obj.dump(spacing);
 }

@@ -97,6 +97,10 @@ public:
 
     static LossFunction loss_function; // Loss function to use for optimization
 
+    static bool cart_lookahead;              // Enable CART lookahead bounds for faster optimization
+    static unsigned int cart_lookahead_depth; // Depth for CART lookahead (0=disabled, 1-3 typical)
+
+    static bool k_cluster;                   // Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5)
 
 };
 

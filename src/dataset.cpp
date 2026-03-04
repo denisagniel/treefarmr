@@ -1,5 +1,7 @@
 #include "dataset.hpp"
 #include "state.hpp"
+#include "kmeans.hpp"  // For k-means lower bounds
+#include <map>         // For grouping equivalent points
 
 Dataset::Dataset(void) {}
 Dataset::~Dataset(void) {}
@@ -316,6 +318,88 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
         }
         min_loss = sse;
         max_loss = sse;
+
+        // Compute lower bounds for regression (n > 1 required for meaningful bounds)
+        if (n > 1) {
+            // ALWAYS compute equivalent points bound (OSRT approach when k_cluster=false)
+            // Group samples by feature vector - samples with identical features
+            // must receive the same prediction, so within-group variance is unavoidable
+            std::map<Bitmask, std::vector<float>> equiv_groups;
+
+            for (unsigned int i = 0; i < height(); ++i) {
+                if (capture_set.get(i)) {
+                    // feature_rows[i] is a Bitmask containing all binary feature values for sample i
+                    equiv_groups[this -> feature_rows[i]].push_back(this -> target_values[i]);
+                }
+            }
+
+            // Compute equivalent points lower bound (sum of within-group variances)
+            // This is the MINIMUM achievable loss because samples with same features
+            // must get the same prediction, so variance within each group is unavoidable
+            std::vector<double> weights, values;
+            float equiv_points_loss = 0.0f;  // Sum of within-group SSE
+
+            // C++11 compatible iteration (no structured bindings)
+            for (auto it = equiv_groups.begin(); it != equiv_groups.end(); ++it) {
+                const std::vector<float> & targets = it->second;
+                double w = (double)targets.size();
+                double sum = 0.0;
+                double sum_sq = 0.0;
+
+                // Compute sum and sum of squares
+                for (size_t j = 0; j < targets.size(); ++j) {
+                    sum += targets[j];
+                    sum_sq += targets[j] * targets[j];
+                }
+
+                // Within-group variance: sum(y^2) - n*mean^2
+                double mean = sum / w;
+                double within_group_sse = sum_sq - w * mean * mean;
+                equiv_points_loss += within_group_sse;
+
+                // Store for optional k-means
+                weights.push_back(w);
+                values.push_back(mean);
+            }
+
+            // Use equiv_points_loss as base lower bound
+            float min_achievable_loss = equiv_points_loss;
+
+            // If k-means enabled, try to get an even tighter bound
+            if (Configuration::k_cluster) {
+                // Call k-Means solver with regularization=0 to get minimum achievable SSE
+                // k-Means can further reduce loss by optimally clustering the equivalent points
+                ldouble kmeans_sse = compute_kmeans_lower_bound(
+                    values,
+                    weights,
+                    0.0  // regularization = 0 to get pure SSE lower bound
+                );
+
+                // k-Means bound includes both:
+                // - Between-cluster SSE (from k-means on aggregated points)
+                // - Within-cluster SSE (from equiv_points_loss)
+                min_achievable_loss = (float)(kmeans_sse + equiv_points_loss);
+            }
+
+            // Safeguard: bound should never exceed current SSE
+            if (min_achievable_loss > sse || min_achievable_loss < 0.0f) {
+                // Bound is invalid - fall back to equiv points only
+                min_achievable_loss = equiv_points_loss;
+            }
+
+            // Ensure bound is non-negative and doesn't exceed current loss
+            min_achievable_loss = std::max(0.0f, std::min(min_achievable_loss, sse));
+
+            // potential = maximum possible reduction in loss
+            potential = sse - min_achievable_loss;
+
+            // Update min_loss to reflect lower bound
+            min_loss = min_achievable_loss;
+        } else {
+            // n <= 1: no room for improvement (single sample or empty)
+            potential = 0.0f;
+        }
+
         return;
     }
     Bitmask & buffer = state.locals[id].columns[0];

@@ -35,6 +35,16 @@
 #'   Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).
 #' @param discretize_thresholds Optional named list of custom thresholds
 #'   (e.g., list(age = c(30, 50))).
+#' @param cart_lookahead Logical. Enable OSRT one-step lookahead bounds (Theorem 3.2).
+#'   Default: TRUE (recommended). When enabled, uses scope-based pruning from the OSRT
+#'   paper to eliminate subtrees more aggressively, improving optimization speed without
+#'   affecting optimality. Can be set to FALSE to disable for debugging.
+#' @param cart_lookahead_depth Integer. Reserved for future use. Currently ignored.
+#' @param k_cluster Logical. Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5).
+#'   Default: FALSE. When TRUE for regression with \code{loss_function = "squared_error"},
+#'   uses optimal 1D k-Means clustering to compute tighter lower bounds, dramatically
+#'   improving optimization speed. Based on Song & Zhong (2020) dynamic programming algorithm.
+#'   Recommended for all regression trees. Has no effect on classification tasks.
 #' @param ... Additional parameters passed to TreeFARMS configuration.
 #'
 #' @return A list containing:
@@ -215,8 +225,11 @@ get_probabilities_from_tree <- function(tree_json, X) {
   }
   
   n_samples <- nrow(X)
-  probabilities <- matrix(0.5, nrow = n_samples, ncol = 2)
   max_depth <- 100L
+
+  # Use environment to hold mutable state (avoids super-assignment)
+  state_env <- new.env(parent = emptyenv())
+  state_env$probabilities <- matrix(0.5, nrow = n_samples, ncol = 2)
 
   leaf_probs_from_node <- function(node) {
     if (is.null(node) || !is.list(node)) return(c(0.5, 0.5))
@@ -249,8 +262,8 @@ get_probabilities_from_tree <- function(tree_json, X) {
     if (is.null(node) || !is.list(node)) return()
     if (!is.null(node$prediction)) {
       probs <- leaf_probs_from_node(node)
-      probabilities[row_indices, 1] <- probs[1]
-      probabilities[row_indices, 2] <- probs[2]
+      state_env$probabilities[row_indices, 1] <- probs[1]
+      state_env$probabilities[row_indices, 2] <- probs[2]
       return()
     }
     if (!is.null(node$feature)) {
@@ -274,8 +287,8 @@ get_probabilities_from_tree <- function(tree_json, X) {
   }
 
   traverse_batch(tree_json, seq_len(n_samples), 0L)
-  colnames(probabilities) <- c("P(class=0)", "P(class=1)")
-  return(probabilities)
+  colnames(state_env$probabilities) <- c("P(class=0)", "P(class=1)")
+  return(state_env$probabilities)
 }
 
 #' Get fitted values from a regression tree
@@ -343,7 +356,8 @@ treefarms <- function(X, y, loss_function = "misclassification", regularization 
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
 worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
-discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL, ...) {
+discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
+cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = FALSE, ...) {
   
   if (is.null(store_training_data)) {
     store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
@@ -459,6 +473,9 @@ discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
     regularization = regularization,
     verbose = verbose,
     worker_limit = as.integer(worker_limit),
+    look_ahead = cart_lookahead,  # Map to C++ look_ahead (OSRT one-step lookahead)
+    # cart_lookahead_depth is currently unused - reserved for future enhancements
+    k_cluster = k_cluster,
     ...
   )
   
