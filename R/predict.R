@@ -30,12 +30,103 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
     newdata <- as.data.frame(newdata)
   }
 
-  # Apply discretization if model used continuous features
-  if (!is.null(object$discretization)) {
-    newdata <- apply_discretization(newdata, object$discretization)
-    # Reorder to match training (X_train is already discretized binary names)
-    newdata <- newdata[, colnames(object$X_train), drop = FALSE]
+  # Note: discretization is applied during fit_tree(), not during predict()
+  # For treefarms models, training data and newdata should already be discretized/binary
+
+  # Validate feature names
+  if (!all(colnames(object$X_train) %in% colnames(newdata))) {
+    stop("newdata must have the same features as training data")
   }
+
+  # Ensure same column order
+  newdata <- newdata[, colnames(object$X_train), drop = FALSE]
+
+  # Check for missing values
+  if (any(is.na(newdata))) {
+    stop("newdata contains missing values")
+  }
+
+  # Check for non-binary values (vectorized)
+  m <- as.matrix(newdata)
+  if (any(!m %in% c(0L, 1L) & !is.na(m))) {
+    stop("newdata must contain only binary values (0 and 1)")
+  }
+
+  # Get tree structure from model object
+  tree_to_use <- if (!is.null(object$model$tree_json)) {
+    object$model$tree_json
+  } else if (!is.null(object$model$result_data)) {
+    object$model$result_data
+  } else {
+    NULL
+  }
+
+  # Regression: return fitted values (leaf means)
+  if (identical(object$loss_function, "squared_error")) {
+    if (is.null(tree_to_use)) {
+      stop(
+        "Cannot make predictions for regression model: tree structure not found.\n",
+        "This indicates a problem during model fitting or an invalid model object.\n",
+        "Expected: object$model$tree_json or object$model$result_data to exist."
+      )
+    }
+    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("optimaltrees"))
+    return(get_fitted_from_tree(tree_to_use, newdata))
+  }
+
+  # Extract probabilities from tree structure (classification)
+  if (!is.null(tree_to_use)) {
+    # Get function from namespace explicitly
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
+    probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
+
+    if (type == "class") {
+      # Derive predictions from probabilities (argmax)
+      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
+      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
+      return(predictions)
+    } else {
+      # Return probabilities
+      return(probabilities)
+    }
+  } else {
+    # No tree structure available - this should never happen for a properly fitted model
+    stop(
+      "Cannot make predictions: tree structure not found in model object.\n",
+      "This indicates a problem during model fitting or an invalid model object.\n",
+      "Expected: object$model$tree_json or object$model$result_data to exist."
+    )
+  }
+}
+
+#' Predict method for optimaltrees_model objects
+#'
+#' @param object A optimaltrees_model object
+#' @param newdata A data.frame or matrix of new features
+#' @param type Character: "class" or "prob"
+#' @param ... Additional arguments
+#'
+#' @return Predictions based on type
+#' @export
+predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob"), ...) {
+  type <- match.arg(type)
+
+  # Validate input
+  if (!inherits(object, "optimaltrees_model")) {
+    stop("object must be a optimaltrees_model")
+  }
+
+  if (!is.data.frame(newdata) && !is.matrix(newdata)) {
+    stop("newdata must be a data.frame or matrix")
+  }
+
+  # Convert matrix to data.frame if needed
+  if (is.matrix(newdata)) {
+    newdata <- as.data.frame(newdata)
+  }
+
+  # Note: discretization is applied during fit_tree(), not during predict()
+  # For treefarms models, training data and newdata should already be discretized/binary
 
   # Validate feature names
   if (!all(colnames(object$X_train) %in% colnames(newdata))) {
@@ -67,15 +158,21 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
   
   # Regression: return fitted values (leaf means)
   if (identical(object$loss_function, "squared_error")) {
-    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("treefarmr"))
-    if (!is.null(tree_to_use)) {
-      return(get_fitted_from_tree(tree_to_use, newdata))
+    if (is.null(tree_to_use)) {
+      stop(
+        "Cannot make predictions for regression model: tree structure not found.\n",
+        "This indicates a problem during model fitting or an invalid model object.\n",
+        "Expected: object$model$tree_json or object$model$result_data to exist."
+      )
     }
-    return(rep(NA_real_, nrow(newdata)))
+    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("optimaltrees"))
+    return(get_fitted_from_tree(tree_to_use, newdata))
   }
   
   # Extract probabilities from tree structure (classification)
   if (!is.null(tree_to_use)) {
+    # Get function from namespace explicitly
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
     if (type == "class") {
@@ -88,22 +185,12 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
       return(probabilities)
     }
   } else {
-    # Fallback: if no tree available, try to use stored predictions/probabilities
-    # This handles edge cases where tree structure might not be available
-    n_samples <- nrow(newdata)
-    if (type == "class") {
-      if (!is.null(object$predictions) && length(object$predictions) >= n_samples) {
-        return(object$predictions[1:n_samples])
-      } else {
-        return(rep(0, n_samples))
-      }
-    } else {
-      if (!is.null(object$probabilities) && nrow(object$probabilities) >= n_samples) {
-        return(object$probabilities[1:n_samples, , drop = FALSE])
-      } else {
-        return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-      }
-    }
+    # No tree structure available - this should never happen for a properly fitted model
+    stop(
+      "Cannot make predictions: tree structure not found in model object.\n",
+      "This indicates a problem during model fitting or an invalid model object.\n",
+      "Expected: object$model$tree_json or object$model$result_data to exist."
+    )
   }
 }
 
@@ -143,7 +230,14 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
 
   # Apply discretization if model used continuous features
   if (!is.null(object$discretization)) {
-    newdata <- apply_discretization(newdata, object$discretization)
+    # For binary features that are already discretized, no transformation needed
+    if (isTRUE(object$discretization$all_binary)) {
+      # Data is already binary, no discretization needed
+      newdata <- newdata
+    } else {
+      # Would need to apply discretization, but function not yet implemented
+      stop("Discretization of continuous features not yet implemented in predict()")
+    }
   }
 
   # Validate feature names
@@ -169,7 +263,7 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   # Regression: return fitted values (vector)
   if (identical(object$loss_function, "squared_error")) {
-    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("treefarmr"))
+    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("optimaltrees"))
     if (!is.null(fold_indices)) {
       if (length(fold_indices) != n_rows) {
         stop("fold_indices must have length nrow(newdata)")
@@ -207,7 +301,7 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
       stop("object has no fold_refits; refit is required for fold-specific prediction")
     }
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("treefarmr"))
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     probs <- matrix(NA_real_, nrow = n_rows, ncol = 2)
     for (k in 1:object$K) {
       idx_k <- which(fold_indices == k)
@@ -229,7 +323,7 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   # Backward compatible: no fold_indices
   if (ensemble && object$n_intersecting > 1) {
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("treefarmr"))
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     predictions_list <- list()
     for (i in seq_len(object$n_intersecting)) {
       # Use i-th intersecting tree (not same model repeatedly)

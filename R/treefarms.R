@@ -7,7 +7,17 @@
 #' @param X A data.frame or matrix of features. Can contain continuous or
 #'   binary (0/1) features. Continuous features will be automatically discretized.
 #' @param y For classification: binary (0/1). For regression: numeric vector (use \code{loss_function = "squared_error"}).
-#' @param loss_function Character string: \code{"misclassification"} (default), \code{"log_loss"}, or \code{"squared_error"} (regression; alias \code{"regression"}). For \code{"squared_error"}, \code{y} may be continuous and prediction returns fitted values (leaf means).
+#' @param loss_function Character string specifying the loss function:
+#'   \itemize{
+#'     \item \code{"misclassification"} (default) - 0/1 loss for classification
+#'     \item \code{"log_loss"} - Cross-entropy loss for probabilistic classification
+#'     \item \code{"squared_error"} - L2 loss for regression (alias: \code{"regression"})
+#'     \item \code{"absolute_error"} - L1 loss for robust regression (NEW)
+#'     \item \code{"huber"} - Robust hybrid L1/L2 loss (NEW, requires \code{huber_delta})
+#'     \item \code{"quantile"} - Quantile regression (NEW, requires \code{quantile_tau})
+#'     \item \code{"custom"} - User-defined loss function (NEW, requires \code{custom_loss})
+#'   }
+#'   For regression losses, \code{y} may be continuous and prediction returns fitted values.
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
 #' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative).
@@ -45,6 +55,29 @@
 #'   uses optimal 1D k-Means clustering to compute tighter lower bounds, improving
 #'   optimization speed (typically 1.5-4x faster). Based on Song & Zhong (2020) algorithm.
 #'   Has no effect on classification tasks. Can be set to FALSE to disable.
+#' @param huber_delta Numeric. Threshold parameter for Huber loss (default: 1.0).
+#'   Controls transition between L2 (quadratic) and L1 (linear) behavior.
+#'   - For errors |y - pred| <= delta: uses L2 loss
+#'   - For errors |y - pred| > delta: uses L1 loss
+#'   Only used when \code{loss_function = "huber"}.
+#' @param quantile_tau Numeric in (0,1). Quantile level for quantile regression (default: 0.5).
+#'   - tau = 0.5: median regression
+#'   - tau = 0.9: 90th percentile regression
+#'   - tau = 0.1: 10th percentile regression
+#'   Only used when \code{loss_function = "quantile"}.
+#' @param custom_loss A list specifying a custom loss function (only used when \code{loss_function = "custom"}).
+#'   Must contain:
+#'   \itemize{
+#'     \item \code{aggregate}: Function that takes a numeric vector \code{y} and returns
+#'       a named list of summary statistics
+#'     \item \code{loss}: Function that takes summary statistics and a prediction,
+#'       returns a list with \code{min_loss}, \code{max_loss}, and \code{potential}
+#'     \item \code{optimal}: Function that takes summary statistics and returns
+#'       the optimal prediction (single numeric value)
+#'     \item \code{is_regression}: Logical flag indicating if this is a regression
+#'       loss (TRUE) or classification loss (FALSE)
+#'   }
+#'   See \code{\link{example_custom_squared_error}} for examples.
 #' @param ... Additional parameters passed to TreeFARMS configuration.
 #'
 #' @return A list containing:
@@ -352,12 +385,13 @@ get_fitted_from_tree <- function(tree_json, X) {
 }
 
 #' @export
-treefarms <- function(X, y, loss_function = "misclassification", regularization = 0.1,
+optimaltrees <- function(X, y, loss_function = "misclassification", regularization = 0.1,
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
 worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
 discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
-cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
+cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE,
+huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   
   if (is.null(store_training_data)) {
     store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
@@ -381,18 +415,42 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
   }
   
   
-  is_regression <- loss_function %in% c("squared_error", "regression")
+  # Determine if this is a regression task
+  if (loss_function == "custom") {
+    # For custom losses, check specification first
+    if (is.null(custom_loss)) {
+      stop("custom_loss must be provided when loss_function = 'custom'")
+    }
+    validate_custom_loss(custom_loss)
+    # Determine if regression based on custom loss specification
+    is_regression <- custom_loss$is_regression
+  } else {
+    # For built-in losses
+    is_regression <- loss_function %in% c("squared_error", "regression", "absolute_error", "huber", "quantile")
+  }
+
   if (!is_regression && !all(y %in% c(0, 1))) {
     stop("y must contain only binary values (0 and 1) for classification")
   }
   if (is_regression && !is.numeric(y)) {
-    stop("y must be numeric for squared_error (regression)")
+    stop("y must be numeric for regression")
   }
-  if (!loss_function %in% c("misclassification", "log_loss", "squared_error", "regression")) {
-    stop("loss_function must be 'misclassification', 'log_loss', 'squared_error', or 'regression'")
+  valid_losses <- c("misclassification", "log_loss", "squared_error", "regression",
+                    "absolute_error", "huber", "quantile", "custom")
+  if (!loss_function %in% valid_losses) {
+    stop("loss_function must be one of: ", paste(valid_losses, collapse = ", "))
   }
   if (loss_function == "regression") {
     loss_function <- "squared_error"
+  }
+
+  # Validate loss-specific parameters
+  if (!is.numeric(huber_delta) || length(huber_delta) != 1 || huber_delta <= 0) {
+    stop("huber_delta must be a positive number")
+  }
+  if (!is.numeric(quantile_tau) || length(quantile_tau) != 1 ||
+      quantile_tau <= 0 || quantile_tau >= 1) {
+    stop("quantile_tau must be a number in (0, 1)")
   }
   
   if (!is.numeric(worker_limit) || length(worker_limit) != 1 || worker_limit < 1) {
@@ -423,14 +481,14 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
       fixed_value <- 0.05
     }
     
-    return(auto_tune_treefarms(X, y, loss_function = loss_function,
-                              target_trees = target_trees, max_trees = max_trees,
-                              fixed_param = fixed_param, fixed_value = fixed_value,
-                              verbose = verbose,
-                              discretize_method = discretize_method,
-                              discretize_bins = discretize_bins,
-                              discretize_thresholds = discretize_thresholds,
-                              ...))
+    return(auto_tune_optimaltrees(X, y, loss_function = loss_function,
+                                  target_trees = target_trees, max_trees = max_trees,
+                                  fixed_param = fixed_param, fixed_value = fixed_value,
+                                  verbose = verbose,
+                                  discretize_method = discretize_method,
+                                  discretize_bins = discretize_bins,
+                                  discretize_thresholds = discretize_thresholds,
+                                  ...))
   }
   
   # Convert to data.frame if matrix
@@ -476,6 +534,8 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
     look_ahead = cart_lookahead,  # Map to C++ look_ahead (OSRT one-step lookahead)
     # cart_lookahead_depth is currently unused - reserved for future enhancements
     k_cluster = k_cluster,
+    huber_delta = huber_delta,
+    quantile_tau = quantile_tau,
     ...
   )
   
@@ -506,7 +566,13 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
   header <- paste(names(data_df), collapse = ",")
   body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
   csv_string <- paste(c(header, body), collapse = "\n")
-  
+
+  # Set custom loss specification if provided
+  if (loss_function == "custom") {
+    set_custom_loss_spec(custom_loss)
+    on.exit(clear_custom_loss_spec(), add = TRUE)
+  }
+
   fit_result <- .treefarms_fit_with_csv(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities,
                                         discretization_metadata, X_original)
   return(fit_result)
@@ -893,7 +959,7 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
     result$X_original_names <- names(X_original)
 
     # Set class
-    class(result) <- "treefarms_model"
+    class(result) <- "optimaltrees_model"
     
     return(result)
     
@@ -927,7 +993,7 @@ cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE, ...) {
 #'
 #' Get probabilities from a treefarms model (with lazy evaluation)
 #'
-#' @param object A treefarms_model object
+#' @param object A optimaltrees_model object
 #' @return A matrix of probabilities [P(class=0), P(class=1)]
 #' @export
 get_probabilities <- function(object) {
@@ -944,7 +1010,7 @@ get_probabilities <- function(object) {
 
 #' Get predictions from a treefarms model (with lazy evaluation)
 #'
-#' @param object A treefarms_model object
+#' @param object A optimaltrees_model object
 #' @return A vector of binary predictions (0/1)
 #' @export
 get_predictions <- function(object) {
@@ -961,7 +1027,7 @@ get_predictions <- function(object) {
 
 #' Get accuracy from a treefarms model (with lazy evaluation)
 #'
-#' @param object A treefarms_model object
+#' @param object A optimaltrees_model object
 #' @return Training accuracy (numeric)
 #' @export
 get_accuracy <- function(object) {
@@ -977,10 +1043,10 @@ get_accuracy <- function(object) {
 }
 
 #' @export
-predict_treefarms <- function(object, newdata, type = "class", ...) {
+predict_optimaltrees <- function(object, newdata, type = "class", ...) {
   
-  if (!inherits(object, "treefarms_model")) {
-    stop("object must be a treefarms_model object")
+  if (!inherits(object, "optimaltrees_model")) {
+    stop("object must be a optimaltrees_model object")
   }
   
   if (!type %in% c("class", "prob")) {
@@ -1041,13 +1107,12 @@ predict_treefarms <- function(object, newdata, type = "class", ...) {
       return(probabilities)
     }
   } else {
-    # No tree available, return default values
-    n_samples <- nrow(newdata)
-    if (type == "class") {
-      return(rep(0, n_samples))
-    } else {
-      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-    }
+    # No tree structure available - this should never happen for a properly fitted model
+    stop(
+      "Cannot make predictions: tree structure not found in model object.\n",
+      "This indicates a problem during model fitting or an invalid model object.\n",
+      "Check that the model was fitted successfully."
+    )
   }
 }
 
@@ -1057,7 +1122,7 @@ predict_treefarms <- function(object, newdata, type = "class", ...) {
 #' @param ... Additional arguments (currently unused).
 #'
 #' @export
-print.treefarms_model <- function(x, ...) {
+print.optimaltrees_model <- function(x, ...) {
   cat("TreeFARMS Model (Rcpp)\n")
   cat("======================\n")
   cat("Loss function:", x$loss_function, "\n")
@@ -1105,8 +1170,8 @@ print.treefarms_model <- function(x, ...) {
 #' @param ... Additional arguments (currently unused).
 #'
 #' @export
-summary.treefarms_model <- function(object, ...) {
-  print.treefarms_model(object, ...)
+summary.optimaltrees_model <- function(object, ...) {
+  print.optimaltrees_model(object, ...)
   
   if (object$n_trees > 0) {
     # Show class distribution if training data is available
@@ -1126,7 +1191,7 @@ summary.treefarms_model <- function(object, ...) {
 
 # Example usage function
 #' @export
-example_treefarms <- function() {
+example_optimaltrees <- function() {
   cat("TreeFARMS R Wrapper Example (Rcpp)\n")
   cat("==================================\n\n")
   
@@ -1169,11 +1234,11 @@ example_treefarms <- function() {
   return(list(misclass = model_misclass, logloss = model_logloss))
 }
 
-# Override $ operator for treefarms_model to support lazy evaluation
+# Override $ operator for optimaltrees_model to support lazy evaluation
 # Use [[ to access list elements to avoid recursion
 # Simplified version that doesn't use environments to avoid memory issues
 #' @export
-`$.treefarms_model` <- function(x, name) {
+`$.optimaltrees_model` <- function(x, name) {
   # Handle lazy evaluation for probabilities, predictions, and accuracy
   if (name == "probabilities") {
     # Check if already computed

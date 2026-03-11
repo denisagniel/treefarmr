@@ -77,8 +77,8 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     }
   }
 
-  # Call treefarms with single_tree = TRUE to guarantee exactly one tree
-  result <- treefarms(
+  # Call optimaltrees with single_tree = TRUE to guarantee exactly one tree
+  result <- optimaltrees(
     X = X,
     y = y,
     loss_function = loss_function,

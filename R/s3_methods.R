@@ -220,13 +220,13 @@ extract_tree_from_stdout <- function(stdout_lines) {
   }
 }
 
-#' Print method for treefarms_model
+#' Print method for optimaltrees_model
 #'
-#' @param x A treefarms_model object
+#' @param x A optimaltrees_model object
 #' @param ... Additional arguments (unused)
 #'
 #' @export
-print.treefarms_model <- function(x, ...) {
+print.optimaltrees_model <- function(x, ...) {
   cat("TreeFARMS Model\n")
   cat("===============\n")
   cat("Loss function:", x$loss_function, "\n")
@@ -278,14 +278,14 @@ print.treefarms_model <- function(x, ...) {
   }
 }
 
-#' Plot method for treefarms_model
+#' Plot method for optimaltrees_model
 #'
-#' @param x A treefarms_model object
+#' @param x A optimaltrees_model object
 #' @param tree_index Integer: which tree to plot (default: 1)
 #' @param ... Additional arguments (unused)
 #'
 #' @export
-plot.treefarms_model <- function(x, tree_index = 1, ...) {
+plot.optimaltrees_model <- function(x, tree_index = 1, ...) {
   if (x$n_trees == 0) {
     stop("No trees available for plotting")
   }
@@ -452,13 +452,13 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
   return(invisible(NULL))
 }
 
-#' Print method for treefarms_logloss_model
+#' Print method for optimaltrees_logloss_model
 #'
-#' @param x A treefarms_logloss_model object
+#' @param x A optimaltrees_logloss_model object
 #' @param ... Additional arguments (unused)
 #'
 #' @export
-print.treefarms_logloss_model <- function(x, ...) {
+print.optimaltrees_logloss_model <- function(x, ...) {
   cat("TreeFARMS Log-Loss Model (Subprocess)\n")
   cat("=====================================\n")
   cat("Loss function:", x$loss_function, "\n")
@@ -511,13 +511,13 @@ print.cf_rashomon <- function(x, ...) {
   }
 }
 
-#' Summary method for treefarms_logloss_model
+#' Summary method for optimaltrees_logloss_model
 #'
-#' @param object A treefarms_logloss_model object
+#' @param object A optimaltrees_logloss_model object
 #' @param ... Additional arguments (unused)
 #'
 #' @export
-summary.treefarms_logloss_model <- function(object, ...) {
+summary.optimaltrees_logloss_model <- function(object, ...) {
   cat("TreeFARMS Log-Loss Model Summary\n")
   cat("===============================\n\n")
   
@@ -611,18 +611,18 @@ summary.cf_rashomon <- function(object, ...) {
   }
 }
 
-#' Predict method for treefarms_logloss_model
+#' Predict method for optimaltrees_logloss_model
 #'
-#' @param object A treefarms_logloss_model object
+#' @param object A optimaltrees_logloss_model object
 #' @param newdata A data.frame or matrix of new features
 #' @param type Character string: "class" or "prob"
 #' @param ... Additional arguments (unused)
 #'
 #' @export
-predict.treefarms_logloss_model <- function(object, newdata, type = c("class", "prob"), ...) {
+predict.optimaltrees_logloss_model <- function(object, newdata, type = c("class", "prob"), ...) {
   type <- match.arg(type)
   
-  # Use the same prediction logic as treefarms_model
+  # Use the same prediction logic as optimaltrees_model
   # Get tree structure from model object
   tree_to_use <- if (!is.null(object$model$tree_json)) {
     object$model$tree_json
@@ -656,7 +656,7 @@ predict.treefarms_logloss_model <- function(object, newdata, type = c("class", "
     # Use the get_probabilities_from_tree function from treefarms.R
     # This function is available in the package namespace
     # We need to access it via the parent environment or use do.call
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("treefarmr"))
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
     if (type == "class") {
@@ -667,13 +667,12 @@ predict.treefarms_logloss_model <- function(object, newdata, type = c("class", "
       return(probabilities)
     }
   } else {
-    # No tree available, return default values
-    n_samples <- nrow(newdata)
-    if (type == "class") {
-      return(rep(0, n_samples))
-    } else {
-      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-    }
+    # No tree structure available - this should never happen for a properly fitted model
+    stop(
+      "Cannot make predictions: tree structure not found in model object.\n",
+      "This indicates a problem during model fitting or an invalid model object.\n",
+      "Expected: object$model$tree_json or object$model$result_data to exist."
+    )
   }
 }
 

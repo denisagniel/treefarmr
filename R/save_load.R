@@ -34,10 +34,10 @@
 #' }
 #'
 #' @export
-save_treefarms <- function(model, path, ...) {
+save_optimaltrees <- function(model, path, ...) {
   
   # Validate inputs
-  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model", "cf_rashomon"))) {
+  if (!inherits(model, c("optimaltrees_model", "optimaltrees_logloss_model", "cf_rashomon"))) {
     stop("model must be a TreeFARMS model object")
   }
   
@@ -60,7 +60,7 @@ save_treefarms <- function(model, path, ...) {
   serializable_model$probabilities <- model$probabilities
   
   # Handle different model types
-  if (inherits(model, "treefarms_model")) {
+  if (inherits(model, "optimaltrees_model")) {
     # For treefarms models, convert trees to JSON
     if (model$n_trees > 0) {
       trees_json <- list()
@@ -81,7 +81,7 @@ save_treefarms <- function(model, path, ...) {
       rashomon_bound_multiplier = 0.05
     )
     
-  } else if (inherits(model, "treefarms_logloss_model")) {
+  } else if (inherits(model, "optimaltrees_logloss_model")) {
     # For logloss models, trees are already JSON strings
     serializable_model$trees_json <- model$trees
     serializable_model$config <- model$config
@@ -111,7 +111,7 @@ save_treefarms <- function(model, path, ...) {
       serializable_fold$predictions <- fold_model$predictions
       serializable_fold$probabilities <- fold_model$probabilities
       
-      if (inherits(fold_model, "treefarms_model")) {
+      if (inherits(fold_model, "optimaltrees_model")) {
         if (fold_model$n_trees > 0) {
           trees_json <- list()
           for (j in seq_len(fold_model$n_trees)) {
@@ -169,7 +169,7 @@ save_treefarms <- function(model, path, ...) {
 #' }
 #'
 #' @export
-load_treefarms <- function(path, ...) {
+load_optimaltrees <- function(path, ...) {
   
   # Validate inputs
   if (!is.character(path) || length(path) != 1) {
@@ -184,7 +184,7 @@ load_treefarms <- function(path, ...) {
   serializable_model <- readRDS(path)
   
   # Reconstruct the model object
-  if (serializable_model$class == "treefarms_model") {
+  if (serializable_model$class == "optimaltrees_model") {
     # For treefarms models, we reconstruct from JSON data
     # and create a minimal object for prediction purposes
     model <- list(
@@ -199,9 +199,9 @@ load_treefarms <- function(path, ...) {
       trees_json = serializable_model$trees_json,
       config = serializable_model$config
     )
-    class(model) <- "treefarms_model_loaded"
+    class(model) <- "optimaltrees_model_loaded"
     
-  } else if (serializable_model$class == "treefarms_logloss_model") {
+  } else if (serializable_model$class == "optimaltrees_logloss_model") {
     # For logloss models, reconstruction is straightforward
     model <- list(
       loss_function = serializable_model$loss_function,
@@ -234,7 +234,7 @@ load_treefarms <- function(path, ...) {
     for (i in seq_along(serializable_model$fold_models)) {
       fold_data <- serializable_model$fold_models[[i]]
       
-      if (fold_data$class == "treefarms_model") {
+      if (fold_data$class == "optimaltrees_model") {
         fold_model <- list(
           loss_function = fold_data$loss_function,
           regularization = fold_data$regularization,
@@ -247,7 +247,7 @@ load_treefarms <- function(path, ...) {
           trees_json = fold_data$trees_json,
           config = fold_data$config
         )
-        class(fold_model) <- "treefarms_model_loaded"
+        class(fold_model) <- "optimaltrees_model_loaded"
       } else {
         fold_model <- list(
           loss_function = fold_data$loss_function,
@@ -273,16 +273,16 @@ load_treefarms <- function(path, ...) {
   return(model)
 }
 
-#' Predict method for loaded treefarms_model objects
+#' Predict method for loaded optimaltrees_model objects
 #'
-#' @param object A treefarms_model_loaded object
+#' @param object A optimaltrees_model_loaded object
 #' @param newdata A data.frame or matrix of new features
 #' @param type Character: "class" or "prob"
 #' @param ... Additional arguments
 #'
 #' @return Predictions based on type
 #' @export
-predict.treefarms_model_loaded <- function(object, newdata, type = c("class", "prob"), ...) {
+predict.optimaltrees_model_loaded <- function(object, newdata, type = c("class", "prob"), ...) {
   type <- match.arg(type)
   
   # Validate newdata
@@ -336,13 +336,12 @@ predict.treefarms_model_loaded <- function(object, newdata, type = c("class", "p
       return(probabilities)
     }
   } else {
-    # No tree available, return default values
-    n_samples <- nrow(newdata)
-    if (type == "class") {
-      return(rep(0, n_samples))
-    } else {
-      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-    }
+    # No tree structure available - this should never happen for a properly loaded model
+    stop(
+      "Cannot make predictions: tree structure not found in loaded model object.\n",
+      "This indicates a problem during model save/load or an invalid model file.\n",
+      "Try re-saving the model or check the model file integrity."
+    )
   }
 }
 
