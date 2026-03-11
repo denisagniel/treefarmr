@@ -77,6 +77,67 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     }
   }
 
+  # High-dimensional safeguard: estimate post-discretization feature count
+  # and set appropriate model_limit to prevent memory issues
+  dots <- list(...)
+  user_model_limit <- dots$model_limit
+
+  if (is.null(user_model_limit)) {
+    # Estimate binary feature count after discretization
+    n <- nrow(X)
+    p_original <- ncol(X)
+
+    # Estimate number of bins (adaptive formula or user-specified)
+    # Check both dots and use optimaltrees default if not specified
+    discretize_bins_param <- dots$discretize_bins
+    if (is.null(discretize_bins_param)) {
+      # Use optimaltrees default (which is 2, but check the function signature)
+      discretize_bins_param <- 2
+    }
+
+    if (is.character(discretize_bins_param) && discretize_bins_param == "adaptive") {
+      n_bins <- max(2, ceiling(log(n) / 3))
+    } else {
+      n_bins <- as.numeric(discretize_bins_param)
+    }
+
+    # Estimate binary features: continuous features → (n_bins - 1) binary features each
+    # Threshold encoding: k bins → k-1 indicators
+    # Assume worst case: all features are continuous
+    p_estimated <- p_original * (n_bins - 1)
+
+    # Set model_limit based on estimated dimensionality
+    if (p_estimated > 100) {
+      # High-dimensional case: use memory-safe limit
+      model_limit <- 1000000  # 1M models should be safe for most systems
+      warning(
+        "High-dimensional data detected (estimated ", p_estimated, " binary features after discretization). ",
+        "Setting model_limit=", format(model_limit, scientific=FALSE), " to prevent memory issues. ",
+        "Override by passing model_limit=0 (unlimited) or model_limit=<value> explicitly.",
+        call. = FALSE, immediate. = TRUE
+      )
+    } else if (p_estimated > 50) {
+      # Moderate dimensions: conservative limit
+      model_limit <- 100000
+      if (verbose) {
+        message(
+          "Moderate dimensionality (estimated ", p_estimated, " binary features). ",
+          "Setting model_limit=", format(model_limit, scientific=FALSE), " as safety measure."
+        )
+      }
+    } else {
+      # Low-dimensional case: unlimited
+      # CRITICAL: Disable model_limit for single-tree fits with low dimensions
+      # Rationale: Single-tree extraction can generate >10,000 candidate models
+      # during optimization with even moderate feature counts (e.g., 12 features).
+      # model_limit was designed for Rashomon sets, not single-tree extraction.
+      model_limit <- 0  # Unlimited
+    }
+  } else {
+    # User explicitly set model_limit - respect it
+    model_limit <- user_model_limit
+  }
+
   # Call optimaltrees with single_tree = TRUE to guarantee exactly one tree
   result <- optimaltrees(
     X = X,
@@ -88,6 +149,7 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     store_training_data = store_training_data,
     compute_probabilities = compute_probabilities,
     single_tree = TRUE,  # Force single tree
+    model_limit = model_limit,
     ...
   )
   

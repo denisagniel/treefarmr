@@ -387,7 +387,7 @@ get_fitted_from_tree <- function(tree_json, X) {
 #' @export
 optimaltrees <- function(X, y, loss_function = "misclassification", regularization = 0.1,
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
-worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
+worker_limit = 1L, model_limit = 10000, verbose = FALSE, store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
 discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
 cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE,
@@ -531,6 +531,7 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     regularization = regularization,
     verbose = verbose,
     worker_limit = as.integer(worker_limit),
+    model_limit = as.integer(model_limit),
     look_ahead = cart_lookahead,  # Map to C++ look_ahead (OSRT one-step lookahead)
     # cart_lookahead_depth is currently unused - reserved for future enhancements
     k_cluster = k_cluster,
