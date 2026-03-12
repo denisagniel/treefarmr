@@ -1,16 +1,16 @@
-Package: treefarmr
+Package: optimaltrees
 Type: Package
-Title: Tree-based Fast and Accurate Rule Set Models with Log-Loss and Probabilities
-Version: 0.3.0
-Author: TreeFARMR Development Team
-Maintainer: TreeFARMR Development Team <treefarmr@example.com>
-Description: R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models),
-    providing optimal decision tree learning with support for log-loss optimization and 
-    probability predictions. TreeFARMS finds optimal decision trees using either 
-    misclassification loss or log-loss (cross-entropy), and provides well-calibrated 
-    probability estimates bounded away from 0 and 1. This package uses direct Rcpp 
-    bindings to the integrated C++ implementation, eliminating external dependencies 
-    for easier distribution and better performance.
+Title: Optimal Decision Trees with Flexible Loss Functions
+Version: 0.4.0
+Author: OptimalTrees Development Team
+Maintainer: OptimalTrees Development Team <optimaltrees@example.com>
+Description: Optimal decision tree learning with support for classification and
+    regression. Implements branch-and-bound optimization to find provably optimal
+    trees under various loss functions (misclassification, log-loss, squared error,
+    absolute error, Huber, quantile) with support for custom user-defined losses.
+    Includes Rashomon set enumeration for exploring multiple near-optimal trees.
+    This package uses direct Rcpp bindings to the integrated C++ implementation,
+    eliminating external dependencies for easier distribution and better performance.
 License: MIT
 Depends: R (>= 3.6.0)
 Imports: Rcpp (>= 1.0.0), jsonlite (>= 1.7.0)

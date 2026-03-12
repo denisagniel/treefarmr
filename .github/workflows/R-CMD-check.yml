@@ -1,4 +1,4 @@
-# R CMD check workflow for TreeFARMR package
+# R CMD check workflow for optimaltrees package
 # Runs on multiple OS and R versions for comprehensive testing
 
 name: R CMD check
@@ -15,7 +15,7 @@ on:
 jobs:
   R-CMD-check:
     runs-on: ${{ matrix.config.os }}
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
 
       - name: Check package
         run: |
-          R CMD check --as-cran --no-manual treefarmr_*.tar.gz
+          R CMD check --as-cran --no-manual optimaltrees_*.tar.gz
         shell: bash
 
       - name: Run tests
@@ -101,7 +101,7 @@ jobs:
 
   test-coverage:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 
@@ -140,7 +140,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 

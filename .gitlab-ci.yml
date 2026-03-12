@@ -1,4 +1,4 @@
-# GitLab CI configuration for TreeFARMR package
+# GitLab CI configuration for optimaltrees package
 # Runs R CMD check and tests on GitLab CI
 
 stages:
@@ -19,12 +19,12 @@ r-cmd-check:
     - R -e "remotes::install_deps(dependencies = TRUE)"
   script:
     - R CMD build --no-manual .
-    - R CMD check --as-cran --no-manual treefarmr_*.tar.gz
+    - R CMD check --as-cran --no-manual optimaltrees_*.tar.gz
   artifacts:
     when: on_failure
     paths:
-      - treefarmr_*.tar.gz
-      - treefarmr.Rcheck/
+      - optimaltrees_*.tar.gz
+      - optimaltrees.Rcheck/
     expire_in: 1 week
   only:
     - main
