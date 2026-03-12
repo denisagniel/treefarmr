@@ -1,5 +1,6 @@
 void Optimizer::models(std::unordered_set< Model > & results) {
-    if (Configuration::model_limit == 0) { return; }
+    // Note: model_limit == 0 means unlimited (not zero models)
+    // The actual limit is checked inside models_inner() at line 153
     std::unordered_set< std::shared_ptr<Model>, std::hash< std::shared_ptr<Model> >, std::equal_to< std::shared_ptr<Model> > > local_results;
     assert(!rashomon_flag);
     models(this -> root, local_results);
@@ -25,16 +26,18 @@ void Optimizer::models(std::unordered_set< Model > & results) {
          Model * model = new Model(**iterator);
          count++;
         
-        // Print readable summary
-        float model_objective = (**iterator).loss() + (**iterator).complexity();
-        std::cout << "Model " << count << " (Objective: " << std::fixed << std::setprecision(3) << model_objective;
-        std::cout << " = Loss: " << std::fixed << std::setprecision(3) << (**iterator).loss();
-        std::cout << " + Complexity: " << std::fixed << std::setprecision(3) << (**iterator).complexity() << ")" << std::endl;
-        (**iterator).print_readable(std::cout, 0);
-        std::cout << std::endl;
-        
+        // Serialization is needed for R interface - but suppress verbose logging
         std::string serialization;
-                    (**iterator).serialize(serialization, 2, this->state);
+        (**iterator).serialize(serialization, 2, this->state);
+
+        // DISABLED: Verbose model output (kept serialization for R interface)
+        // float model_objective = (**iterator).loss() + (**iterator).complexity();
+        // std::cout << "Model " << count << " (Objective: " << std::fixed << std::setprecision(3) << model_objective;
+        // std::cout << " = Loss: " << std::fixed << std::setprecision(3) << (**iterator).loss();
+        // std::cout << " + Complexity: " << std::fixed << std::setprecision(3) << (**iterator).complexity() << ")" << std::endl;
+        // (**iterator).print_readable(std::cout, 0);
+        // std::cout << std::endl;
+
         #ifdef USING_RCPP
         Rcpp::Rcout << serialization << std::endl;
         #else

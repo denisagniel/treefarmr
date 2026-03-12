@@ -67,12 +67,15 @@ float Configuration::rashomon_bound_multiplier = 0.0; //
 float Configuration::rashomon_bound_adder = 0.0; // 
 bool Configuration::rashomon_ignore_trivial_extensions = true;
 
-LossFunction Configuration::loss_function = MISCLASSIFICATION;
+LossFunctionType Configuration::loss_function = MISCLASSIFICATION;
 
 bool Configuration::cart_lookahead = false;
 unsigned int Configuration::cart_lookahead_depth = 0;
 
 bool Configuration::k_cluster = false;
+
+float Configuration::huber_delta = 1.35f;  // Default Huber delta (standard value for robust regression)
+float Configuration::quantile_tau = 0.5f;  // Default quantile tau (median)
 
 // REMOVED: __attribute__((constructor)) functions cause installation hangs
 // static void __attribute__((constructor)) after_config_static_init() {
@@ -243,6 +246,8 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["cart_lookahead"] = Configuration::cart_lookahead;
     obj["cart_lookahead_depth"] = Configuration::cart_lookahead_depth;
     obj["k_cluster"] = Configuration::k_cluster;
+    obj["huber_delta"] = Configuration::huber_delta;
+    obj["quantile_tau"] = Configuration::quantile_tau;
 
     return obj.dump(spacing);
 }

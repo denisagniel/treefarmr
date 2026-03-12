@@ -373,17 +373,28 @@ void Model::to_json(json & node, State & state) const {
 void Model::_to_json(json & node) const {
     if (this -> terminal) {
         if (Configuration::loss_function == SQUARED_ERROR) {
-            node["prediction"] = std::stod(this -> prediction);
+            // For regression: convert string prediction to double
+            try {
+                double pred_value = std::stod(this -> prediction);
+                node["prediction"] = pred_value;
+            } catch (...) {
+                // Fallback if conversion fails
+                node["prediction"] = 0.0;
+            }
         } else {
             node["prediction"] = this -> binary_target;
         }
         node["loss"] = this -> _loss;
         node["complexity"] = Configuration::regularization;
-        json prob_array = json::array();
-        for (float prob : this -> class_distribution) {
-            prob_array.push_back(prob);
+        // Only serialize class_distribution for classification models
+        // For regression, class_distribution is not initialized
+        if (Configuration::loss_function != SQUARED_ERROR && !this -> class_distribution.empty()) {
+            json prob_array = json::array();
+            for (float prob : this -> class_distribution) {
+                prob_array.push_back(prob);
+            }
+            node["probabilities"] = prob_array;
         }
-        node["probabilities"] = prob_array;
     } else {
         node["feature"] = this -> binary_feature;
         node["false"] = json::object();
@@ -437,18 +448,27 @@ void Model::translate_json(json & node, translation_type const & main, translati
 
 void Model::decode_json(json & node, State & state) const {
     if (node.contains("prediction")) {
-        std::string prediction_name, prediction_value;
-        state.dataset.encoder.target_value(node["prediction"], prediction_value);
-        state.dataset.encoder.header(prediction_name);
-
-        if (Encoder::test_integral(prediction_value)) {
-            node["prediction"] = atoi(prediction_value.c_str());
-        } else if (Encoder::test_rational(prediction_value)) {
-            node["prediction"] = atof(prediction_value.c_str());
+        // For regression (SQUARED_ERROR), prediction is already a double value, not an index
+        // Skip encoder lookup and just add the name
+        if (Configuration::loss_function == SQUARED_ERROR) {
+            std::string prediction_name;
+            state.dataset.encoder.header(prediction_name);
+            node["name"] = prediction_name;
         } else {
-            node["prediction"] = prediction_value;
+            // For classification: decode prediction index to actual value
+            std::string prediction_name, prediction_value;
+            state.dataset.encoder.target_value(node["prediction"], prediction_value);
+            state.dataset.encoder.header(prediction_name);
+
+            if (Encoder::test_integral(prediction_value)) {
+                node["prediction"] = atoi(prediction_value.c_str());
+            } else if (Encoder::test_rational(prediction_value)) {
+                node["prediction"] = atof(prediction_value.c_str());
+            } else {
+                node["prediction"] = prediction_value;
+            }
+            node["name"] = prediction_name;
         }
-        node["name"] = prediction_name;
     } else if (node.contains("feature")) {
         // index decoding from binary feature to original feature space
         unsigned int binary_feature_index = node["feature"];
