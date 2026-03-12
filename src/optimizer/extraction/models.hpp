@@ -26,23 +26,8 @@ void Optimizer::models(std::unordered_set< Model > & results) {
          Model * model = new Model(**iterator);
          count++;
         
-        // Serialization is needed for R interface - but suppress verbose logging
-        std::string serialization;
-        (**iterator).serialize(serialization, 2, this->state);
-
-        // DISABLED: Verbose model output (kept serialization for R interface)
-        // float model_objective = (**iterator).loss() + (**iterator).complexity();
-        // std::cout << "Model " << count << " (Objective: " << std::fixed << std::setprecision(3) << model_objective;
-        // std::cout << " = Loss: " << std::fixed << std::setprecision(3) << (**iterator).loss();
-        // std::cout << " + Complexity: " << std::fixed << std::setprecision(3) << (**iterator).complexity() << ")" << std::endl;
-        // (**iterator).print_readable(std::cout, 0);
-        // std::cout << std::endl;
-
-        #ifdef USING_RCPP
-        Rcpp::Rcout << serialization << std::endl;
-        #else
-        std::cout << serialization << std::endl;
-        #endif
+        // Serialization happens in gosdt.cpp for R interface - no need to print here
+        // (Printing causes massive log files in simulations)
         results.insert(**iterator);
         delete model;
     }
