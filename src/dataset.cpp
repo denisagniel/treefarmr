@@ -2,6 +2,7 @@
 #include "state.hpp"
 #include "kmeans.hpp"  // For k-means lower bounds
 #include <map>         // For grouping equivalent points
+#include <cmath>       // For std::isfinite
 
 Dataset::Dataset(void) {}
 Dataset::~Dataset(void) {}
@@ -93,7 +94,11 @@ void Dataset::construct_cost_matrix(void) {
         for (unsigned int i = 0; i < depth(); ++i) {
             for (unsigned int j = 0; j < depth(); ++j) {
                 if (i == j) { this -> costs[i][j] = 0.0; continue; }
-                this -> costs[i][j] = 1.0 / (float)(depth() * this -> targets[j].count());
+                unsigned int target_count = this -> targets[j].count();
+                if (target_count == 0) {
+                    throw std::runtime_error("Target class " + std::to_string(j) + " has no samples");
+                }
+                this -> costs[i][j] = 1.0 / (float)(depth() * target_count);
             }
         }
     } else { // Default cost matrix
@@ -308,7 +313,13 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 sum_y += this -> target_values[i];
             }
         }
+        if (n == 0) {
+            throw std::runtime_error("Cannot compute mean of empty sample");
+        }
         float mean_y = sum_y / (float)n;
+        if (!std::isfinite(mean_y)) {
+            throw std::runtime_error("Non-finite mean: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(n));
+        }
         float sse = 0.0f;
         for (unsigned int i = 0; i < height(); ++i) {
             if (capture_set.get(i)) {

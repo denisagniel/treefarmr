@@ -26,13 +26,15 @@ public:
     Model(void);
     // Constructor for terminal node in a model
     // @param set: shared pointer to a bitmask that identifies the captured set of data points
-    Model(std::shared_ptr<Bitmask> set, State & state);
+    // @param worker_id: thread worker ID for accessing correct thread-local buffer
+    Model(std::shared_ptr<Bitmask> set, State & state, unsigned int worker_id = 0);
 
     // Constructor for non-terminal node in a model
     // @param binary_feature_index: the index of the feature used for splitting (after encoding)
     // @param negative: shared pointer to the model acting as the left subtree
     // @param positive: shared pointer to the model acting as the right subtree
-    Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state);
+    // @param worker_id: thread worker ID for accessing correct thread-local buffer
+    Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state, unsigned int worker_id = 0);
 
     ~Model(void);
 

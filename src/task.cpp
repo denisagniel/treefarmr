@@ -7,6 +7,7 @@ Task::Task(void) {}
 Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, State & state, bool rashomon_flag) {
     this -> _capture_set = capture_set;
     this -> _feature_set = feature_set;
+    this -> _worker_id = id;
 
     if (!capture_set.valid() || !feature_set.valid()) {
         this -> _support = 0.0f;
@@ -147,6 +148,7 @@ _rashomon_bound = bound; }
 
 Bitmask const & Task::capture_set(void) const { return this -> _capture_set; }
 Bitmask const & Task::feature_set(void) const { return this -> _feature_set; }
+unsigned int Task::worker_id(void) const { return this -> _worker_id; }
 Tile & Task::identifier(void) { return this -> _identifier; }
 std::vector<int> & Task::order(void) { return this -> _order; }
 

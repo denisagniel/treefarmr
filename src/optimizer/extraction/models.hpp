@@ -61,7 +61,7 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
         // std::shared_ptr<key_type> stump(new Tile(set));
         // Model stump_key(stump_set); // shallow variant
         // Model * stump_address = new Model(stump_set);
-        std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set())), this->state));
+        std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(task.capture_set())), this->state, task.worker_id()));
         model -> identify(identifier);
         
         model -> translate_self(task.order());
@@ -90,7 +90,7 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
             Bitmask subset(task.capture_set());
             this->state.dataset.subset(feature, false, subset);
             unsigned int count = subset.count();
-            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
+            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state, task.worker_id()));
             float leaf_objective = model->loss() + model->complexity();
             left_lowerbound = leaf_objective;
             negatives.insert(model);
@@ -108,7 +108,7 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
             Bitmask subset(task.capture_set());
             this->state.dataset.subset(feature, true, subset);
             unsigned int count = subset.count();
-            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state));
+            std::shared_ptr<Model> model(new Model(std::shared_ptr<Bitmask>(new Bitmask(subset)), this->state, task.worker_id()));
             float leaf_objective = model->loss() + model->complexity();
             right_lowerbound = leaf_objective;
             positives.insert(model);
@@ -143,7 +143,7 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
                     
                     std::shared_ptr<Model> negative(* negative_it);
                     std::shared_ptr<Model> positive(* positive_it);
-                    std::shared_ptr<Model> model(new Model(feature, negative, positive, this->state));
+                    std::shared_ptr<Model> model(new Model(feature, negative, positive, this->state, task.worker_id()));
                     model -> identify(identifier);
                     model -> translate_self(task.order());
                     if ((** negative_it).identified()) {

@@ -1,13 +1,14 @@
 #include "model.hpp"
 #include <iomanip>
+#include <cmath>
 
 Model::Model(void) {}
 
-Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
+Model::Model(std::shared_ptr<Bitmask> capture_set, State & state, unsigned int worker_id) {
     std::string prediction_name, prediction_type, prediction_value;
     float info, potential, min_loss, max_loss;
     unsigned int target_index;
-    state.dataset.summary(* capture_set, info, potential, min_loss, max_loss, target_index, 0, state);
+    state.dataset.summary(* capture_set, info, potential, min_loss, max_loss, target_index, worker_id, state);
 
     this -> _loss = max_loss;
     this -> _complexity = Configuration::regularization;
@@ -19,13 +20,26 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
         if (n == 0) {
             this -> prediction = "0";
         } else {
-            float sum_y = 0.0f;
+            double sum_y = 0.0;  // Use double precision for accumulation
+            unsigned int count = 0;
             for (unsigned int i = 0; i < state.dataset.height(); ++i) {
                 if (capture_set -> get(i)) {
-                    sum_y += state.dataset.get_target_values()[i];
+                    double val = state.dataset.get_target_values()[i];
+                    if (!std::isfinite(val)) {
+                        throw std::runtime_error("Non-finite target value at index " + std::to_string(i));
+                    }
+                    sum_y += val;
+                    count++;
                 }
             }
-            this -> prediction = std::to_string(sum_y / (float)n);
+            if (count == 0) {
+                throw std::runtime_error("Empty capture set - cannot compute prediction");
+            }
+            float pred = static_cast<float>(sum_y / count);
+            if (!std::isfinite(pred)) {
+                throw std::runtime_error("Non-finite prediction: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(count));
+            }
+            this -> prediction = std::to_string(pred);
         }
         state.dataset.encoder.header(prediction_name);
         this -> name = prediction_name;
@@ -65,11 +79,15 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
             throw std::runtime_error("state.locals is empty");
         }
     } catch (const std::exception& e) {
+        std::cerr << "Warning: Exception in Model constructor class distribution computation: " << e.what() << std::endl;
+        std::cerr << "  Falling back to uniform class distribution." << std::endl;
         float uniform_prob = 1.0 / dataset_depth;
         for (size_t i = 0; i < this -> class_distribution.size(); ++i) {
             this -> class_distribution[i] = uniform_prob;
         }
     } catch (...) {
+        std::cerr << "Warning: Unknown exception in Model constructor class distribution computation." << std::endl;
+        std::cerr << "  Falling back to uniform class distribution." << std::endl;
         float uniform_prob = 1.0 / dataset_depth;
         for (size_t i = 0; i < this -> class_distribution.size(); ++i) {
             this -> class_distribution[i] = uniform_prob;
@@ -77,10 +95,10 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
     }
 }
 
-Model::Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state) {
-    unsigned int feature_index; 
+Model::Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state, unsigned int worker_id) {
+    unsigned int feature_index;
     std::string feature_name, feature_type, relation, reference;
-    state.dataset.encoder.decode(binary_feature_index, & feature_index);                  
+    state.dataset.encoder.decode(binary_feature_index, & feature_index);
     state.dataset.encoder.encoding(binary_feature_index, feature_type, relation, reference);
     state.dataset.encoder.header(feature_index, feature_name);
 
