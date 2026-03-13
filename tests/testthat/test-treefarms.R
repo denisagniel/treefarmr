@@ -1,8 +1,8 @@
-# Test suite for treefarmr package
+# Test suite for optimaltrees package
 # Tests the main treefarms functionality with Rcpp implementation
 
 library(testthat)
-library(treefarmr)
+library(optimaltrees)
 
 # Create test data
 set.seed(42)

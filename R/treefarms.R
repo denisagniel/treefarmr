@@ -579,14 +579,549 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   return(fit_result)
 }
 
+# ============================================================================
+# Internal helper functions for .treefarms_fit_with_csv()
+# ============================================================================
+
+#' Parse C++ JSON Result with Error Handling
+#'
+#' @param json_output Character string containing JSON from C++ backend
+#' @param verbose Logical. Whether to print diagnostic messages.
+#' @return Parsed JSON as list, or NULL if parsing fails
+#' @keywords internal
+parse_cpp_json_result <- function(json_output, verbose = FALSE) {
+  # Handle NULL or empty output
+  if (is.null(json_output) || json_output == "") {
+    if (verbose) {
+      message("C++ returned empty or NULL JSON output")
+    }
+    return(NULL)
+  }
+
+  # Check if json_output is just "{}" (empty JSON object fallback)
+  json_trimmed <- trimws(json_output)
+  if (json_trimmed == "{}" || json_trimmed == "null") {
+    if (verbose) {
+      message("C++ returned empty JSON object: ", json_trimmed)
+    }
+    return(NULL)
+  }
+
+  # Try to parse JSON with error handling
+  tryCatch({
+    result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
+    if (verbose) {
+      if (!is.null(result_data$storage)) {
+        message("Parsed JSON with storage field")
+      }
+      if (!is.null(result_data$trees)) {
+        message("Parsed JSON with trees field (", length(result_data$trees), " trees)")
+      }
+    }
+    return(result_data)
+  }, error = function(e) {
+    # If parsing fails, provide detailed error information
+    warning("Failed to parse JSON result from C++ code. This may indicate a serialization error. ",
+            "Error: ", e$message,
+            ". JSON length: ", nchar(json_output),
+            ". First 200 chars: ", substr(json_output, 1, min(200, nchar(json_output))))
+    if (verbose) {
+      message("JSON parsing failed")
+    }
+    return(NULL)
+  })
+}
+
+#' Extract Tree Structure from Parsed C++ Result
+#'
+#' Handles variable JSON formats from C++ backend
+#'
+#' @param result_data Parsed JSON data from C++ (list or NULL)
+#' @param verbose Logical. Whether to print diagnostic messages.
+#' @return Tree JSON structure, or NULL if not found
+#' @keywords internal
+extract_tree_from_cpp_result <- function(result_data, verbose = FALSE) {
+  if (is.null(result_data)) {
+    return(NULL)
+  }
+
+  tree_json <- NULL
+
+  # Strategy 1: Check for trees field (from ModelSet::serialize with models)
+  if (!is.null(result_data$trees) && is.list(result_data$trees) && length(result_data$trees) > 0) {
+    tree_json <- result_data$trees[[1]]
+    if (verbose) {
+      message("Extracted tree from result_data$trees array (first of ", length(result_data$trees), ")")
+    }
+    return(tree_json)
+  }
+
+  # Strategy 2: Check if result_data itself is a tree structure
+  if (!is.null(result_data$feature) || !is.null(result_data$prediction)) {
+    tree_json <- result_data
+    if (verbose) {
+      message("result_data is itself a tree structure")
+    }
+    return(tree_json)
+  }
+
+  # Strategy 3: Check storage field (ModelSet structure)
+  if (!is.null(result_data$storage) && is.list(result_data$storage) && length(result_data$storage) > 0) {
+    for (item in result_data$storage) {
+      if (is.list(item) && (!is.null(item$feature) || !is.null(item$prediction))) {
+        tree_json <- item
+        if (verbose) {
+          message("Extracted tree from result_data$storage")
+        }
+        break
+      }
+    }
+    return(tree_json)
+  }
+
+  # Strategy 4: Check if result_data is an array of trees
+  if (is.list(result_data) && length(result_data) > 0) {
+    if (is.list(result_data[[1]]) && (!is.null(result_data[[1]]$feature) || !is.null(result_data[[1]]$prediction))) {
+      tree_json <- result_data[[1]]
+      if (verbose) {
+        message("result_data is an array of trees, extracted first")
+      }
+      return(tree_json)
+    }
+  }
+
+  if (verbose) {
+    message("Could not extract tree from result_data")
+  }
+
+  return(tree_json)
+}
+
+#' Count Trees in Rashomon Set
+#'
+#' @param result_data Parsed JSON data from C++
+#' @param tree_json Extracted tree structure
+#' @return Integer count of trees in Rashomon set
+#' @keywords internal
+count_trees_in_result <- function(result_data, tree_json) {
+  n_trees <- 0
+
+  # Strategy 1: Check result_data for trees field
+  if (!is.null(result_data)) {
+    if (is.list(result_data) && !is.null(result_data$trees)) {
+      if (is.list(result_data$trees)) {
+        n_trees <- length(result_data$trees)
+      } else {
+        n_trees <- 1
+      }
+      return(n_trees)
+    }
+
+    # Strategy 2: Check if result_data is a single tree
+    if (is.list(result_data) && (!is.null(result_data$feature) || !is.null(result_data$prediction))) {
+      n_trees <- 1
+      return(n_trees)
+    }
+
+    # Strategy 3: Check if result_data is a list of trees
+    if (is.list(result_data) && length(result_data) > 0) {
+      first_elem <- result_data[[1]]
+      if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
+        n_trees <- length(result_data)
+        return(n_trees)
+      }
+    }
+  }
+
+  # Strategy 4: Check tree_json if no trees found in result_data
+  if (n_trees == 0 && !is.null(tree_json)) {
+    if (is.list(tree_json) && !is.null(tree_json$trees)) {
+      if (is.list(tree_json$trees)) {
+        n_trees <- length(tree_json$trees)
+      } else {
+        n_trees <- 1
+      }
+      return(n_trees)
+    }
+
+    if (is.list(tree_json) && (!is.null(tree_json$feature) || !is.null(tree_json$prediction))) {
+      n_trees <- 1
+      return(n_trees)
+    }
+
+    # Check if tree_json is a list of trees (Rashomon set)
+    if (is.list(tree_json) && length(tree_json) > 1 &&
+        is.null(tree_json$feature) && is.null(tree_json$prediction) && is.null(tree_json$trees)) {
+      if (length(tree_json) > 0) {
+        first_elem <- tree_json[[1]]
+        if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
+          n_trees <- length(tree_json)
+          return(n_trees)
+        }
+      }
+    }
+  }
+
+  return(n_trees)
+}
+
+#' Enforce Single Tree Constraint
+#'
+#' If single_tree=TRUE and multiple trees exist, extract only the first tree
+#'
+#' @param single_tree Logical. Whether to enforce single tree constraint
+#' @param n_trees Current count of trees
+#' @param tree_json Current tree JSON structure
+#' @param result_data Current parsed result data
+#' @return List with updated tree_json, result_data, and n_trees
+#' @keywords internal
+enforce_single_tree <- function(single_tree, n_trees, tree_json, result_data) {
+  # If single_tree constraint is disabled or only one tree exists, no action needed
+  if (!single_tree || n_trees <= 1) {
+    return(list(tree_json = tree_json, result_data = result_data, n_trees = n_trees))
+  }
+
+  # Multiple trees exist and single_tree=TRUE: extract only first tree
+
+  # Strategy 1: tree_json is a list of trees
+  if (!is.null(tree_json) && is.list(tree_json) && length(tree_json) > 1 &&
+      is.null(tree_json$feature) && is.null(tree_json$prediction) && is.null(tree_json$trees)) {
+    tree_json <- tree_json[[1]]
+  }
+
+  # Strategy 2: result_data is a list of trees
+  if (!is.null(result_data) && is.list(result_data) && length(result_data) > 1) {
+    first_elem <- result_data[[1]]
+    if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
+      result_data <- first_elem
+      # Also update tree_json if it was derived from result_data
+      if (is.null(tree_json) || identical(tree_json, result_data)) {
+        tree_json <- first_elem
+      }
+    }
+  }
+
+  # Strategy 3: result_data has trees field with multiple trees
+  if (!is.null(result_data) && is.list(result_data) && !is.null(result_data$trees) &&
+      is.list(result_data$trees) && length(result_data$trees) > 1) {
+    result_data$trees <- list(result_data$trees[[1]])
+    if (!is.null(tree_json) && is.list(tree_json) && !is.null(tree_json$trees)) {
+      tree_json$trees <- list(tree_json$trees[[1]])
+    }
+  }
+
+  # Force n_trees to 1
+  n_trees <- 1
+
+  return(list(tree_json = tree_json, result_data = result_data, n_trees = n_trees))
+}
+
+#' Create Model Object from Parsed Results
+#'
+#' @param result_data Parsed JSON data from C++
+#' @param tree_json Extracted tree structure
+#' @param config Configuration list
+#' @param result_list Training statistics from C++
+#' @param X Training features
+#' @param y Training labels
+#' @param store_training_data Logical. Whether to store training data
+#' @return List with model_obj and metadata
+#' @keywords internal
+create_model_object <- function(result_data, tree_json, config, result_list,
+                                X, y, store_training_data) {
+  # Create base model object
+  model_obj <- list(
+    result_data = result_data,
+    tree_json = tree_json,
+    config = config,
+    time = result_list$time,
+    iterations = result_list$iterations,
+    size = result_list$size,
+    status = result_list$status
+  )
+
+  # Determine which tree to use for predictions
+  tree_to_use <- if (!is.null(tree_json)) tree_json else result_data
+
+  # Check if we have a valid tree structure
+  has_tree <- FALSE
+  if (!is.null(tree_to_use)) {
+    if (is.list(tree_to_use)) {
+      # Check if it's a tree structure (has feature or prediction)
+      if (!is.null(tree_to_use$feature) || !is.null(tree_to_use$prediction)) {
+        has_tree <- TRUE
+      } else if (length(tree_to_use) > 1 && !is.null(names(tree_to_use))) {
+        # Might be a list of trees or a named list
+        for (item in tree_to_use) {
+          if (is.list(item) && (!is.null(item$feature) || !is.null(item$prediction))) {
+            has_tree <- TRUE
+            break
+          }
+        }
+      }
+    }
+  }
+
+  # Store tree structure for lazy computation
+  stored_tree <- tree_to_use
+  stored_X <- if (store_training_data) X else NULL
+  stored_y <- if (store_training_data) y else NULL
+
+  # Validate tree structure before storing
+  if (!is.null(stored_tree) && !validate_tree_structure(stored_tree)) {
+    warning("Tree structure validation failed. Probabilities may not be available.")
+    stored_tree <- NULL
+  }
+
+  return(list(
+    model_obj = model_obj,
+    stored_tree = stored_tree,
+    stored_X = stored_X,
+    stored_y = stored_y,
+    has_tree = has_tree
+  ))
+}
+
+#' Build Regression Result Object
+#'
+#' @param has_tree Logical. Whether a valid tree exists
+#' @param X Training features
+#' @param y Training labels
+#' @param stored_X Stored training features (or NULL)
+#' @param stored_y Stored training labels (or NULL)
+#' @param stored_tree Stored tree structure
+#' @param loss_function Loss function name
+#' @param regularization Regularization parameter
+#' @param n_trees Number of trees
+#' @param result_list Training statistics
+#' @return Result list with lazy evaluation functions
+#' @keywords internal
+build_regression_result <- function(has_tree, X, y, stored_X, stored_y,
+                                   stored_tree, loss_function, regularization,
+                                   n_trees, result_list) {
+  # Define lazy evaluation functions
+  compute_predictions_lazy <- function() {
+    if (is.null(stored_X)) return(rep(NA_real_, length(y)))
+    if (is.null(stored_tree)) return(rep(NA_real_, nrow(stored_X)))
+    get_fitted_from_tree(stored_tree, stored_X)
+  }
+
+  compute_probabilities_lazy <- NULL
+
+  compute_accuracy_lazy <- function() {
+    if (is.null(stored_y)) return(NA_real_)
+    preds <- compute_predictions_lazy()
+    if (is.null(preds) || length(preds) == 0) return(NA_real_)
+    mean((stored_y - preds)^2)
+  }
+
+  # Compute predictions and MSE if tree exists
+  if (has_tree && !is.null(X) && nrow(X) > 0) {
+    predictions <- get_fitted_from_tree(stored_tree, X)
+    accuracy <- mean((y - predictions)^2)
+  } else {
+    predictions <- rep(NA_real_, length(y))
+    accuracy <- NA_real_
+  }
+
+  # Build result list
+  result <- list(
+    loss_function = loss_function,
+    regularization = regularization,
+    n_trees = n_trees,
+    training_time = result_list$time,
+    training_iterations = result_list$iterations,
+    .compute_probabilities = compute_probabilities_lazy,
+    .compute_predictions = compute_predictions_lazy,
+    .compute_accuracy = compute_accuracy_lazy,
+    probabilities = NULL,
+    predictions = predictions,
+    accuracy = accuracy
+  )
+
+  return(result)
+}
+
+#' Build Classification Result Object
+#'
+#' @param compute_probabilities Logical. Whether to compute probabilities immediately
+#' @param has_tree Logical. Whether a valid tree exists
+#' @param X Training features
+#' @param y Training labels
+#' @param stored_X Stored training features (or NULL)
+#' @param stored_y Stored training labels (or NULL)
+#' @param stored_tree Stored tree structure
+#' @param loss_function Loss function name
+#' @param regularization Regularization parameter
+#' @param n_trees Number of trees
+#' @param result_list Training statistics
+#' @param result_data Parsed result data (for fallback warnings)
+#' @param json_output Original JSON output (for fallback warnings)
+#' @param verbose Logical. Whether to print diagnostic messages
+#' @return Result list with lazy evaluation functions and cache
+#' @keywords internal
+build_classification_result <- function(compute_probabilities, has_tree, X, y,
+                                       stored_X, stored_y, stored_tree,
+                                       loss_function, regularization, n_trees,
+                                       result_list, result_data = NULL,
+                                       json_output = NULL, verbose = FALSE) {
+  # Initialize variables
+  probabilities <- NULL
+  predictions <- NULL
+  accuracy <- NULL
+
+  # Compute immediately if requested and tree exists
+  if (compute_probabilities && has_tree) {
+    probabilities <- get_probabilities_from_tree(stored_tree, X)
+    if (verbose) {
+      print(head(probabilities, 3))
+    }
+    predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
+    accuracy <- mean(predictions == y)
+  } else if (has_tree) {
+    # Compute for predictions/accuracy but not probabilities
+    probs <- get_probabilities_from_tree(stored_tree, X)
+    predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
+    accuracy <- mean(predictions == y)
+  } else {
+    # No valid tree - provide fallback
+    if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
+      warning("Model training may have failed or serialization returned empty result. ",
+              "Try reducing dataset size or adjusting regularization.")
+    }
+    predictions <- rep(0, length(y))
+    accuracy <- mean(predictions == y)
+  }
+
+  # Create cache environment for lazy evaluation
+  cache <- new.env()
+
+  # Define lazy probability computation with caching
+  compute_probabilities_lazy <- function() {
+    if (exists("probabilities", cache, inherits = FALSE)) return(cache$probabilities)
+    if (is.null(stored_tree)) {
+      n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
+      if (n_samples == 0) return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
+      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+    }
+    if (is.null(stored_X)) {
+      stop("Cannot compute probabilities: training data not stored. ",
+           "Re-train with store_training_data=TRUE or provide newdata to predict()")
+    }
+    n_samples <- nrow(stored_X)
+
+    # Use batch processing for large datasets
+    if (n_samples > 500) {
+      batch_size <- min(500, n_samples)
+      n_batches <- ceiling(n_samples / batch_size)
+      probs <- matrix(0.0, nrow = n_samples, ncol = 2)
+      for (i in 1:n_batches) {
+        start_idx <- (i - 1) * batch_size + 1
+        end_idx <- min(i * batch_size, n_samples)
+        batch_X <- stored_X[start_idx:end_idx, , drop = FALSE]
+        probs[start_idx:end_idx, ] <- get_probabilities_from_tree(stored_tree, batch_X)
+      }
+      colnames(probs) <- c("P(class=0)", "P(class=1)")
+    } else {
+      probs <- get_probabilities_from_tree(stored_tree, stored_X)
+    }
+
+    # Cache results
+    cache$probabilities <- probs
+    cache$predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
+    cache$accuracy <- if (!is.null(stored_y)) mean(cache$predictions == stored_y) else NA_real_
+
+    return(cache$probabilities)
+  }
+
+  compute_predictions_lazy <- function() {
+    if (exists("predictions", cache, inherits = FALSE)) return(cache$predictions)
+    compute_probabilities_lazy()
+    return(cache$predictions)
+  }
+
+  compute_accuracy_lazy <- function() {
+    if (exists("accuracy", cache, inherits = FALSE)) return(cache$accuracy)
+    if (is.null(stored_y)) {
+      stop("Cannot compute accuracy: training data not stored. ",
+           "Re-train with store_training_data=TRUE")
+    }
+    compute_predictions_lazy()
+    return(cache$accuracy)
+  }
+
+  # Build result list
+  result <- list(
+    loss_function = loss_function,
+    regularization = regularization,
+    n_trees = n_trees,
+    training_time = result_list$time,
+    training_iterations = result_list$iterations,
+    .compute_probabilities = compute_probabilities_lazy,
+    .compute_predictions = compute_predictions_lazy,
+    .compute_accuracy = compute_accuracy_lazy,
+    probabilities = probabilities,
+    predictions = predictions,
+    accuracy = accuracy,
+    .cache = cache
+  )
+
+  return(result)
+}
+
+#' Finalize Result Object with Metadata
+#'
+#' @param result Result list to finalize
+#' @param model_obj Model object to add
+#' @param X Training features
+#' @param y Training labels
+#' @param store_training_data Logical. Whether training data should be stored
+#' @param discretization_metadata Discretization metadata
+#' @param X_original Original feature names
+#' @return Finalized result object with class
+#' @keywords internal
+finalize_result_object <- function(result, model_obj, X, y, store_training_data,
+                                   discretization_metadata, X_original) {
+  # Add model object
+  result$model <- model_obj
+
+  # Add training sample count
+  result$n_train <- nrow(X)
+
+  # Add training data if requested
+  if (store_training_data) {
+    result$X_train <- X
+    result$y_train <- y
+  } else {
+    result$X_train <- X[integer(0), , drop = FALSE]
+    result$y_train <- NULL
+  }
+
+  # Store discretization metadata
+  result$discretization <- discretization_metadata
+  result$X_original_names <- names(X_original)
+
+  # Set class
+  class(result) <- "optimaltrees_model"
+
+  return(result)
+}
+
+# ============================================================================
+# Main fitting function (orchestrator)
+# ============================================================================
+
 .treefarms_fit_with_csv <- function(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities,
                                     discretization_metadata = NULL, X_original = NULL) {
+  # Extract config parameters
   config_json <- jsonlite::toJSON(config, auto_unbox = TRUE)
   verbose <- isTRUE(config$verbose)
   is_regression <- config$loss_function %in% c("squared_error", "regression")
   loss_function <- config$loss_function
   regularization <- config$regularization
+
   tryCatch({
+    # Step 1: Call C++ backend
     json_output_raw <- treefarms_fit_with_config_cpp(csv_string, config_json)
     if (is.character(json_output_raw) && length(json_output_raw) == 1) {
       json_output <- as.character(json_output_raw)[1]
@@ -595,87 +1130,27 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     } else {
       json_output <- as.character(json_output_raw)
     }
-    
-    if (verbose) {
-      if (!is.null(json_output) && json_output != "") {
-      }
+
+    if (verbose && !is.null(json_output) && json_output != "") {
+      message("C++ backend returned JSON output")
     }
-    
-    # Parse the JSON result first with enhanced error handling
-    if (is.null(json_output) || json_output == "") {
-      if (verbose) {
-      }
-      result_data <- NULL
-    } else {
-      # Check if json_output is just "{}" (empty JSON object fallback)
-      json_trimmed <- trimws(json_output)
-      if (json_trimmed == "{}" || json_trimmed == "null") {
-        if (verbose) {
-        }
-        result_data <- NULL
-      } else {
-        tryCatch({
-          result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
-          if (verbose) {
-            if (!is.null(result_data$storage)) {
-            }
-            if (!is.null(result_data$trees)) {
-            }
-          }
-        }, error = function(e) {
-          # If parsing fails, provide detailed error information
-          warning("Failed to parse JSON result from C++ code. This may indicate a serialization error. ",
-                  "Error: ", e$message, 
-                  ". JSON length: ", nchar(json_output),
-                  ". First 200 chars: ", substr(json_output, 1, min(200, nchar(json_output))))
-          if (verbose) {
-          }
-          result_data <- NULL
-        })
-      }
+
+    # Step 2: Parse JSON result
+    result_data <- parse_cpp_json_result(json_output, verbose)
+
+    # Step 3: Extract tree structure
+    tree_json <- extract_tree_from_cpp_result(result_data, verbose)
+
+    if (verbose && !is.null(tree_json)) {
+      message("Successfully extracted tree structure")
     }
-    
-    # Extract tree from returned JSON (result_data)
-    tree_json <- NULL
-    if (!is.null(result_data)) {
-      # First, check if result_data has a "trees" field (from ModelSet::serialize with models)
-      if (!is.null(result_data$trees) && is.list(result_data$trees) && length(result_data$trees) > 0) {
-        # Extract the first tree from the trees array
-        tree_json <- result_data$trees[[1]]
-        if (verbose) {
-        }
-      } else if (!is.null(result_data$feature) || !is.null(result_data$prediction)) {
-        # Check if result_data itself is a tree structure
-        tree_json <- result_data
-      } else if (!is.null(result_data$storage) && is.list(result_data$storage) && length(result_data$storage) > 0) {
-        # result_data is a ModelSet structure - extract the first tree from storage
-        # The storage array contains ModelSet nodes, we need to reconstruct the tree
-        # For now, try to find a tree structure in the storage
-        for (item in result_data$storage) {
-          if (is.list(item) && (!is.null(item$feature) || !is.null(item$prediction))) {
-            tree_json <- item
-            break
-          }
-        }
-      } else if (is.list(result_data) && length(result_data) > 0) {
-        # result_data might be an array of trees
-        if (is.list(result_data[[1]]) && (!is.null(result_data[[1]]$feature) || !is.null(result_data[[1]]$prediction))) {
-          tree_json <- result_data[[1]]
-        }
-      }
-    }
-    if (verbose) {
-      if (!is.null(tree_json)) {
-      }
-    }
-    
-    # Get training statistics from C++ static variables
+
+    # Step 4: Get training statistics from C++
     training_time <- treefarms_time_cpp()
     iterations <- treefarms_iterations_cpp()
     model_size <- treefarms_size_cpp()
     status <- treefarms_status_cpp()
-    
-    # Create result list with actual stats from C++
+
     result_list <- list(
       result = json_output,
       time = training_time,
@@ -683,287 +1158,47 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
       size = model_size,
       status = status
     )
-    
-            # Extract model information - count trees in rashomon set (not leaf nodes)
-            n_trees <- 0
-            # Check result_data first - look for trees field
-            if (!is.null(result_data)) {
-              if (is.list(result_data) && !is.null(result_data$trees)) {
-                # result_data has a trees field - count trees in that list
-                if (is.list(result_data$trees)) {
-                  n_trees <- length(result_data$trees)
-                } else {
-                  n_trees <- 1
-                }
-              } else if (is.list(result_data) && (!is.null(result_data$feature) || !is.null(result_data$prediction))) {
-                # This is a single tree object directly
-                n_trees <- 1
-              } else if (is.list(result_data) && length(result_data) > 0) {
-                # Check if result_data itself is a list of trees (each element is a tree)
-                # This would be the case if result_data is a list where each element has feature/prediction
-                first_elem <- result_data[[1]]
-                if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
-                  # This is a list of trees
-                  n_trees <- length(result_data)
-                }
-              }
-            }
-            # If no trees found in result_data, check tree_json
-            if (n_trees == 0 && !is.null(tree_json)) {
-              if (is.list(tree_json) && !is.null(tree_json$trees)) {
-                # tree_json has a trees field
-                if (is.list(tree_json$trees)) {
-                  n_trees <- length(tree_json$trees)
-                } else {
-                  n_trees <- 1
-                }
-              } else if (is.list(tree_json) && (!is.null(tree_json$feature) || !is.null(tree_json$prediction))) {
-                # This is a single tree - count as 1 tree in rashomon set (not leaf nodes)
-                n_trees <- 1
-              } else if (is.list(tree_json) && length(tree_json) > 1 && is.null(tree_json$feature) && is.null(tree_json$prediction) && is.null(tree_json$trees)) {
-                # This is a list of trees (rashomon set) - check if first element is a tree
-                if (length(tree_json) > 0) {
-                  first_elem <- tree_json[[1]]
-                  if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
-                    n_trees <- length(tree_json)
-                  }
-                }
-              }
-            }
-            
-            # CRITICAL: If single_tree=TRUE, force n_trees=1 and extract only first tree
-            if (single_tree) {
-              if (n_trees > 1) {
-                # Extract only the first tree from tree_json if it's a list
-                if (!is.null(tree_json) && is.list(tree_json) && length(tree_json) > 1 && 
-                    is.null(tree_json$feature) && is.null(tree_json$prediction) && is.null(tree_json$trees)) {
-                  # tree_json is a list of trees - take first one
-                  tree_json <- tree_json[[1]]
-                } else if (!is.null(result_data) && is.list(result_data) && length(result_data) > 1) {
-                  # Check if result_data is a list of trees
-                  first_elem <- result_data[[1]]
-                  if (is.list(first_elem) && (!is.null(first_elem$feature) || !is.null(first_elem$prediction))) {
-                    # result_data is a list of trees - take first one and update result_data
-                    result_data <- first_elem
-                    # Also update tree_json if it was derived from result_data
-                    if (is.null(tree_json) || identical(tree_json, result_data)) {
-                      tree_json <- first_elem
-                    }
-                  }
-                } else if (!is.null(result_data) && is.list(result_data) && !is.null(result_data$trees) && 
-                          is.list(result_data$trees) && length(result_data$trees) > 1) {
-                  # result_data has a trees field with multiple trees - take first one
-                  result_data$trees <- list(result_data$trees[[1]])
-                  if (!is.null(tree_json) && is.list(tree_json) && !is.null(tree_json$trees)) {
-                    tree_json$trees <- list(tree_json$trees[[1]])
-                  }
-                }
-              }
-              # Force n_trees to 1
-              n_trees <- 1
-            }
-    
-    # Create model object
-    model_obj <- list(
-      result_data = result_data,
-      tree_json = tree_json,  # Store parsed tree JSON
-      config = config,
-      time = result_list$time,
-      iterations = result_list$iterations,
-      size = result_list$size,
-      status = result_list$status
-    )
-    
-    # Get predictions and probabilities from the tree structure
-    # Use tree_json if available, otherwise use result_data
-    tree_to_use <- if (!is.null(tree_json)) tree_json else result_data
-    
+
+    # Step 5: Count trees in Rashomon set
+    n_trees <- count_trees_in_result(result_data, tree_json)
+
+    # Step 6: Enforce single tree constraint if needed
+    enforcement_result <- enforce_single_tree(single_tree, n_trees, tree_json, result_data)
+    tree_json <- enforcement_result$tree_json
+    result_data <- enforcement_result$result_data
+    n_trees <- enforcement_result$n_trees
+
+    # Step 7: Create model object with validation
+    model_components <- create_model_object(result_data, tree_json, config, result_list,
+                                           X, y, store_training_data)
+    model_obj <- model_components$model_obj
+    stored_tree <- model_components$stored_tree
+    stored_X <- model_components$stored_X
+    stored_y <- model_components$stored_y
+    has_tree <- model_components$has_tree
+
     if (verbose) {
-      if (!is.null(tree_to_use)) {
-        if (is.list(tree_to_use)) {
-        }
-      }
-    }
-    
-    # Check if we have a valid tree structure
-    has_tree <- FALSE
-    if (!is.null(tree_to_use)) {
-      if (is.list(tree_to_use)) {
-        # Check if it's a tree structure (has feature or prediction)
-        if (!is.null(tree_to_use$feature) || !is.null(tree_to_use$prediction)) {
-          has_tree <- TRUE
-        } else if (length(tree_to_use) > 1 && !is.null(names(tree_to_use))) {
-          # Might be a list of trees or a named list
-          # Check if any element has feature or prediction
-          for (item in tree_to_use) {
-            if (is.list(item) && (!is.null(item$feature) || !is.null(item$prediction))) {
-              has_tree <- TRUE
-              break
-            }
-          }
-        }
-      }
-    }
-    
-    if (verbose) {
-    }
-    
-    # Store tree structure for lazy computation
-    stored_tree <- tree_to_use
-    stored_X <- if (store_training_data) X else NULL
-    stored_y <- if (store_training_data) y else NULL
-
-    # Validate tree structure before storing
-    if (!is.null(stored_tree) && !validate_tree_structure(stored_tree)) {
-      warning("Tree structure validation failed. Probabilities may not be available.")
-      stored_tree <- NULL
+      message("Model object created, has_tree: ", has_tree)
     }
 
-    # Lazy probability computation: only compute if explicitly requested
-    probabilities <- NULL
-    predictions <- NULL
-    accuracy <- NULL
-
+    # Step 8: Build result object (regression vs classification)
     if (is_regression) {
-      # Regression: fitted values and MSE
-      compute_predictions_lazy <- function() {
-        if (is.null(stored_X)) return(rep(NA_real_, length(y)))
-        if (is.null(stored_tree)) return(rep(NA_real_, nrow(stored_X)))
-        get_fitted_from_tree(stored_tree, stored_X)
-      }
-      compute_probabilities_lazy <- NULL
-      compute_accuracy_lazy <- function() {
-        if (is.null(stored_y)) return(NA_real_)
-        preds <- compute_predictions_lazy()
-        if (is.null(preds) || length(preds) == 0) return(NA_real_)
-        mean((stored_y - preds)^2)
-      }
-      if (has_tree && !is.null(X) && nrow(X) > 0) {
-        predictions <- get_fitted_from_tree(stored_tree, X)
-        accuracy <- mean((y - predictions)^2)
-      } else {
-        predictions <- rep(NA_real_, length(y))
-        accuracy <- NA_real_
-      }
-      probabilities <- NULL
-      result <- list(
-        model = model_obj,
-        loss_function = loss_function,
-        regularization = regularization,
-        n_trees = n_trees,
-        training_time = result_list$time,
-        training_iterations = result_list$iterations,
-        .compute_probabilities = compute_probabilities_lazy,
-        .compute_predictions = compute_predictions_lazy,
-        .compute_accuracy = compute_accuracy_lazy,
-        probabilities = probabilities,
-        predictions = predictions,
-        accuracy = accuracy
-      )
+      result <- build_regression_result(has_tree, X, y, stored_X, stored_y,
+                                       stored_tree, loss_function, regularization,
+                                       n_trees, result_list)
     } else {
-      # Classification
-      if (compute_probabilities && has_tree) {
-        probabilities <- get_probabilities_from_tree(tree_to_use, X)
-        if (verbose) {
-          print(head(probabilities, 3))
-        }
-        predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
-        accuracy <- mean(predictions == y)
-      } else if (has_tree) {
-        probs <- get_probabilities_from_tree(tree_to_use, X)
-        predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
-        accuracy <- mean(predictions == y)
-      } else {
-        if (is.null(result_data) && (!is.null(json_output) && json_output != "" && trimws(json_output) == "{}")) {
-          warning("Model training may have failed or serialization returned empty result. ",
-                  "Try reducing dataset size or adjusting regularization.")
-        }
-        predictions <- rep(0, length(y))
-        accuracy <- mean(predictions == y)
-      }
-
-      cache <- new.env()
-      compute_probabilities_lazy <- function() {
-        if (exists("probabilities", cache, inherits = FALSE)) return(cache$probabilities)
-        if (is.null(stored_tree)) {
-          n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
-          if (n_samples == 0) return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
-          return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-        }
-        if (is.null(stored_X)) {
-          stop("Cannot compute probabilities: training data not stored. ",
-               "Re-train with store_training_data=TRUE or provide newdata to predict()")
-        }
-        n_samples <- nrow(stored_X)
-        if (n_samples > 500) {
-          batch_size <- min(500, n_samples)
-          n_batches <- ceiling(n_samples / batch_size)
-          probs <- matrix(0.0, nrow = n_samples, ncol = 2)
-          for (i in 1:n_batches) {
-            start_idx <- (i - 1) * batch_size + 1
-            end_idx <- min(i * batch_size, n_samples)
-            batch_X <- stored_X[start_idx:end_idx, , drop = FALSE]
-            probs[start_idx:end_idx, ] <- get_probabilities_from_tree(stored_tree, batch_X)
-          }
-          colnames(probs) <- c("P(class=0)", "P(class=1)")
-        } else {
-          probs <- get_probabilities_from_tree(stored_tree, stored_X)
-        }
-        cache$probabilities <- probs
-        cache$predictions <- ifelse(probs[, 2] >= 0.5, 1, 0)
-        cache$accuracy <- if (!is.null(stored_y)) mean(cache$predictions == stored_y) else NA_real_
-        return(cache$probabilities)
-      }
-      compute_predictions_lazy <- function() {
-        if (exists("predictions", cache, inherits = FALSE)) return(cache$predictions)
-        compute_probabilities_lazy()
-        return(cache$predictions)
-      }
-      compute_accuracy_lazy <- function() {
-        if (exists("accuracy", cache, inherits = FALSE)) return(cache$accuracy)
-        if (is.null(stored_y)) {
-          stop("Cannot compute accuracy: training data not stored. ",
-               "Re-train with store_training_data=TRUE")
-        }
-        compute_predictions_lazy()
-        return(cache$accuracy)
-      }
-      result <- list(
-        model = model_obj,
-        loss_function = loss_function,
-        regularization = regularization,
-        n_trees = n_trees,
-        training_time = result_list$time,
-        training_iterations = result_list$iterations,
-        .compute_probabilities = compute_probabilities_lazy,
-        .compute_predictions = compute_predictions_lazy,
-        .compute_accuracy = compute_accuracy_lazy,
-        probabilities = probabilities,
-        predictions = predictions,
-        accuracy = accuracy
-      )
-      result$.cache <- cache
-    }
-    
-    # Training sample count (for print/summary and tests)
-    result$n_train <- nrow(X)
-    if (store_training_data) {
-      result$X_train <- X
-      result$y_train <- y
-    } else {
-      result$X_train <- X[integer(0), , drop = FALSE]
-      result$y_train <- NULL
+      result <- build_classification_result(compute_probabilities, has_tree, X, y,
+                                           stored_X, stored_y, stored_tree,
+                                           loss_function, regularization, n_trees,
+                                           result_list, result_data, json_output, verbose)
     }
 
-    # Store discretization metadata
-    result$discretization <- discretization_metadata
-    result$X_original_names <- names(X_original)
+    # Step 9: Finalize result with metadata
+    result <- finalize_result_object(result, model_obj, X, y, store_training_data,
+                                     discretization_metadata, X_original)
 
-    # Set class
-    class(result) <- "optimaltrees_model"
-    
     return(result)
-    
+
   }, error = function(e) {
     stop(paste("Error training TreeFARMS model:", e$message))
   })
