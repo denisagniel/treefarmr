@@ -32,7 +32,7 @@
 #' y <- rbinom(n, 1, plogis(0.5 * X$X1 - 0.3 * X$X2))
 #'
 #' # Auto-tune to find exactly 1 tree (single optimal model)
-#' result <- auto_tune_treefarms(
+#' result <- auto_tune_optimaltrees(
 #'   X, y,
 #'   loss_function = "log_loss",
 #'   target_trees = 1,
@@ -45,7 +45,7 @@
 #' print(result$converged)  # Should be TRUE
 #'
 #' @export
-auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
+auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
                                 target_trees = 1, max_trees = 5,
                                 fixed_param = "regularization", fixed_value = 0.1,
                                 search_range = NULL, max_iterations = 20,
@@ -145,7 +145,7 @@ auto_tune_treefarms <- function(X, y, loss_function = "misclassification",
   iterations <- 0
   best_result <- NULL
   best_trees <- 0
-  fit_with_csv <- get(".treefarms_fit_with_csv", envir = asNamespace("treefarmr"))
+  fit_with_csv <- get(".treefarms_fit_with_csv", envir = asNamespace("optimaltrees"))
   
   while (iterations < max_iterations && (high - low) > 0.001) {
     iterations <- iterations + 1
