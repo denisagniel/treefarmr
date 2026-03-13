@@ -47,6 +47,10 @@ void Optimizer::load(std::istream & data_source) {
         Configuration::worker_limit = 1;
     }
     assert(Configuration::worker_limit > 0 && "worker_limit must be > 0 after correction");
+
+    // CRITICAL: This is the LAST place Configuration::worker_limit can change.
+    // After this line, worker_limit must be treated as const. Threads will be created
+    // later in gosdt.cpp, and any changes to Configuration after that point cause UB.
     
     // CRITICAL: Verify state object alignment before use
     void* sptr = &state;

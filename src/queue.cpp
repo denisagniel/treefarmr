@@ -10,7 +10,10 @@ Queue::~Queue(void) {
     // Messages can be in both membership map AND queue
     // We need to delete each message only once
     // Strategy: Collect all unique message pointers, then delete them
-    
+
+    // CRITICAL: Use std::set for deduplication. If a message appears in both
+    // membership and queue (which can happen), set::insert ensures we only
+    // delete each pointer once. Switching to vector would cause double-delete.
     std::set<message_type*> messages_to_delete;
     
     // Collect messages from membership map

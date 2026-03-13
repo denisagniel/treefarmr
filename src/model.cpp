@@ -213,6 +213,12 @@ float Model::loss(void) const {
     } else {
         loss = this -> negative -> loss() + this -> positive -> loss();
     }
+
+    // Validate before caching
+    if (!std::isfinite(loss)) {
+        throw std::runtime_error("Non-finite loss computed in Model::loss()");
+    }
+
     cached_loss = loss;
     return loss;
 }
@@ -228,6 +234,12 @@ float Model::complexity(void) const {
     } else {
         complexity = this -> negative -> complexity() + this -> positive -> complexity();
     }
+
+    // Validate before caching
+    if (!std::isfinite(complexity)) {
+        throw std::runtime_error("Non-finite complexity computed in Model::complexity()");
+    }
+
     cached_complexity = complexity;
     return complexity;
 }

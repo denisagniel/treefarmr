@@ -8,10 +8,16 @@ using json = nlohmann::json;
 
 enum CoveredSetExtraction {F1, BACC, AUC};
 
-enum LossFunction {MISCLASSIFICATION, LOG_LOSS, SQUARED_ERROR};
+enum LossFunctionType {MISCLASSIFICATION, LOG_LOSS, SQUARED_ERROR};
 
 // Static configuration object used to modifie the algorithm behaviour
 // By design, all running instances of the algorithm within the same process must share the same configuration
+//
+// THREAD-SAFETY GUARANTEE:
+// Configuration MUST be fully initialized via configure() before worker threads are created.
+// After threads start, all Configuration members are READ-ONLY. Modifying Configuration after
+// thread creation causes undefined behavior. The Configuration::worker_limit value is the last
+// configuration value that can change, and it must be finalized before gosdt.cpp starts threads.
 class Configuration {
 public:
     static void configure(std::istream & configuration);
@@ -53,15 +59,25 @@ public:
         }
     };
     static double computeScore(CoveredSetExtraction type, unsigned int P, unsigned int N, double TP, double TN) {
+        // Validate inputs before division
+        if (P == 0 || N == 0) {
+            throw std::runtime_error("Cannot compute score with P=0 or N=0");
+        }
+
         switch (type) {
-            case F1:
-                return TP / (TP + 0.5 * (P - TP + N - TN));
+            case F1: {
+                double denom = TP + 0.5 * (P - TP + N - TN);
+                if (denom == 0.0) {
+                    throw std::runtime_error("F1 score denominator is zero");
+                }
+                return TP / denom;
+            }
             case BACC:
-                return (TP / P + TN / N) / 2;
+                return (TP / P + TN / N) / 2.0;
             case AUC:
                 return (TN * TP + 0.5 * (TP * (N - TN) + TN * (P - TP))) / (N * P);
             default:
-                throw std::invalid_argument("Unknown type");
+                throw std::invalid_argument("Unknown score type");
         }
     };
 
@@ -95,12 +111,15 @@ public:
 
     static bool rashomon_ignore_trivial_extensions;
 
-    static LossFunction loss_function; // Loss function to use for optimization
+    static LossFunctionType loss_function; // Loss function to use for optimization
 
     static bool cart_lookahead;              // Enable CART lookahead bounds for faster optimization
     static unsigned int cart_lookahead_depth; // Depth for CART lookahead (0=disabled, 1-3 typical)
 
     static bool k_cluster;                   // Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5)
+
+    static float huber_delta;                // Delta parameter for Huber loss (transition point between quadratic and linear)
+    static float quantile_tau;               // Tau parameter for quantile loss (quantile level, e.g., 0.5 for median)
 
 };
 

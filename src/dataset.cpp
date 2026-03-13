@@ -357,15 +357,19 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 double sum = 0.0;
                 double sum_sq = 0.0;
 
-                // Compute sum and sum of squares
+                // Compute sum for mean
                 for (size_t j = 0; j < targets.size(); ++j) {
                     sum += targets[j];
-                    sum_sq += targets[j] * targets[j];
                 }
-
-                // Within-group variance: sum(y^2) - n*mean^2
                 double mean = sum / w;
-                double within_group_sse = sum_sq - w * mean * mean;
+
+                // Two-pass algorithm for numerically stable variance computation
+                // Avoids catastrophic cancellation from sum_sq - w*mean^2
+                double within_group_sse = 0.0;
+                for (size_t j = 0; j < targets.size(); ++j) {
+                    double diff = targets[j] - mean;
+                    within_group_sse += diff * diff;
+                }
                 equiv_points_loss += within_group_sse;
 
                 // Store for optional k-means
@@ -508,6 +512,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
             this -> targets.at(j).bit_and(buffer); // Captured minority points with label j
             equivalent_point_loss += this -> mismatch_costs[j] * buffer.count(); // Calculate frequency
         }
+    }
+
+    // Validate support before computing log(support)
+    if (support <= 0.0f) {
+        throw std::runtime_error("Cannot compute information with support <= 0");
     }
 
     for (int j = depth(); --j >= 0;) { // Class index

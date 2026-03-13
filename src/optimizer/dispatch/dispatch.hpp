@@ -107,6 +107,9 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
     }
     float lower = task.base_objective(), upper = task.base_objective();
     int optimal_feature = -1;
+
+    // Lock graph for all accesses in this function (bounds, children, vertices)
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
     auto bounds = this->state.graph.bounds.find(task.identifier());
     if (bounds == this->state.graph.bounds.end()) { return task.update(lower, upper, optimal_feature); }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
@@ -119,7 +122,15 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
                 if (key != this->state.graph.children.end()) {
                     auto child = this->state.graph.vertices.find(key -> second);
                     if (child != this->state.graph.vertices.end()) {
-                        this->state.locals[id].neighbourhood[2 * feature + k] = child -> second;
+                        // Bounds check before array access
+                        size_t index = 2 * feature + k;
+                        if (index >= this->state.locals[id].neighbourhood.size()) {
+                            throw std::runtime_error("neighbourhood index out of bounds: feature=" +
+                                                   std::to_string(feature) + ", k=" + std::to_string(k) +
+                                                   ", index=" + std::to_string(index) +
+                                                   ", size=" + std::to_string(this->state.locals[id].neighbourhood.size()));
+                        }
+                        this->state.locals[id].neighbourhood[index] = child -> second;
                         ready = ready && true;
                     } else {
                         ready = false;
@@ -201,16 +212,19 @@ bool Optimizer::load_children(Task & task, Bitmask const & signals, unsigned int
 }
 
 bool Optimizer::load_parents(Tile const & identifier, adjacency_accessor & parents) {
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
     parents = this->state.graph.edges.find(identifier);
     return parents != this->state.graph.edges.end();
 }
 
 bool Optimizer::load_self(Tile const & identifier, vertex_accessor & self) {
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
     self = this->state.graph.vertices.find(identifier);
     return self != this->state.graph.vertices.end();
 }
 
 bool Optimizer::store_self(Tile const & identifier, Task const & value, vertex_accessor & self) {
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
     auto result = this->state.graph.vertices.insert(std::make_pair(identifier, value));
     self = result.first;
     return result.second;
@@ -221,6 +235,9 @@ void Optimizer::store_children(Task & task, unsigned int id) {
     if (id >= this->state.locals.size()) {
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(this->state.locals.size()));
     }
+
+    // Lock graph for bounds and vertices accesses
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
     auto bounds_result = this->state.graph.bounds.insert(std::make_pair(task.identifier(), bound_list()));
     if (!bounds_result.second) { return; }
     auto bounds = bounds_result.first;
@@ -267,6 +284,9 @@ void Optimizer::store_children(Task & task, unsigned int id) {
 }
 
 void Optimizer::link_to_parent(Tile const & parent, Bitmask const & features, Bitmask const & signs, float scope, Tile const & self, translation_type const & order, adjacency_accessor & parents) {
+    // Lock graph for translations, children, and edges inserts
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
+
     for (int j_begin = 0, j_end = 0; features.scan_range(true, j_begin, j_end); j_begin = j_end) {
         for (int j = j_begin; j < j_end; ++j) {
             int feature = (signs.get(j) ? 1 : -1) * (j + 1);

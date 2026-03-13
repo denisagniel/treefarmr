@@ -382,6 +382,9 @@ void Task::send_explorer(Task const & child, float scope, int feature, unsigned 
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     bool send = true;
+
+    // Lock graph for children, vertices, and edges accesses
+    std::lock_guard<std::recursive_mutex> lock(state.graph.graph_mutex);
     auto key = state.graph.children.find(std::make_pair(this -> identifier(), feature));
 
     if (key != state.graph.children.end()) {

@@ -48,6 +48,9 @@ void Optimizer::models(key_type const & identifier, std::unordered_set< std::sha
 }
 
 void Optimizer::models_inner(key_type const & identifier, std::unordered_set< std::shared_ptr<Model>, std::hash< std::shared_ptr<Model> >, std::equal_to< std::shared_ptr<Model> > > & results, float scope) {
+    // Lock graph for all accesses in this function (vertices, bounds, children, translations)
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
+
     auto task_accessor = this->state.graph.vertices.find(identifier);
     if (task_accessor == this->state.graph.vertices.end()) { return; }
     Task & task = task_accessor -> second;

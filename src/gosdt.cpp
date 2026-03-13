@@ -453,6 +453,11 @@ void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & model
     auto start = std::chrono::high_resolution_clock::now();
 
     optimizer.initialize();
+
+    // CRITICAL: Freeze configuration - no changes allowed after this point
+    // All Configuration members are now READ-ONLY for the lifetime of worker threads
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+
     for (unsigned int i = 0; i < Configuration::worker_limit; ++i) {
         workers.emplace_back(work, i, std::ref(optimizer), std::ref(iterations[i]));
         #if  !defined(__APPLE__) && !defined(_WIN32)

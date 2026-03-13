@@ -22,8 +22,11 @@ public:
     //        features refer to the number of binary features that will be available at prediction time
     //        targets refer to the number of different classes that a sample can fall under
     void initialize(unsigned int samples, unsigned int features, unsigned int targets);
-    
-    LocalState & operator=(LocalState const & source);
+
+    // Delete assignment operator - it was broken and silently dropped fields
+    // The broken operator= dropped inbound_message, outbound_message, samples, features, targets.
+    // Keep default copy constructor (needed for vector::resize()) but delete assignment.
+    LocalState & operator=(LocalState const & source) = delete;
 
     std::vector< Task > neighbourhood; // Memory buffer for storing children of a node
     Message inbound_message; // Memory buffer for storing a messages from the priority queue
