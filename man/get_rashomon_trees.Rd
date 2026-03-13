@@ -4,22 +4,27 @@
 \alias{get_rashomon_trees}
 \title{Extract Trees from Rashomon Set}
 \usage{
-get_rashomon_trees(model)
+get_rashomon_trees(model, max_leaves = NULL)
 }
 \arguments{
 \item{model}{A trained TreeFARMS model object (class `treefarms_model`)}
+
+\item{max_leaves}{Optional integer. If set, only trees with number of leaves \eqn{\le}
+\code{max_leaves} are returned (R-side sieve).}
 }
 \value{
-A list of tree objects from the model's Rashomon set
+A list of tree objects from the model's Rashomon set (possibly filtered by \code{max_leaves})
 }
 \description{
 Extract all trees from a trained TreeFARMS model's Rashomon set.
+Optionally restrict to trees with at most \code{max_leaves} leaves (sieve for
+theory-consistent complexity; see \file{docs/Implementation-requirements-Rashomon-DML.md}).
 }
 \examples{
 \dontrun{
 model <- treefarms(X, y, regularization = 0.1)
 trees <- get_rashomon_trees(model)
-cat("Number of trees:", length(trees), "\n")
+trees_small <- get_rashomon_trees(model, max_leaves = 5)
 }
 
 }

@@ -11,6 +11,8 @@ cross_fitted_rashomon(
   loss_function = "misclassification",
   regularization = 0.1,
   rashomon_bound_multiplier = 0.05,
+  rashomon_bound_adder = 0,
+  max_leaves = NULL,
   single_tree = FALSE,
   auto_tune_intersecting = FALSE,
   tune_param = "regularization",
@@ -18,6 +20,7 @@ cross_fitted_rashomon(
   tune_search_range = NULL,
   seed = NULL,
   verbose = TRUE,
+  fold_indices = NULL,
   ...
 )
 }
@@ -28,11 +31,15 @@ cross_fitted_rashomon(
 
 \item{K}{Number of folds for cross-fitting. Default: 5}
 
-\item{loss_function}{Loss function: "misclassification" or "log_loss". Default: "misclassification"}
+\item{loss_function}{Loss function: "misclassification", "log_loss", or "squared_error" (regression). Default: "misclassification"}
 
 \item{regularization}{Model complexity penalty. Default: 0.1}
 
-\item{rashomon_bound_multiplier}{Rashomon set size control. Default: 0.05}
+\item{rashomon_bound_multiplier}{Rashomon set size control (multiplicative). Default: 0.05}
+
+\item{rashomon_bound_adder}{Additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
+
+\item{max_leaves}{Optional integer. If set, only trees with \eqn{\#\text{leaves} \le} \code{max_leaves} are used (R-side sieve; theory-consistent complexity).}
 
 \item{single_tree}{Logical. If TRUE, fit exactly one tree per fold (disable rashomon set).
 Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold computes
@@ -53,6 +60,8 @@ If NULL, uses default ranges based on loss_function. Default: NULL.}
 \item{seed}{Random seed for reproducibility. Default: NULL}
 
 \item{verbose}{Print progress information. Default: TRUE}
+
+\item{fold_indices}{Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_folds(y, K)}.}
 
 \item{...}{Additional parameters passed to TreeFARMS}
 }
@@ -81,6 +90,13 @@ Cross-fitting algorithm:
 
 A tree appearing in all K Rashomon sets is nearly-optimal regardless of
 which training subset was used, indicating strong stability and generalizability.
+
+\strong{Theory-consistent defaults (DML):} For alignment with the manuscript,
+use small \eqn{\varepsilon} (e.g. \code{rashomon_bound_multiplier = 0.05} or
+\code{rashomon_bound_adder}), \eqn{\lambda \propto (\log n)/n} (see
+\code{\link{cv_regularization}}), and pass \code{fold_indices} to
+\code{predict()} for fold-specific nuisances. See
+\file{docs/Implementation-requirements-Rashomon-DML.md}.
 }
 \examples{
 \dontrun{

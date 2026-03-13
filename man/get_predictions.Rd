@@ -7,7 +7,7 @@
 get_predictions(object)
 }
 \arguments{
-\item{object}{A treefarms_model object}
+\item{object}{A optimaltrees_model object}
 }
 \value{
 A vector of binary predictions (0/1)

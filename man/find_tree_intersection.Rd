@@ -2,7 +2,7 @@
 % Please edit documentation in R/rashomon.R
 \name{find_tree_intersection}
 \alias{find_tree_intersection}
-\title{Find Intersection of Trees Across Rashomon Sets}
+\title{Find Intersection of Trees Across Rashomon Sets (by structure)}
 \usage{
 find_tree_intersection(rashomon_list, verbose = TRUE)
 }
@@ -13,26 +13,28 @@ find_tree_intersection(rashomon_list, verbose = TRUE)
 }
 \value{
 A list containing:
-  \item{intersecting_trees}{List of tree objects appearing in all Rashomon sets}
-  \item{n_intersecting}{Number of intersecting trees}
-  \item{tree_jsons}{JSON representations of intersecting trees}
+  \item{intersecting_trees}{List of tree objects (from first set) with structures in all sets}
+  \item{n_intersecting}{Number of intersecting structures}
+  \item{tree_jsons}{JSON representations of those trees}
+  \item{intersecting_structures}{Same as intersecting_trees; full trees usable for \code{refit_structure_on_data}}
 }
 \description{
-Find trees that appear in ALL Rashomon sets from cross-fitting.
-This is the core function for identifying stable trees.
+Find tree *structures* that appear in ALL Rashomon sets from cross-fitting.
+Comparison is by structure only (splits), so the same splits with different
+leaf values (e.g. from different folds) count as one. This is required for
+DML so that each fold can refit the chosen structure on its training data.
 }
 \details{
-This function compares trees across K Rashomon sets by converting each tree
-to its JSON representation and finding common trees across all sets.
+Trees are compared by canonical structure only (feature, relation, reference,
+and recursive branches; leaf values ignored). So the same structure refit on
+different folds matches. One representative full tree per structure (from the
+first set) is returned for backward compatibility and for refitting.
 }
 \examples{
 \dontrun{
-# Get Rashomon sets from K models
 rashomon_sets <- lapply(models, get_rashomon_trees)
-
-# Find trees in all sets
 result <- find_tree_intersection(rashomon_sets)
-cat("Found", result$n_intersecting, "stable trees\n")
+cat("Found", result$n_intersecting, "stable structure(s)\n")
 }
 
 }

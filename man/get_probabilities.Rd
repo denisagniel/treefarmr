@@ -7,7 +7,7 @@
 get_probabilities(object)
 }
 \arguments{
-\item{object}{A treefarms_model object}
+\item{object}{A optimaltrees_model object}
 
 \item{newdata}{A data.frame or matrix of new features to predict on.}
 

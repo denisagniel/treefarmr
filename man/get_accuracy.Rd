@@ -7,7 +7,7 @@
 get_accuracy(object)
 }
 \arguments{
-\item{object}{A treefarms_model object}
+\item{object}{A optimaltrees_model object}
 }
 \value{
 Training accuracy (numeric)

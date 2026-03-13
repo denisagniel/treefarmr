@@ -10,6 +10,7 @@ fit_rashomon(
   loss_function = "misclassification",
   regularization = 0.1,
   rashomon_bound_multiplier = 0.05,
+  rashomon_bound_adder = 0,
   worker_limit = 1L,
   verbose = FALSE,
   store_training_data = NULL,
@@ -28,8 +29,9 @@ Options: "misclassification" (default) or "log_loss".}
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
 
-\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size.
-Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.}
+\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.}
+
+\item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
 
 \item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
 
@@ -75,6 +77,11 @@ The rashomon set is useful for:
 The size of the rashomon set is controlled by `rashomon_bound_multiplier`:
 - Smaller values (e.g., 0.01) → more trees in the set
 - Larger values (e.g., 0.1) → fewer trees in the set
+
+\strong{Theory-consistent defaults (DML):} Use small \eqn{\varepsilon}
+(e.g. \code{rashomon_bound_multiplier = 0.05}), \eqn{\lambda \propto (\log n)/n}
+(see \code{\link{cv_regularization}}). See
+\file{docs/Implementation-requirements-Rashomon-DML.md}.
 }
 \examples{
 \dontrun{

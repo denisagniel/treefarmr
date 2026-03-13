@@ -1,11 +1,11 @@
 #' Package Initialization
 #'
 #' @description
-#' Package initialization hooks for treefarms package
+#' Package initialization hooks for optimaltrees package
 #'
 #' @import Rcpp
 #' @import jsonlite
-#' @useDynLib treefarmr, .registration = TRUE
+#' @useDynLib optimaltrees, .registration = TRUE
 NULL
 
 #' Package onLoad hook
@@ -33,11 +33,11 @@ NULL
 #' @keywords internal
 .onAttach <- function(libname, pkgname) {
   packageStartupMessage(
-    "TreeFARMS R Package v",
+    "optimaltrees v",
     utils::packageVersion(pkgname),
     "\n",
-    "Tree-based Fast and Accurate Rule Set Models with Log-Loss and Probabilities\n",
-    "For help, see: help(package = '", pkgname, "')"
+    "Optimal Decision Trees with Flexible Loss Functions\n",
+    "For help, see: help(package = '", pkgname, "') or vignette('treefarms-introduction', package = '", pkgname, "')"
   )
 
   invisible()

@@ -71,10 +71,11 @@ X <- data.frame(
 )
 y <- as.numeric((X$x1 == 1 & X$x2 == 1))
 cv <- cv_regularization(X, y, loss_function = "misclassification",
-                        K = 5, lambda_grid = c(0.05, 0.1, 0.2), refit = TRUE)
+                       K = 5, lambda_grid = c(0.05, 0.1, 0.2), refit = TRUE)
 print(cv$best_lambda)
 pred <- predict(cv$model, X, type = "class")
 }
+
 }
 \seealso{
 \code{\link{fit_tree}} for fitting a single tree with fixed regularization,

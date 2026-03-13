@@ -9,21 +9,9 @@ PKG_CPPFLAGS = -I../inst/include -Wall -Wextra
 # This prevents installation hangs by ensuring Rcpp never generates static initializers
 # for Rcpp::Rcout and Rcpp::Rcerr
 PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
-# Enable sanitizers for debugging (comment out for production)
-# AddressSanitizer: detects memory errors (use-after-free, buffer overflow, etc.)
-# UndefinedBehaviorSanitizer: detects undefined behavior
-# LeakSanitizer: included with AddressSanitizer
-# 
-# To enable ASan for debugging, uncomment the following lines:
-# PKG_CXXFLAGS = -Wall -Wextra -fsanitize=address -fno-omit-frame-pointer -g -O0
-# PKG_LIBS = -lpthread -lgmp -fsanitize=address
-#
-# Or use the test script: tests/run_with_asan.sh (recommended - sets flags via environment)
 PKG_CXXFLAGS = -Wall -Wextra
 
 # Link against required libraries
-# Enable sanitizer linking (comment out for production)
-# PKG_LIBS = -lpthread -lgmp -fsanitize=address,undefined
 PKG_LIBS = -lpthread -lgmp
 
 # CRITICAL FIX: Explicitly exclude RcppParallel/TBB libraries

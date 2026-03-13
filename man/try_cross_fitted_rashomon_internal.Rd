@@ -11,6 +11,8 @@ try_cross_fitted_rashomon_internal(
   loss_function,
   regularization,
   rashomon_bound_multiplier,
+  rashomon_bound_adder = 0,
+  max_leaves = NULL,
   single_tree,
   fold_indices,
   verbose,
@@ -29,6 +31,10 @@ try_cross_fitted_rashomon_internal(
 \item{regularization}{Regularization parameter}
 
 \item{rashomon_bound_multiplier}{Rashomon bound multiplier}
+
+\item{rashomon_bound_adder}{Rashomon bound adder (default 0)}
+
+\item{max_leaves}{Optional max leaves sieve (default NULL)}
 
 \item{single_tree}{Whether to fit single tree per fold}
 

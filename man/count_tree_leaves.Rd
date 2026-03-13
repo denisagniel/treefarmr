@@ -7,18 +7,32 @@
 count_tree_leaves(tree_node)
 }
 \arguments{
-\item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
+\item{X}{A data.frame or matrix of features. Can contain continuous or
+binary (0/1) features. Continuous features will be automatically discretized.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{For classification: binary (0/1). For regression: numeric vector (use \code{loss_function = "squared_error"}).}
 
-\item{loss_function}{Character string specifying the loss function to use.
-Options: "misclassification" (default) or "log_loss".}
+\item{loss_function}{Character string specifying the loss function:
+\itemize{
+  \item \code{"misclassification"} (default) - 0/1 loss for classification
+  \item \code{"log_loss"} - Cross-entropy loss for probabilistic classification
+  \item \code{"squared_error"} - L2 loss for regression (alias: \code{"regression"})
+  \item \code{"absolute_error"} - L1 loss for robust regression (NEW)
+  \item \code{"huber"} - Robust hybrid L1/L2 loss (NEW, requires \code{huber_delta})
+  \item \code{"quantile"} - Quantile regression (NEW, requires \code{quantile_tau})
+  \item \code{"custom"} - User-defined loss function (NEW, requires \code{custom_loss})
+}
+For regression losses, \code{y} may be continuous and prediction returns fitted values.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
 
-\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size.
-Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.}
+\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative).
+Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.
+Rashomon bound = optimum * (1 + rashomon_bound_multiplier). Ignored if \code{rashomon_bound_adder} is non-zero.}
+
+\item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0.
+If non-zero, Rashomon bound = optimum + rashomon_bound_adder and \code{rashomon_bound_multiplier} is not used.}
 
 \item{target_trees}{Integer: target number of trees when auto-tuning (default: 1).}
 
@@ -38,6 +52,56 @@ Default: FALSE. Probabilities will be computed on-demand when accessed.}
 Default: TRUE. When TRUE, sets `rashomon = FALSE` to get only the optimal tree.
 When FALSE, computes a full rashomon set. For convenience, use \code{\link{fit_tree}}
 for single trees or \code{\link{fit_rashomon}} for rashomon sets.}
+
+\item{discretize_method}{Method for discretizing continuous features:
+"median" (default) or "quantiles".}
+
+\item{discretize_bins}{Number of bins for quantile discretization (default: 2).
+Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with n
+(theory requires bins → ∞ for optimal rates). Adaptive uses max(2, ceiling(log(n)/3)).
+Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).}
+
+\item{discretize_thresholds}{Optional named list of custom thresholds
+(e.g., list(age = c(30, 50))).}
+
+\item{cart_lookahead}{Logical. Enable OSRT one-step lookahead bounds (Theorem 3.2).
+Default: TRUE (recommended). When enabled, uses scope-based pruning from the OSRT
+paper to eliminate subtrees more aggressively, improving optimization speed without
+affecting optimality. Can be set to FALSE to disable for debugging.}
+
+\item{cart_lookahead_depth}{Integer. Reserved for future use. Currently ignored.}
+
+\item{k_cluster}{Logical. Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5).
+Default: TRUE (recommended). When enabled for regression with \code{loss_function = "squared_error"},
+uses optimal 1D k-Means clustering to compute tighter lower bounds, improving
+optimization speed (typically 1.5-4x faster). Based on Song & Zhong (2020) algorithm.
+Has no effect on classification tasks. Can be set to FALSE to disable.}
+
+\item{huber_delta}{Numeric. Threshold parameter for Huber loss (default: 1.0).
+Controls transition between L2 (quadratic) and L1 (linear) behavior.
+- For errors |y - pred| <= delta: uses L2 loss
+- For errors |y - pred| > delta: uses L1 loss
+Only used when \code{loss_function = "huber"}.}
+
+\item{quantile_tau}{Numeric in (0,1). Quantile level for quantile regression (default: 0.5).
+- tau = 0.5: median regression
+- tau = 0.9: 90th percentile regression
+- tau = 0.1: 10th percentile regression
+Only used when \code{loss_function = "quantile"}.}
+
+\item{custom_loss}{A list specifying a custom loss function (only used when \code{loss_function = "custom"}).
+Must contain:
+\itemize{
+  \item \code{aggregate}: Function that takes a numeric vector \code{y} and returns
+    a named list of summary statistics
+  \item \code{loss}: Function that takes summary statistics and a prediction,
+    returns a list with \code{min_loss}, \code{max_loss}, and \code{potential}
+  \item \code{optimal}: Function that takes summary statistics and returns
+    the optimal prediction (single numeric value)
+  \item \code{is_regression}: Logical flag indicating if this is a regression
+    loss (TRUE) or classification loss (FALSE)
+}
+See \code{\link{example_custom_squared_error}} for examples.}
 
 \item{...}{Additional parameters passed to TreeFARMS configuration.}
 }
