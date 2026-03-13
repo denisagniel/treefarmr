@@ -407,27 +407,33 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     cat(sprintf("Rashomon set sizes: %s\n", paste(set_sizes, collapse = ", ")))
   }
   
-  # Structure-only canonical form for comparison (same splits = same structure)
-  structure_sets <- lapply(rashomon_list, function(trees) {
+  # OPTIMIZATION: Use hash-based comparison instead of JSON string comparison
+  # For large Rashomon sets (1000+ trees), JSON serialization + string matching is O(n*m) and very slow
+  # Hashing is O(n) and comparison is O(1) per lookup
+
+  # Extract structure hashes for each fold (digest of canonical structure)
+  structure_hash_sets <- lapply(rashomon_list, function(trees) {
     if (length(trees) == 0) return(character(0))
-    if (is.character(trees[[1]])) {
-      return(vapply(trees, function(t) {
-        jsonlite::toJSON(tree_structure_to_canonical(jsonlite::fromJSON(t, simplifyVector = FALSE)), auto_unbox = TRUE)
-      }, character(1)))
-    }
     vapply(trees, function(t) {
-      jsonlite::toJSON(tree_structure_to_canonical(t), auto_unbox = TRUE)
+      # Get canonical structure (no prediction values, just splits)
+      if (is.character(t)) {
+        canonical <- tree_structure_to_canonical(jsonlite::fromJSON(t, simplifyVector = FALSE))
+      } else {
+        canonical <- tree_structure_to_canonical(t)
+      }
+      # Fast hash instead of full JSON string
+      digest::digest(canonical, algo = "xxhash64")
     }, character(1))
   })
-  
-  # Intersect by structure
-  intersection_canonical <- structure_sets[[1]]
+
+  # Intersect by hash (much faster than string matching)
+  intersection_hashes <- structure_hash_sets[[1]]
   for (k in 2:K) {
-    intersection_canonical <- intersection_canonical[intersection_canonical %in% structure_sets[[k]]]
+    intersection_hashes <- intersection_hashes[intersection_hashes %in% structure_hash_sets[[k]]]
     if (verbose) {
-      cat(sprintf("After intersecting with set %d: %d structure(s) remain\n", k, length(intersection_canonical)))
+      cat(sprintf("After intersecting with set %d: %d structure(s) remain\n", k, length(intersection_hashes)))
     }
-    if (length(intersection_canonical) == 0) {
+    if (length(intersection_hashes) == 0) {
       if (verbose) cat("No structures appear in all sets\n")
       return(list(
         intersecting_trees = list(),
@@ -437,12 +443,14 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
       ))
     }
   }
-  
-  # One representative full tree per structure from set 1 (first occurrence of each canonical form)
-  first_canonical <- structure_sets[[1]]
-  idx <- match(unique(intersection_canonical), first_canonical)
+
+  # One representative full tree per structure from set 1 (first occurrence of each hash)
+  first_hashes <- structure_hash_sets[[1]]
+  idx <- match(unique(intersection_hashes), first_hashes)
   idx <- idx[!is.na(idx)]
   intersecting_trees <- rashomon_list[[1]][idx]
+
+  # Only serialize to JSON at the end for the final intersecting trees
   tree_jsons <- sapply(intersecting_trees, tree_to_json)
   
   if (verbose) {
