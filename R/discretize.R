@@ -103,6 +103,9 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
   }
 
   # Combine all binary columns into a single data.frame
+  if (length(binary_cols_list) == 0) {
+    stop("No features to discretize. X has no columns or all were filtered.", call. = FALSE)
+  }
   X_binary <- do.call(cbind, binary_cols_list)
 
   # Check for feature name collisions
@@ -164,6 +167,9 @@ discretize_feature_column <- function(x, name, method, n_bins, user_threshold = 
   unique_vals <- unique(x[!is.na(x)])
   if (length(unique_vals) == 2) {
     # Map to {0, 1}
+    if (length(unique_vals) == 0) {
+      stop("Feature '", name, "' has no non-NA values. Cannot discretize.", call. = FALSE)
+    }
     x_binary <- as.numeric(x == max(unique_vals))
     binary_cols <- data.frame(x_binary)
     names(binary_cols) <- name
@@ -330,6 +336,10 @@ apply_discretization <- function(X, metadata) {
 
     } else if (feature_meta$type == "binary_converted") {
       # Was converted from 2 unique values to {0,1}
+      if (length(feature_meta$original_values) == 0) {
+        stop("Feature '", col_name, "' has empty original_values in metadata. ",
+             "This indicates corrupted discretization metadata.", call. = FALSE)
+      }
       x_binary <- as.numeric(x == max(feature_meta$original_values))
       binary_cols_list[[col_name]] <- data.frame(x_binary)
       names(binary_cols_list[[col_name]]) <- col_name
@@ -343,6 +353,10 @@ apply_discretization <- function(X, metadata) {
     } else if (feature_meta$type == "continuous") {
       # Apply stored thresholds
       thresholds <- feature_meta$thresholds
+      if (length(thresholds) == 0) {
+        stop("Feature '", col_name, "' has empty thresholds in metadata. ",
+             "This indicates corrupted discretization metadata.", call. = FALSE)
+      }
       binary_cols <- data.frame(
         lapply(seq_along(thresholds), function(i) {
           as.numeric(x <= thresholds[i])
@@ -357,6 +371,10 @@ apply_discretization <- function(X, metadata) {
   }
 
   # Combine all binary columns
+  if (length(binary_cols_list) == 0) {
+    stop("No features to apply discretization to. This indicates empty metadata or feature mismatch.",
+         call. = FALSE)
+  }
   X_binary <- do.call(cbind, binary_cols_list)
 
   # Ensure columns are in same order as training
