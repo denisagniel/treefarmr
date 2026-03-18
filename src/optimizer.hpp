@@ -9,6 +9,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <atomic>
 
 // Conditionally include Rcpp for R output capture
 #ifdef USING_RCPP
@@ -111,7 +112,7 @@ private:
     std::chrono::high_resolution_clock::time_point start_time; // starting time of optimization
     unsigned long ticks = 0; // Number of ticks passed
     unsigned long tick_duration = 10000; // Number of iterations per tick
-    bool active = true; // Flag indicating whether the optimization is still active
+    std::atomic<bool> active; // Flag indicating whether the optimization is still active (thread-safe)
     bool rashomon_flag = false; // Flag for Rashomon
 
     // Analytics State

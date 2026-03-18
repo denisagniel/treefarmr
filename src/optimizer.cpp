@@ -11,7 +11,8 @@
 #include <cstdint>  // For uintptr_t
 #include <limits>
 
-Optimizer::Optimizer(void) {
+Optimizer::Optimizer(void) : active(true) {
+    // active initialized to true in initializer list (atomic cannot use member initializer)
     return;
 }
 
@@ -191,9 +192,18 @@ bool Optimizer::iterate(unsigned int id) {
             case Message::exploitation_message: { this -> exploit += 1; break; }
         }
     }
+
+    // CRITICAL FIX: Check termination condition EVERY iteration, not just periodically
+    // Previous code only updated active every 10,000 iterations (tick_duration), causing
+    // workers to spin forever when queue emptied between ticks
+    bool should_continue = !complete() && !timeout() && state.queue.size() > 0;
+
     // Worker 0 is responsible for managing ticks and snapshots
     if (id == 0) {
         this -> ticks += 1;
+
+        // Update shared flag for other workers
+        this -> active = should_continue;
 
         // snapshots that would need to occur every iteration
         // if (Configuration::trace != "") { this -> diagnostic_trace(this -> ticks, state.locals[id].message); }
@@ -201,12 +211,10 @@ bool Optimizer::iterate(unsigned int id) {
 
         // snapshots that can skip unimportant iterations
         if (update || complete() || ((this -> ticks) % (this -> tick_duration)) == 0) { // Periodic check for completion for timeout
-            // Update the continuation flag for all threads
-            this -> active = !complete() && !timeout() && (Configuration::worker_limit > 1 || state.queue.size() > 0);
             this -> print();
             this -> profile();
         }
-        
+
         std::vector<int> memory_checkpoint = Configuration::memory_checkpoints;
         if (rashomon_flag && exported_idx < memory_checkpoint.size() && getCurrentRSS() > memory_checkpoint[exported_idx] * 1000000) {
             export_models(std::to_string(memory_checkpoint[exported_idx]));
@@ -214,7 +222,7 @@ bool Optimizer::iterate(unsigned int id) {
             std::cout << "Memory usage after extraction: " << getCurrentRSS() / 1000000 << std::endl;
         }
     }
-    return this -> active;
+    return should_continue;
 }
 
 void Optimizer::print(void) const {
