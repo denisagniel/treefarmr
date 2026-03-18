@@ -1,5 +1,48 @@
 #include "message.hpp"
 
+// MessagePool implementation
+MessagePool::MessagePool() : total_allocations(0) {}
+
+MessagePool::~MessagePool() {
+    // Delete all messages in the pool
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    for (Message* msg : pool) {
+        delete msg;
+    }
+    pool.clear();
+}
+
+Message* MessagePool::acquire() {
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    if (pool.empty()) {
+        // Pool empty, allocate new message
+        total_allocations++;
+        return new Message();
+    } else {
+        // Reuse message from pool
+        Message* msg = pool.back();
+        pool.pop_back();
+        return msg;
+    }
+}
+
+void MessagePool::release(Message* msg) {
+    if (msg == nullptr) return;
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    pool.push_back(msg);
+}
+
+size_t MessagePool::pool_size() const {
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    return pool.size();
+}
+
+size_t MessagePool::total_allocated() const {
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    return total_allocations;
+}
+
+// Message implementation
 Message::Message(void){};
 
 Message::~Message(void) {};

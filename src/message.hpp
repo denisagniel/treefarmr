@@ -2,9 +2,41 @@
 #define MESSAGE_H
 
 #include <iostream>
+#include <vector>
+#include <mutex>
 
 #include "bitmask.hpp"
 #include "tile.hpp"
+
+// Forward declaration
+class Message;
+
+// Thread-safe message pool for reducing allocation overhead
+// Pre-allocates messages and reuses them instead of new/delete on every push/pop
+class MessagePool {
+public:
+    MessagePool();
+    ~MessagePool();
+
+    // Delete copy constructor and assignment operator (mutexes are not copyable)
+    MessagePool(const MessagePool&) = delete;
+    MessagePool& operator=(const MessagePool&) = delete;
+
+    // Acquire a message from the pool (allocates new if pool empty)
+    Message* acquire();
+
+    // Return a message to the pool for reuse
+    void release(Message* msg);
+
+    // Get pool statistics for debugging
+    size_t pool_size() const;
+    size_t total_allocated() const;
+
+private:
+    std::vector<Message*> pool;
+    mutable std::mutex pool_mutex;
+    size_t total_allocations;
+};
 
 // Container for messages in the priority queue
 // Messages priority dictates which vertex in the dependency graph will be worked on next

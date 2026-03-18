@@ -44,7 +44,7 @@ apply_model_discretization <- function(newdata, object) {
       # Data was already binary during training, no transformation needed
       expected_original <- object$X_original_names
       if (!all(expected_original %in% colnames(newdata))) {
-        stop("newdata must have the same features as training data")
+        stop("newdata must have the same features as training data (all_binary branch)")
       }
       newdata <- newdata[, expected_original, drop = FALSE]
     } else {
@@ -67,7 +67,7 @@ apply_model_discretization <- function(newdata, object) {
       stop("Cannot determine expected feature names. Model object is missing discretization, X_train, and X_original_names.")
     }
     if (!all(expected_names %in% colnames(newdata))) {
-      stop("newdata must have the same features as training data")
+      stop("newdata must have the same features as training data (no discretization branch)")
     }
     newdata <- newdata[, expected_names, drop = FALSE]
   }

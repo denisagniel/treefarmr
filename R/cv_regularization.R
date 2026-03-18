@@ -14,6 +14,7 @@
 #' @param refit If \code{TRUE}, refit a single tree on the full data with the chosen lambda and return it so the user can call \code{predict()} on it.
 #' @param verbose Logical. Whether to print progress. Default: \code{FALSE}.
 #' @param worker_limit Integer: number of parallel workers for \code{fit_tree}. Default: 1.
+#' @param parallel Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.
 #' @param seed Optional integer. If provided, \code{set.seed(seed)} is called before creating folds for reproducibility.
 #' @param ... Additional arguments passed to \code{\link{fit_tree}}.
 #'
@@ -55,7 +56,8 @@
 #' @export
 cv_regularization <- function(X, y, loss_function = "misclassification",
                              lambda_grid = NULL, K = 5L, refit = TRUE,
-                             verbose = FALSE, worker_limit = 1L, seed = NULL, ...) {
+                             verbose = FALSE, worker_limit = 1L, parallel = TRUE,
+                             seed = NULL, ...) {
   # Input validation (aligned with fit_tree)
   if (!is.data.frame(X) && !is.matrix(X)) {
     stop("X must be a data.frame or matrix")
@@ -97,31 +99,74 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   n_lambda <- length(lambda_grid)
   fold_losses <- matrix(NA_real_, nrow = n_lambda, ncol = K)
 
-  for (ii in seq_len(n_lambda)) {
-    lam <- lambda_grid[ii]
-    if (verbose) {
-      message(sprintf("lambda = %.6f (%d/%d)\n", lam, ii, n_lambda))
+  # Determine if we can use parallel processing
+  use_parallel <- parallel && requireNamespace("furrr", quietly = TRUE) &&
+                  requireNamespace("future", quietly = TRUE)
+
+  # Create a grid of all (lambda, fold) combinations
+  grid <- expand.grid(lambda_idx = seq_len(n_lambda), fold_idx = seq_len(K),
+                     KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+
+  # Progress bar setup
+  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+    cli::cli_progress_bar(
+      "Cross-validating",
+      total = nrow(grid),
+      format = "{cli::pb_spin} {cli::pb_current}/{cli::pb_total} | ETA: {cli::pb_eta}"
+    )
+  }
+
+  # Function to fit one (lambda, fold) combination
+  fit_one_combo <- function(i) {
+    lambda_idx <- grid$lambda_idx[i]
+    fold_idx <- grid$fold_idx[i]
+    lam <- lambda_grid[lambda_idx]
+
+    val_idx <- fold_indices[[fold_idx]]
+    train_idx <- setdiff(seq_len(n), val_idx)
+    X_train <- X[train_idx, , drop = FALSE]
+    y_train <- y[train_idx]
+    X_val <- X[val_idx, , drop = FALSE]
+    y_val <- y[val_idx]
+
+    # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
+    fit <- fit_tree(X_train, y_train, loss_function = loss_function,
+                    regularization = lam, worker_limit = 1L,
+                    verbose = FALSE, ...)
+
+    if (loss_function == "misclassification") {
+      pred <- predict(fit, X_val, type = "class")
+      loss <- mean(y_val != pred)
+    } else {
+      probs <- predict(fit, X_val, type = "prob")
+      p <- probs[, 2L]
+      p <- pmax(pmin(p, 1 - 1e-15), 1e-15)
+      loss <- -mean(y_val * log(p) + (1 - y_val) * log(1 - p))
     }
-    for (k in seq_len(K)) {
-      val_idx <- fold_indices[[k]]
-      train_idx <- setdiff(seq_len(n), val_idx)
-      X_train <- X[train_idx, , drop = FALSE]
-      y_train <- y[train_idx]
-      X_val <- X[val_idx, , drop = FALSE]
-      y_val <- y[val_idx]
-      fit <- fit_tree(X_train, y_train, loss_function = loss_function,
-                      regularization = lam, worker_limit = worker_limit,
-                      verbose = FALSE, ...)
-      if (loss_function == "misclassification") {
-        pred <- predict(fit, X_val, type = "class")
-        fold_losses[ii, k] <- mean(y_val != pred)
-      } else {
-        probs <- predict(fit, X_val, type = "prob")
-        p <- probs[, 2L]
-        p <- pmax(pmin(p, 1 - 1e-15), 1e-15)
-        fold_losses[ii, k] <- -mean(y_val * log(p) + (1 - y_val) * log(1 - p))
-      }
+
+    if (verbose && requireNamespace("cli", quietly = TRUE)) {
+      cli::cli_progress_update()
     }
+
+    list(lambda_idx = lambda_idx, fold_idx = fold_idx, loss = loss)
+  }
+
+  # Execute: parallel or sequential
+  if (use_parallel) {
+    results <- furrr::future_map(seq_len(nrow(grid)), fit_one_combo,
+                                 .options = furrr::furrr_options(seed = TRUE))
+  } else {
+    results <- lapply(seq_len(nrow(grid)), fit_one_combo)
+  }
+
+  # Complete progress bar
+  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+    cli::cli_progress_done()
+  }
+
+  # Fill in the fold_losses matrix
+  for (res in results) {
+    fold_losses[res$lambda_idx, res$fold_idx] <- res$loss
   }
 
   cv_loss <- rowMeans(fold_losses)

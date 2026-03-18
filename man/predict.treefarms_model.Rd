@@ -2,7 +2,7 @@
 % Please edit documentation in R/predict.R
 \name{predict.treefarms_model}
 \alias{predict.treefarms_model}
-\title{S3 Predict Methods for TreeFARMS Models}
+\title{Predict method for treefarms_model objects}
 \usage{
 \method{predict}{treefarms_model}(object, newdata, type = c("class", "prob"), ...)
 }
@@ -19,7 +19,5 @@
 Predictions based on type
 }
 \description{
-S3 methods for making predictions with TreeFARMS models.
-Provides a unified interface for all model types.
 Predict method for treefarms_model objects
 }

@@ -951,7 +951,9 @@ bool Bitmask::operator<=(Bitmask const & other) const { return !(* this > other)
 
 bool Bitmask::operator>=(Bitmask const & other) const { return !(* this < other); }
 
-// TODO: incorporate depth in hash
+// Hash function incorporating both bit content and depth budget
+// Two bitmasks with identical bits but different depth budgets represent
+// different states in the tree search and must hash differently
 size_t Bitmask::hash(bool bitwise) const {
     size_t seed = this -> _size;
     if (this -> _size == 0) { return seed; }
@@ -960,18 +962,12 @@ size_t Bitmask::hash(bool bitwise) const {
         reason << "Operating with invalid data";
         throw IntegrityViolation("Bitmask::hash", reason.str());
     }
-    // unsigned int max = size();
-    // bool sign = get(0);
-    // unsigned int i = 0;
-    // unsigned int j = scan(i, !sign);
-    // size_t seed = 1 * sign;
-    // while (j <= max) {
-    //     seed ^= j - i + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-    //     if (j == max) { break; }
-    //     i = j;
-    //     sign = !sign;
-    //     j = scan(i, !sign);
-    // }
+
+    // Mix in depth_budget to differentiate bitmasks with same content but different depths
+    // Use prime multiplier (31) to reduce collisions
+    seed ^= static_cast<size_t>(this->depth_budget) * 31;
+
+    // Hash bit blocks using standard XOR shift pattern
     bitblock * blocks = this -> content;
     for (unsigned int i = 0; i < this -> _used_blocks; ++i) {
         seed ^= blocks[i] + 0x9e3779b9 + (seed << 6) + (seed >> 2);

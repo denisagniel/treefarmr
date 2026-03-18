@@ -9,7 +9,12 @@ PKG_CPPFLAGS = -I../inst/include -Wall -Wextra
 # This prevents installation hangs by ensuring Rcpp never generates static initializers
 # for Rcpp::Rcout and Rcpp::Rcerr
 PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
-PKG_CXXFLAGS = -Wall -Wextra
+
+# Performance optimization flags (Phase 1 optimization)
+# -O3: Aggressive optimization including vectorization, loop unrolling
+# -march=native: Use CPU-specific instructions (AVX2, etc.)
+# -DNDEBUG: Remove assert() overhead in production builds
+PKG_CXXFLAGS = -O3 -march=native -DNDEBUG -Wall -Wextra
 
 # Link against required libraries
 PKG_LIBS = -lpthread -lgmp
