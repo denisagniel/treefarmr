@@ -33,6 +33,7 @@ public:
     size_t total_allocated() const;
 
 private:
+    static constexpr size_t MAX_POOL_SIZE = 1000;  // Prevent unbounded growth
     std::vector<Message*> pool;
     mutable std::mutex pool_mutex;
     size_t total_allocations;

@@ -22,6 +22,13 @@ NULL
     treefarms.default_rashomon_bound_multiplier = 0.05
   )
 
+  # Cache package availability (check once at load, use many times)
+  # Eliminates repeated requireNamespace() calls across 5 files (18 total occurrences)
+  ns <- asNamespace(pkgname)
+  assign(".has_furrr", requireNamespace("furrr", quietly = TRUE), envir = ns)
+  assign(".has_future", requireNamespace("future", quietly = TRUE), envir = ns)
+  assign(".has_cli", requireNamespace("cli", quietly = TRUE), envir = ns)
+
   invisible()
 }
 

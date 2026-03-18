@@ -397,11 +397,11 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   rashomon_sizes <- integer(K)
 
   # Determine if we can use parallel processing
-  use_parallel <- parallel && requireNamespace("furrr", quietly = TRUE) &&
-                  requireNamespace("future", quietly = TRUE)
+  use_parallel <- parallel && .has_furrr &&
+                  .has_future
 
   # Progress bar setup
-  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+  if (verbose && .has_cli) {
     cli::cli_progress_bar(
       "Fitting folds",
       total = K,
@@ -409,53 +409,70 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     )
   }
 
-  # Function to fit one fold
-  fit_one_fold <- function(k) {
-    # Get training data (all folds except k)
-    test_idx <- fold_indices[[k]]
-    train_idx <- setdiff(1:n, test_idx)
+  # Generate deterministic per-fold seeds (if user provided a seed)
+  fold_seeds <- if (!is.null(seed)) {
+    seed + seq_len(K)  # Deterministic per-fold seeds
+  } else {
+    rep(NA_integer_, K)  # No seeding if user didn't set seed
+  }
 
-    X_train <- X[train_idx, , drop = FALSE]
-    y_train <- y[train_idx]
+  # Function to fit one fold with seed support and error handling
+  fit_one_fold <- function(k, fold_seed) {
+    tryCatch(
+      {
+        if (!is.na(fold_seed)) set.seed(fold_seed)
 
-    # Train TreeFARMS model
-    model <- treefarms(
-      X = X_train,
-      y = y_train,
-      loss_function = loss_function,
-      regularization = regularization,
-      rashomon_bound_multiplier = rashomon_bound_multiplier,
-      rashomon_bound_adder = rashomon_bound_adder,
-      single_tree = single_tree,
-      verbose = FALSE,
-      ...
+        # Get training data (all folds except k)
+        test_idx <- fold_indices[[k]]
+        train_idx <- setdiff(1:n, test_idx)
+
+        X_train <- X[train_idx, , drop = FALSE]
+        y_train <- y[train_idx]
+
+        # Train TreeFARMS model
+        model <- treefarms(
+          X = X_train,
+          y = y_train,
+          loss_function = loss_function,
+          regularization = regularization,
+          rashomon_bound_multiplier = rashomon_bound_multiplier,
+          rashomon_bound_adder = rashomon_bound_adder,
+          single_tree = single_tree,
+          verbose = FALSE,
+          ...
+        )
+
+        # Extract Rashomon set (optionally filtered by max_leaves)
+        trees <- get_rashomon_trees(model, max_leaves = max_leaves)
+
+        # Warning if no trees generated
+        if (length(trees) == 0) {
+          warning(sprintf("Fold %d: No trees in Rashomon set. Consider adjusting regularization or max_leaves.", k))
+        }
+
+        list(model = model, trees = trees, size = length(trees))
+      },
+      error = function(e) {
+        warning("Fold ", k, " failed: ", e$message, call. = FALSE)
+        # Return empty result so CV can continue
+        list(model = NULL, trees = list(), size = 0L)
+      }
     )
-
-    # Extract Rashomon set (optionally filtered by max_leaves)
-    trees <- get_rashomon_trees(model, max_leaves = max_leaves)
-
-    if (verbose && requireNamespace("cli", quietly = TRUE)) {
-      cli::cli_progress_update()
-    }
-
-    # Warning if no trees generated
-    if (length(trees) == 0) {
-      warning(sprintf("Fold %d: No trees in Rashomon set. Consider adjusting regularization or max_leaves.", k))
-    }
-
-    list(model = model, trees = trees, size = length(trees))
   }
 
   # Execute: parallel or sequential
   if (use_parallel) {
-    fold_results <- furrr::future_map(1:K, fit_one_fold,
-                                      .options = furrr::furrr_options(seed = TRUE))
+    fold_results <- furrr::future_map2(1:K, fold_seeds, fit_one_fold,
+                                       .options = furrr::furrr_options(seed = FALSE))
   } else {
-    fold_results <- lapply(1:K, fit_one_fold)
+    fold_results <- Map(fit_one_fold, 1:K, fold_seeds)
   }
 
-  # Complete progress bar
-  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+  # Update progress bar in main thread after collecting results
+  if (verbose && .has_cli) {
+    for (i in seq_along(fold_results)) {
+      cli::cli_progress_update()
+    }
     cli::cli_progress_done()
   }
 
@@ -561,8 +578,8 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
     rashomon_sizes <- integer(K)
 
     # Determine if we can use parallel processing
-    use_parallel <- parallel && requireNamespace("furrr", quietly = TRUE) &&
-                    requireNamespace("future", quietly = TRUE)
+    use_parallel <- parallel && .has_furrr &&
+                    .has_future
 
     # Function to fit one fold
     fit_one_fold <- function(k) {

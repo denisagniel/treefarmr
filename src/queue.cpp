@@ -8,20 +8,20 @@ Queue::Queue(void) {
 
 Queue::~Queue(void) {
     // Messages can be in both membership map AND queue
-    // We need to release each message only once back to the pool
-    // Strategy: Collect all unique message pointers, then release them
+    // We need to delete each message only once
+    // Strategy: Collect all unique message pointers, then delete directly
 
     // CRITICAL: Use std::set for deduplication. If a message appears in both
     // membership and queue (which can happen), set::insert ensures we only
-    // release each pointer once.
-    std::set<message_type*> messages_to_release;
+    // delete each pointer once.
+    std::set<message_type*> messages_to_delete;
 
     // Collect messages from membership map
     {
         std::lock_guard<std::mutex> lock(queue_mutex);
         for (auto it = membership.begin(); it != membership.end(); ++it) {
             message_type* msg = it->first;
-            messages_to_release.insert(msg);
+            messages_to_delete.insert(msg);
         }
 
         // Collect messages from queue
@@ -32,18 +32,19 @@ Queue::~Queue(void) {
             queue_messages.push_back(msg);
             queue.pop();
         }
-        // Add queue messages to release set
+        // Add queue messages to delete set
         for (auto msg : queue_messages) {
-            messages_to_release.insert(msg);
+            messages_to_delete.insert(msg);
         }
     }
 
     // Clear membership map (no lock needed, destructor is single-threaded)
     membership.clear();
 
-    // Release each message back to pool (pool destructor will delete them)
-    for (auto msg : messages_to_release) {
-        message_pool.release(msg);
+    // In destructor: delete directly, don't return to pool
+    // Pool is about to be destroyed anyway, avoid unnecessary lock contention
+    for (auto msg : messages_to_delete) {
+        delete msg;
     }
 }
 
@@ -104,39 +105,4 @@ bool Queue::pop(Message & message) {
     } else {
         return false;
     }
-}
-
-size_t Queue::pop_batch(std::vector<Message>& batch, size_t max_count) {
-    batch.clear();
-    std::vector<message_type*> internal_messages;
-
-    // Thread-safe batch pop: acquire lock once, pop multiple messages
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex);
-        size_t count = std::min(max_count, static_cast<size_t>(this->queue.size()));
-
-        for (size_t i = 0; i < count; ++i) {
-            if (this->queue.empty()) break;
-
-            message_type* msg = this->queue.top();
-            this->queue.pop();
-
-            // Erase from membership map
-            auto it = this->membership.find(msg);
-            if (it != this->membership.end()) {
-                this->membership.erase(it);
-            }
-
-            internal_messages.push_back(msg);
-        }
-    }
-
-    // Copy messages and release to pool (outside lock)
-    batch.reserve(internal_messages.size());
-    for (message_type* msg : internal_messages) {
-        batch.push_back(*msg);
-        message_pool.release(msg);
-    }
-
-    return batch.size();
 }

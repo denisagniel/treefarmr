@@ -12,9 +12,21 @@ PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
 
 # Performance optimization flags (Phase 1 optimization)
 # -O3: Aggressive optimization including vectorization, loop unrolling
-# -march=native: Use CPU-specific instructions (AVX2, etc.)
-# -DNDEBUG: Remove assert() overhead in production builds
-PKG_CXXFLAGS = -O3 -march=native -DNDEBUG -Wall -Wextra
+# -march=native: Use CPU-specific instructions (AVX2, AVX-512, etc.) - ONLY for local builds
+# -DNDEBUG: Remove assert() overhead in production builds (disables all assert() checks)
+#           Trade-off: 2-5% faster, but precondition violations are silent
+#           For debugging: set DEBUG=1 to enable assertions with -O0 -g
+ifeq ($(DEBUG),1)
+    # Debug build: no optimization, assertions enabled, debug symbols
+    PKG_CXXFLAGS = -O0 -g -Wall -Wextra
+else ifeq ($(LOCAL_BUILD),1)
+    # Local optimized build: maximum performance for specific CPU
+    # Set LOCAL_BUILD=1 when installing: LOCAL_BUILD=1 R CMD INSTALL .
+    PKG_CXXFLAGS = -O3 -march=native -DNDEBUG -Wall -Wextra
+else
+    # CRAN-compatible: portable optimization without CPU-specific instructions
+    PKG_CXXFLAGS = -O3 -DNDEBUG -Wall -Wextra
+endif
 
 # Link against required libraries
 PKG_LIBS = -lpthread -lgmp

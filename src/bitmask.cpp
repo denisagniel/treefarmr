@@ -964,8 +964,10 @@ size_t Bitmask::hash(bool bitwise) const {
     }
 
     // Mix in depth_budget to differentiate bitmasks with same content but different depths
-    // Use prime multiplier (31) to reduce collisions
-    seed ^= static_cast<size_t>(this->depth_budget) * 31;
+    // Use well-studied multiplier from string hashing (Kernighan & Ritchie)
+    // 31 is prime, provides good distribution, and allows compiler optimization (31*x = (x << 5) - x)
+    static constexpr size_t DEPTH_HASH_MULTIPLIER = 31;
+    seed ^= static_cast<size_t>(this->depth_budget) * DEPTH_HASH_MULTIPLIER;
 
     // Hash bit blocks using standard XOR shift pattern
     bitblock * blocks = this -> content;

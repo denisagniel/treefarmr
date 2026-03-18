@@ -29,7 +29,12 @@ Message* MessagePool::acquire() {
 void MessagePool::release(Message* msg) {
     if (msg == nullptr) return;
     std::lock_guard<std::mutex> lock(pool_mutex);
-    pool.push_back(msg);
+    if (pool.size() >= MAX_POOL_SIZE) {
+        // Pool full, delete instead of pooling to prevent unbounded growth
+        delete msg;
+    } else {
+        pool.push_back(msg);
+    }
 }
 
 size_t MessagePool::pool_size() const {

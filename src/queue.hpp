@@ -73,12 +73,6 @@ public:
     // @modifes message: message will be overwritten with a copy the content of the received message
     bool pop(Message & message);
 
-    // Batch pop: pop multiple messages at once to reduce lock contention
-    // @param batch: vector to fill with popped messages (will be cleared first)
-    // @param max_count: maximum number of messages to pop
-    // @returns number of messages actually popped (may be less than max_count if queue smaller)
-    size_t pop_batch(std::vector<Message>& batch, size_t max_count);
-
     // Get pool statistics for debugging/monitoring
     size_t pool_size() const { return message_pool.pool_size(); }
     size_t total_allocated() const { return message_pool.total_allocated(); }

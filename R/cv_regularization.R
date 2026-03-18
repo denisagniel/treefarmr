@@ -100,15 +100,15 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   fold_losses <- matrix(NA_real_, nrow = n_lambda, ncol = K)
 
   # Determine if we can use parallel processing
-  use_parallel <- parallel && requireNamespace("furrr", quietly = TRUE) &&
-                  requireNamespace("future", quietly = TRUE)
+  use_parallel <- parallel && .has_furrr &&
+                  .has_future
 
   # Create a grid of all (lambda, fold) combinations
   grid <- expand.grid(lambda_idx = seq_len(n_lambda), fold_idx = seq_len(K),
                      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
 
   # Progress bar setup
-  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+  if (verbose && .has_cli) {
     cli::cli_progress_bar(
       "Cross-validating",
       total = nrow(grid),
@@ -116,51 +116,71 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     )
   }
 
-  # Function to fit one (lambda, fold) combination
-  fit_one_combo <- function(i) {
-    lambda_idx <- grid$lambda_idx[i]
-    fold_idx <- grid$fold_idx[i]
-    lam <- lambda_grid[lambda_idx]
+  # Generate deterministic per-task seeds (if user provided a seed)
+  task_seeds <- if (!is.null(seed)) {
+    seed + seq_len(nrow(grid))  # Deterministic per-task seeds
+  } else {
+    rep(NA_integer_, nrow(grid))  # No seeding if user didn't set seed
+  }
 
-    val_idx <- fold_indices[[fold_idx]]
-    train_idx <- setdiff(seq_len(n), val_idx)
-    X_train <- X[train_idx, , drop = FALSE]
-    y_train <- y[train_idx]
-    X_val <- X[val_idx, , drop = FALSE]
-    y_val <- y[val_idx]
+  # Function to fit one (lambda, fold) combination with seed support and error handling
+  fit_one_combo <- function(i, task_seed) {
+    tryCatch(
+      {
+        if (!is.na(task_seed)) set.seed(task_seed)
 
-    # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
-    fit <- fit_tree(X_train, y_train, loss_function = loss_function,
-                    regularization = lam, worker_limit = 1L,
-                    verbose = FALSE, ...)
+        lambda_idx <- grid$lambda_idx[i]
+        fold_idx <- grid$fold_idx[i]
+        lam <- lambda_grid[lambda_idx]
 
-    if (loss_function == "misclassification") {
-      pred <- predict(fit, X_val, type = "class")
-      loss <- mean(y_val != pred)
-    } else {
-      probs <- predict(fit, X_val, type = "prob")
-      p <- probs[, 2L]
-      p <- pmax(pmin(p, 1 - 1e-15), 1e-15)
-      loss <- -mean(y_val * log(p) + (1 - y_val) * log(1 - p))
-    }
+        val_idx <- fold_indices[[fold_idx]]
+        train_idx <- setdiff(seq_len(n), val_idx)
+        X_train <- X[train_idx, , drop = FALSE]
+        y_train <- y[train_idx]
+        X_val <- X[val_idx, , drop = FALSE]
+        y_val <- y[val_idx]
 
-    if (verbose && requireNamespace("cli", quietly = TRUE)) {
-      cli::cli_progress_update()
-    }
+        # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
+        fit <- fit_tree(X_train, y_train, loss_function = loss_function,
+                        regularization = lam, worker_limit = 1L,
+                        verbose = FALSE, ...)
 
-    list(lambda_idx = lambda_idx, fold_idx = fold_idx, loss = loss)
+        if (loss_function == "misclassification") {
+          pred <- predict(fit, X_val, type = "class")
+          loss <- mean(y_val != pred)
+        } else {
+          probs <- predict(fit, X_val, type = "prob")
+          p <- probs[, 2L]
+          p <- pmax(pmin(p, 1 - 1e-15), 1e-15)
+          loss <- -mean(y_val * log(p) + (1 - y_val) * log(1 - p))
+        }
+
+        list(lambda_idx = lambda_idx, fold_idx = fold_idx, loss = loss)
+      },
+      error = function(e) {
+        lambda_idx <- grid$lambda_idx[i]
+        fold_idx <- grid$fold_idx[i]
+        warning("CV task ", i, " (lambda index ", lambda_idx,
+               ", fold ", fold_idx, ") failed: ", e$message,
+               call. = FALSE)
+        list(lambda_idx = lambda_idx, fold_idx = fold_idx, loss = NA_real_)
+      }
+    )
   }
 
   # Execute: parallel or sequential
   if (use_parallel) {
-    results <- furrr::future_map(seq_len(nrow(grid)), fit_one_combo,
-                                 .options = furrr::furrr_options(seed = TRUE))
+    results <- furrr::future_map2(seq_len(nrow(grid)), task_seeds, fit_one_combo,
+                                  .options = furrr::furrr_options(seed = FALSE))
   } else {
-    results <- lapply(seq_len(nrow(grid)), fit_one_combo)
+    results <- Map(fit_one_combo, seq_len(nrow(grid)), task_seeds)
   }
 
-  # Complete progress bar
-  if (verbose && requireNamespace("cli", quietly = TRUE)) {
+  # Update progress bar in main thread after collecting results
+  if (verbose && .has_cli) {
+    for (i in seq_along(results)) {
+      cli::cli_progress_update()
+    }
     cli::cli_progress_done()
   }
 
