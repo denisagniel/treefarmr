@@ -2,7 +2,7 @@
 # Tests .onUnload hook, cleanup functions, and memory management
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

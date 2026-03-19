@@ -1,7 +1,7 @@
 # Test suite for prediction functionality
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data
 set.seed(42)

@@ -2,7 +2,7 @@
 # Tests the primary use case functionality
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data with clear pattern for cross-fitted Rashomon
 set.seed(42)

@@ -2,7 +2,7 @@
 # Tests invalid inputs, extreme parameters, and boundary conditions
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

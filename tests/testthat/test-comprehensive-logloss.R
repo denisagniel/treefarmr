@@ -2,7 +2,7 @@
 # Tests probability accuracy and runtime performance for all primary log-loss functionality
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

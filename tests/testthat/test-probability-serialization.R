@@ -2,7 +2,7 @@
 # Verifies that log-loss models now correctly serialize probabilities to JSON
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Helper function to safely test treefarms
 safe_treefarms <- function(...) {

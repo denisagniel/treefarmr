@@ -3,7 +3,7 @@
 # calibration, and bounded away from 0/1 for log-loss
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

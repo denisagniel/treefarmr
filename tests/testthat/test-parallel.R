@@ -2,7 +2,7 @@
 # Tests worker_limit parameter and parallel execution consistency
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

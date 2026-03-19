@@ -2,7 +2,7 @@
 # This verifies that the refactoring to instance-based state works correctly
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 test_that("State isolation: multiple calls with different configurations", {
   # Create test data

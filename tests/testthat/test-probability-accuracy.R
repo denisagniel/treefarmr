@@ -2,7 +2,7 @@
 # Validates that probability estimates are accurate by comparing to known ground truth probabilities
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()

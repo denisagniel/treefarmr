@@ -2,7 +2,7 @@
 # Tests the new convenience functions for single tree vs rashomon set fitting
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data
 set.seed(42)

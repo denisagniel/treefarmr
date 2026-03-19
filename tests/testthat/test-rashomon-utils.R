@@ -2,7 +2,7 @@
 # Tests the helper functions for working with Rashomon sets
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data with clear pattern for Rashomon analysis
 set.seed(42)

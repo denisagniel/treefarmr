@@ -2,7 +2,7 @@
 # Requirement 5: continuous outcome, fitted values, predict returns vector
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 setup_test_environment()
 

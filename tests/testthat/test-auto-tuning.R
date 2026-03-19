@@ -1,7 +1,7 @@
 # Test suite for auto-tuning functionality
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data with clear pattern for auto-tuning
 set.seed(42)

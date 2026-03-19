@@ -1,7 +1,7 @@
 # Test suite for S3 methods (print, summary, predict)
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Create test data
 set.seed(42)

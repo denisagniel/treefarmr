@@ -117,12 +117,12 @@ test_that("empty intersection returns early without error", {
   )
 
   # Should handle empty intersection gracefully
-  expect_s3_class(result, "cf_rashomon")
+  expect_true(S7::S7_inherits(result, CFRashomon))
   expect_true(result@n_intersecting >= 0)
 
   if (result@n_intersecting == 0) {
-    expect_equal(length(result$intersecting_trees), 0)
-    expect_equal(length(result$tree_risks), 0)
+    expect_equal(length(result@intersecting_trees), 0)
+    expect_equal(length(result@tree_risks), 0)
   }
 })
 
@@ -220,5 +220,5 @@ test_that("bidirectional search goes upward when c=1 fails", {
   expect_true(any(grepl("Upward|Downward", output, ignore.case = TRUE)))
 
   # Result should be valid
-  expect_s3_class(result, "cf_rashomon")
+  expect_true(S7::S7_inherits(result, CFRashomon))
 })

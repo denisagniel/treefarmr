@@ -2,7 +2,7 @@
 # Verifies that treefarms_isolated() works correctly with subprocess calls
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Helper function to safely test treefarms_isolated
 safe_treefarms_isolated <- function(...) {

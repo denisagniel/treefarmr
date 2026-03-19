@@ -12,7 +12,7 @@ test_that(".onLoad() completes without hanging", {
   
   # Load package (should already be loaded, but test loading)
   expect_no_error({
-    library(treefarmr)
+    # library(treefarmr) # REMOVED: legacy package name
   })
   
   # Check that options are set
@@ -78,7 +78,7 @@ test_that("C++ functions are callable", {
 
 test_that("package can be used immediately after load", {
   # Test that package can be used immediately after loading
-  library(treefarmr)
+  # library(treefarmr) # REMOVED: legacy package name
   
   # Create simple test data
   set.seed(42)
@@ -153,7 +153,7 @@ test_that("package help is available", {
 
 test_that("package can handle rapid function calls", {
   # Test that package can handle rapid function calls after load
-  library(treefarmr)
+  # library(treefarmr) # REMOVED: legacy package name
   
   # Create test data
   set.seed(42)

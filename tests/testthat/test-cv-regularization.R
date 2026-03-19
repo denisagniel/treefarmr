@@ -1,7 +1,7 @@
 # Test suite for cv_regularization()
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Small data for fast tests
 set.seed(42)

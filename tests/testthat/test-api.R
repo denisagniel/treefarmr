@@ -2,7 +2,7 @@
 # Tests the main treefarms() function and its parameters
 
 library(testthat)
-library(treefarmr)
+# library(treefarmr) # REMOVED: legacy package name
 
 # Setup test environment
 setup_test_environment()
