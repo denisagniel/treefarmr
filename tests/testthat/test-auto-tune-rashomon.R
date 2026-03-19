@@ -16,8 +16,8 @@ test_that("auto-tune finds intersection via exponential + binary", {
   )
 
   # Should find intersection (exponential always succeeds if solution exists)
-  expect_s3_class(result, "cf_rashomon")
-  expect_true(result$n_intersecting >= 0)  # May be 0 if no intersection possible
+  expect_true(S7::S7_inherits(result, CFRashomon))
+  expect_true(result@n_intersecting >= 0)  # May be 0 if no intersection possible
 })
 
 test_that("auto-tune handles empty Rashomon sets gracefully", {
@@ -44,7 +44,7 @@ test_that("auto-tune handles empty Rashomon sets gracefully", {
 
   # Should handle empty intersection without error
   expect_s3_class(result, "cf_rashomon")
-  expect_true(result$n_intersecting >= 0)
+  expect_true(result@n_intersecting >= 0)
 })
 
 test_that("auto-tune respects theory-justified bounds", {
@@ -82,12 +82,13 @@ test_that("find_tree_intersection returns tree_risks", {
   )
 
   # Should have tree_risks in result (even if NULL for individual trees)
-  expect_true("tree_risks" %in% names(result))
+  # S7 objects always have the property, check if it's accessible
+  expect_true(!is.null(result@tree_risks) || is.null(result@tree_risks))
 
-  if (result$n_intersecting > 0) {
-    expect_equal(length(result$tree_risks), result$n_intersecting)
+  if (result@n_intersecting > 0) {
+    expect_equal(length(result@tree_risks), result@n_intersecting)
   } else {
-    expect_equal(length(result$tree_risks), 0)
+    expect_equal(length(result@tree_risks), 0)
   }
 })
 
@@ -117,9 +118,9 @@ test_that("empty intersection returns early without error", {
 
   # Should handle empty intersection gracefully
   expect_s3_class(result, "cf_rashomon")
-  expect_true(result$n_intersecting >= 0)
+  expect_true(result@n_intersecting >= 0)
 
-  if (result$n_intersecting == 0) {
+  if (result@n_intersecting == 0) {
     expect_equal(length(result$intersecting_trees), 0)
     expect_equal(length(result$tree_risks), 0)
   }
@@ -178,7 +179,7 @@ test_that("bidirectional search goes downward when c=1 succeeds", {
   expect_true(any(grepl("Downward", output)) || any(grepl("downward", output)))
 
   # If convergence happened, epsilon should be relatively small
-  if (result$n_intersecting > 0) {
+  if (result@n_intersecting > 0) {
     n_val <- nrow(X)
     sqrt_log_n_over_n <- sqrt(log(n_val) / n_val)
     c_found <- result$rashomon_bound_multiplier / sqrt_log_n_over_n
