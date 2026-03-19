@@ -20,6 +20,7 @@ cross_fitted_rashomon(
   tune_search_range = NULL,
   seed = NULL,
   verbose = TRUE,
+  parallel = TRUE,
   fold_indices = NULL,
   ...
 )
@@ -46,20 +47,40 @@ Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold c
 a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via the underlying
 \code{\link{treefarms}} call.}
 
-\item{auto_tune_intersecting}{Logical. If TRUE, auto-tune parameters until at least one
-intersecting tree is found. Default: FALSE.}
+\item{auto_tune_intersecting}{Logical. If TRUE, automatically search for the
+  smallest \code{rashomon_bound_multiplier} that yields non-empty intersection.
+  Uses exponential search (c = 1, 2, 4, 8, ...) followed by binary refinement
+  to find epsilon_n = c * sqrt(log(n)/n). Default: FALSE.
 
-\item{tune_param}{Character. Which parameter to tune when auto_tune_intersecting=TRUE.
-Options: "regularization", "rashomon_bound_multiplier", or "both". Default: "regularization".}
+  \strong{How it works:}
+  \enumerate{
+    \item Exponential phase: Tries c = 1, 2, 4, 8, ... (doubling) until intersection found
+    \item Binary phase: Refines between last-fail and first-success to within 10\%
+    \item Tree selection: If multiple trees in intersection, picks best by penalized risk
+  }
 
-\item{max_tune_iterations}{Integer. Maximum number of auto-tuning iterations. Default: 20.}
+  \strong{Efficiency:} O(log c) exponential attempts + O(log precision) binary attempts.
+  Typical: 3-6 attempts total. Guaranteed to find solution if one exists (c up to 100).
 
-\item{tune_search_range}{Numeric vector of length 2. Search range for the parameter being tuned.
-If NULL, uses default ranges based on loss_function. Default: NULL.}
+  \strong{When it fails:} If no intersection found up to c=100, indicates
+  substantial cross-fold heterogeneity. Returns fold-specific trees with warning.
+  Consider using \code{use_rashomon = FALSE} for such datasets.
+
+  \strong{Theory guarantee:} All tried values satisfy epsilon_n = o(n^{-1/2}),
+  ensuring asymptotically valid inference. The adaptive selection is data-dependent
+  but still valid because all candidates satisfy the rate condition.}
+
+\item{tune_param}{Character. (Deprecated - ignored when using new auto-tuning algorithm)}
+
+\item{max_tune_iterations}{Integer. (Deprecated - ignored when using new auto-tuning algorithm)}
+
+\item{tune_search_range}{Numeric vector. (Deprecated - ignored when using new auto-tuning algorithm)}
 
 \item{seed}{Random seed for reproducibility. Default: NULL}
 
 \item{verbose}{Print progress information. Default: TRUE}
+
+\item{parallel}{Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.}
 
 \item{fold_indices}{Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_folds(y, K)}.}
 

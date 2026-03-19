@@ -41,11 +41,11 @@ count_leaves_tree <- function(tree) {
 #'
 #' @export
 get_rashomon_trees <- function(model, max_leaves = NULL) {
-  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model"))) {
-    stop("model must be a treefarms_model or treefarms_logloss_model object")
+  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model", "optimaltrees_model", "optimaltrees_logloss_model"))) {
+    stop("model must be a treefarms_model, treefarms_logloss_model, optimaltrees_model, or optimaltrees_logloss_model object")
   }
   
-  if (inherits(model, "treefarms_logloss_model")) {
+  if (inherits(model, c("treefarms_logloss_model", "optimaltrees_logloss_model"))) {
     # For log_loss models, trees are stored in model$trees
     if (model$n_trees == 0) {
       warning("No trees in Rashomon set")
@@ -393,11 +393,16 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     } else {
       tree_jsons <- sapply(trees, tree_to_json)
     }
+    # Create placeholder tree_risks (no selection needed for single fold)
+    tree_risks <- lapply(seq_along(trees), function(i) {
+      list(empirical_risk = NULL, complexity = NULL, penalized_risk = NULL)
+    })
     return(list(
       intersecting_trees = trees,
       n_intersecting = length(trees),
       tree_jsons = tree_jsons,
-      intersecting_structures = trees
+      intersecting_structures = trees,
+      tree_risks = tree_risks
     ))
   }
   
@@ -428,18 +433,30 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
 
   # Intersect by hash (much faster than string matching)
   intersection_hashes <- structure_hash_sets[[1]]
+  if (verbose) {
+    cat(sprintf("Starting intersection with %d structure(s) from fold 1\n", length(intersection_hashes)))
+  }
+
   for (k in 2:K) {
+    prev_size <- length(intersection_hashes)
     intersection_hashes <- intersection_hashes[intersection_hashes %in% structure_hash_sets[[k]]]
+    curr_size <- length(intersection_hashes)
+
     if (verbose) {
-      cat(sprintf("After intersecting with set %d: %d structure(s) remain\n", k, length(intersection_hashes)))
+      cat(sprintf("After fold %d: %d -> %d structure(s)\n", k, prev_size, curr_size))
     }
-    if (length(intersection_hashes) == 0) {
-      if (verbose) cat("No structures appear in all sets\n")
+
+    if (curr_size == 0) {
+      if (verbose) {
+        cat(sprintf("  Intersection became empty at fold %d\n", k))
+        cat("No structures appear in all sets\n")
+      }
       return(list(
         intersecting_trees = list(),
         n_intersecting = 0L,
         tree_jsons = character(0),
-        intersecting_structures = list()
+        intersecting_structures = list(),
+        tree_risks = list()
       ))
     }
   }
@@ -448,20 +465,60 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   first_hashes <- structure_hash_sets[[1]]
   idx <- match(unique(intersection_hashes), first_hashes)
   idx <- idx[!is.na(idx)]
+
+  # Early return if no intersection (idx is empty)
+  if (length(idx) == 0) {
+    if (verbose) {
+      cat("No tree structures appear in all K folds\n")
+    }
+    return(list(
+      intersecting_trees = list(),
+      n_intersecting = 0L,
+      tree_jsons = character(0),
+      intersecting_structures = list(),
+      tree_risks = list()
+    ))
+  }
+
   intersecting_trees <- rashomon_list[[1]][idx]
 
   # Only serialize to JSON at the end for the final intersecting trees
   tree_jsons <- sapply(intersecting_trees, tree_to_json)
+
+  # Store penalized risk for each intersecting tree (for tree selection)
+  # Extract risk information from tree metadata if available
+  tree_risks <- lapply(seq_along(intersecting_trees), function(i) {
+    tree <- intersecting_trees[[i]]
+    # Try to extract risk information from tree structure
+    # optimaltrees may store this in various locations depending on tree type
+    empirical_risk <- NULL
+    complexity <- NULL
+    penalized_risk <- NULL
+
+    # Attempt extraction (defensive - may not always be present)
+    if (is.list(tree)) {
+      empirical_risk <- tree$empirical_risk
+      complexity <- tree$complexity
+      penalized_risk <- tree$penalized_risk
+    }
+
+    list(
+      empirical_risk = empirical_risk,
+      complexity = complexity,
+      penalized_risk = penalized_risk
+    )
+  })
   
   if (verbose) {
     cat(sprintf("Found %d structure(s) in all %d Rashomon sets\n", length(intersecting_trees), K))
   }
-  
+
   list(
     intersecting_trees = intersecting_trees,
     n_intersecting = length(intersecting_trees),
     tree_jsons = tree_jsons,
-    intersecting_structures = intersecting_trees
+    intersecting_structures = intersecting_trees,
+    tree_risks = tree_risks
   )
 }
 

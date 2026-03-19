@@ -92,8 +92,8 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
                         rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, worker_limit = 1L, verbose = FALSE,
                         store_training_data = NULL, compute_probabilities = FALSE, ...) {
   
-  # Call treefarms with single_tree = FALSE to compute rashomon set
-  result <- treefarms(
+  # Call optimaltrees with single_tree = FALSE to compute rashomon set
+  result <- optimaltrees(
     X = X,
     y = y,
     loss_function = loss_function,
