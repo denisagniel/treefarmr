@@ -6,8 +6,9 @@
 #' S7 provides formal class definitions with automatic property validation,
 #' type-safe access via @, and clear inheritance. This replaces the informal
 #' S3 structure that allowed invalid objects and made debugging difficult.
-
-library(S7)
+#'
+#' @import S7
+NULL
 
 # =============================================================================
 # Core Model Class
@@ -35,33 +36,33 @@ library(S7)
 #' - is_regression: Logical flag for regression vs classification
 #'
 #' All properties are validated on creation and modification.
-OptimalTreesModel <- new_class(
+OptimalTreesModel <- S7::new_class(
   name = "OptimalTreesModel",
   package = "optimaltrees",
 
   properties = list(
     # Core configuration
-    loss_function = class_character,
-    regularization = class_double,
+    loss_function = S7::class_character,
+    regularization = S7::class_double,
 
     # Model structure
-    n_trees = class_integer,
-    trees = class_list,  # List of tree structures (unified)
+    n_trees = S7::class_integer,
+    trees = S7::class_list,  # List of tree structures (unified)
 
     # Performance metrics
-    accuracy = new_property(class_double | class_logical),  # NA for regression
+    accuracy = S7::new_property(S7::class_double | S7::class_logical),  # NA for regression
 
     # Predictions (lazy evaluation via active bindings if needed)
-    predictions = class_any,
-    probabilities = class_any,  # NULL for regression
+    predictions = S7::class_any,
+    probabilities = S7::class_any,  # NULL for regression
 
     # Training data (optional)
-    X_train = new_property(class_data.frame | class_matrix, default = NULL),
-    y_train = new_property(class_numeric | class_integer, default = NULL),
+    X_train = S7::new_property(S7::class_any, default = NULL),
+    y_train = S7::new_property(S7::class_any, default = NULL),  # NULL or numeric/integer vector
 
     # Metadata
-    discretization_metadata = new_property(class_list, default = NULL),
-    is_regression = class_logical
+    discretization_metadata = S7::new_property(S7::class_list, default = NULL),
+    is_regression = S7::class_logical
   ),
 
   validator = function(self) {
@@ -95,6 +96,20 @@ OptimalTreesModel <- new_class(
     if (!self@loss_function %in% valid_losses) {
       return(sprintf("@loss_function must be one of: %s",
                      paste(valid_losses, collapse = ", ")))
+    }
+
+    # X_train type validation
+    if (!is.null(self@X_train)) {
+      if (!is.data.frame(self@X_train) && !is.matrix(self@X_train)) {
+        return("@X_train must be a data.frame or matrix")
+      }
+    }
+
+    # y_train type validation
+    if (!is.null(self@y_train)) {
+      if (!is.numeric(self@y_train) && !is.integer(self@y_train)) {
+        return("@y_train must be numeric or integer")
+      }
     }
 
     # Training data consistency
@@ -181,38 +196,38 @@ new_optimal_trees_model <- function(loss_function,
 #' - X_train: Training features
 #' - y_train: Training outcomes
 #' - converged: Logical, TRUE if intersection found (auto-tuning)
-CFRashomon <- new_class(
+CFRashomon <- S7::new_class(
   name = "CFRashomon",
   package = "optimaltrees",
 
   properties = list(
     # Configuration
-    K = class_integer,
-    loss_function = class_character,
-    regularization = class_double,
-    rashomon_bound_multiplier = class_double,
-    rashomon_bound_adder = new_property(class_double, default = 0),
-    max_leaves = new_property(class_integer, default = NULL),
+    K = S7::class_integer,
+    loss_function = S7::class_character,
+    regularization = S7::class_double,
+    rashomon_bound_multiplier = S7::class_double,
+    rashomon_bound_adder = S7::new_property(S7::class_double, default = 0),
+    max_leaves = S7::new_property(S7::class_integer, default = NULL),
 
     # Results per fold
-    rashomon_sizes = class_integer,  # Vector of length K
+    rashomon_sizes = S7::class_integer,  # Vector of length K
 
     # Intersection results
-    n_intersecting = class_integer,
-    intersecting_trees = class_list,
-    tree_risks = class_list,  # Penalized risk info for tree selection
+    n_intersecting = S7::class_integer,
+    intersecting_trees = S7::class_list,
+    tree_risks = S7::class_list,  # Penalized risk info for tree selection
 
     # DML-specific structures
-    fold_refits = class_list,  # List of K lists (refit structures)
-    fold_id_per_row = class_integer,  # Maps each row to fold ID
-    fold_indices = class_list,  # List of K vectors (indices)
+    fold_refits = S7::class_list,  # List of K lists (refit structures)
+    fold_id_per_row = S7::class_integer,  # Maps each row to fold ID
+    fold_indices = S7::class_list,  # List of K vectors (indices)
 
     # Training data
-    X_train = new_property(class_data.frame | class_matrix),
-    y_train = new_property(class_numeric | class_integer),
+    X_train = S7::new_property(S7::class_any),
+    y_train = S7::new_property(S7::class_numeric | S7::class_integer),
 
     # Convergence status (for auto-tuning)
-    converged = new_property(class_logical, default = TRUE)
+    converged = S7::new_property(S7::class_logical, default = TRUE)
   ),
 
   validator = function(self) {
@@ -262,6 +277,11 @@ CFRashomon <- new_class(
       return("length(@fold_indices) must equal @K")
     }
 
+    # X_train type validation
+    if (!is.data.frame(self@X_train) && !is.matrix(self@X_train)) {
+      return("@X_train must be a data.frame or matrix")
+    }
+
     # Training data consistency
     n_train <- nrow(self@X_train)
     n_outcome <- length(self@y_train)
@@ -297,14 +317,14 @@ CFRashomon <- new_class(
 #' This class exists to distinguish loaded models from freshly trained ones,
 #' which can be useful for deciding whether certain operations (like retraining)
 #' are safe.
-OptimalTreesModelLoaded <- new_class(
+OptimalTreesModelLoaded <- S7::new_class(
   name = "OptimalTreesModelLoaded",
   package = "optimaltrees",
 
   properties = list(
     model = OptimalTreesModel,  # The actual model
-    loaded_from = new_property(class_character, default = ""),  # File path
-    loaded_at = new_property(class_POSIXct, default = Sys.time())  # Timestamp
+    loaded_from = S7::new_property(S7::class_character, default = ""),  # File path
+    loaded_at = S7::new_property(S7::class_POSIXct, default = Sys.time())  # Timestamp
   ),
 
   validator = function(self) {
@@ -325,34 +345,34 @@ OptimalTreesModelLoaded <- new_class(
 # We can gradually migrate S3 method implementations to S7 methods
 
 # Print method for OptimalTreesModel
-method(print, OptimalTreesModel) <- function(x, ...) {
+S7::method(print, OptimalTreesModel) <- function(x, ...) {
   # Call existing S3 implementation for now
   # Can migrate incrementally
   print.optimaltrees_model(x)
 }
 
 # Predict method for OptimalTreesModel
-method(predict, OptimalTreesModel) <- function(object, newdata, type = "class", ...) {
+S7::method(predict, OptimalTreesModel) <- function(object, newdata, type = "class", ...) {
   # Call existing S3 implementation for now
   predict.optimaltrees_model(object, newdata, type, ...)
 }
 
 # Print method for CFRashomon
-method(print, CFRashomon) <- function(x, ...) {
+S7::method(print, CFRashomon) <- function(x, ...) {
   print.cf_rashomon(x)
 }
 
 # Predict method for CFRashomon
-method(predict, CFRashomon) <- function(object, newdata, ...) {
+S7::method(predict, CFRashomon) <- function(object, newdata, ...) {
   predict.cf_rashomon(object, newdata, ...)
 }
 
 # Summary methods
-method(summary, OptimalTreesModel) <- function(object, ...) {
+S7::method(summary, OptimalTreesModel) <- function(object, ...) {
   summary.optimaltrees_model(object, ...)
 }
 
-method(summary, CFRashomon) <- function(object, ...) {
+S7::method(summary, CFRashomon) <- function(object, ...) {
   summary.cf_rashomon(object, ...)
 }
 

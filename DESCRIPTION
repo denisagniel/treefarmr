@@ -13,7 +13,7 @@ Description: Optimal decision tree learning with support for classification and
     eliminating external dependencies for easier distribution and better performance.
 License: MIT
 Depends: R (>= 3.6.0)
-Imports: Rcpp (>= 1.0.0), jsonlite (>= 1.7.0), digest, future (>= 1.33.0), furrr (>= 0.3.1), cli (>= 3.6.0)
+Imports: Rcpp (>= 1.0.0), jsonlite (>= 1.7.0), digest, future (>= 1.33.0), furrr (>= 0.3.1), cli (>= 3.6.0), S7
 LinkingTo: Rcpp
 Suggests: testthat, knitr, rmarkdown
 SystemRequirements: C++11, GMP (GNU Multiple Precision Arithmetic Library)

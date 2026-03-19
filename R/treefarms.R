@@ -1082,29 +1082,40 @@ build_classification_result <- function(compute_probabilities, has_tree, X, y,
 #' @keywords internal
 finalize_result_object <- function(result, model_obj, X, y, store_training_data,
                                    discretization_metadata, X_original) {
-  # Add model object
-  result$model <- model_obj
-
-  # Add training sample count
-  result$n_train <- nrow(X)
-
-  # Add training data if requested
-  if (store_training_data) {
-    result$X_train <- X
-    result$y_train <- y
+  # Extract tree structures from model_obj
+  # model_obj can have tree_json (single tree) or trees (list of trees)
+  trees <- if (!is.null(model_obj$trees)) {
+    model_obj$trees
+  } else if (!is.null(model_obj$tree_json)) {
+    list(model_obj$tree_json)
   } else {
-    result$X_train <- X[integer(0), , drop = FALSE]
-    result$y_train <- NULL
+    list()
   }
 
-  # Store discretization metadata
-  result$discretization <- discretization_metadata
-  result$X_original_names <- names(X_original)
+  # Determine if regression based on loss function
+  is_regression <- result$loss_function %in% c("squared_error", "absolute_error", "huber", "quantile", "custom")
 
-  # Set class
-  class(result) <- "optimaltrees_model"
+  # Create S7 model object
+  s7_model <- new_optimal_trees_model(
+    loss_function = result$loss_function,
+    regularization = result$regularization,
+    n_trees = result$n_trees,
+    trees = trees,
+    accuracy = if (is_regression) NA_real_ else (result$accuracy %||% NA_real_),
+    predictions = result$predictions,
+    probabilities = result$probabilities,
+    X_train = if (store_training_data) X else NULL,
+    y_train = if (store_training_data) y else NULL,
+    discretization_metadata = discretization_metadata,
+    is_regression = is_regression
+  )
 
-  return(result)
+  # Note: Lazy evaluation functions and cache are not needed in S7 model
+  # The values are already computed and stored in the properties above
+  # For backward compatibility, S3 methods can still access via $ operator
+  # which will be intercepted by the custom $.optimaltrees_model function
+
+  return(s7_model)
 }
 
 # ============================================================================
@@ -1359,44 +1370,92 @@ predict_optimaltrees <- function(object, newdata, type = "class", ...) {
 #'
 #' @export
 print.optimaltrees_model <- function(x, ...) {
-  cat("TreeFARMS Model (Rcpp)\n")
-  cat("======================\n")
-  cat("Loss function:", x$loss_function, "\n")
-  cat("Regularization:", x$regularization, "\n")
-  cat("Number of trees:", x$n_trees, "\n")
-  
-  # Get accuracy with lazy evaluation
-  tryCatch({
-    acc <- get_accuracy(x)
-    cat("Training accuracy:", round(acc, 4), "\n")
-  }, error = function(e) {
-    cat("Training accuracy: (not available - training data not stored)\n")
-  })
-  
-  # Get training data info (n_train always set; X_train has structure for predict)
-  n_samp <- if (!is.null(x$n_train)) x$n_train else nrow(x$X_train)
-  if (!is.null(x$X_train)) {
-    cat("Training samples:", n_samp, "\n")
-    cat("Features:", ncol(x$X_train), "\n")
-  } else {
-    cat("Training data: (not stored)\n")
+  # Handle both S3 and S7 objects
+  is_s7 <- S7::S7_inherits(x, OptimalTreesModel)
+
+  # Helper to get properties (works for both S3 and S7)
+  get_prop <- function(obj, name) {
+    if (is_s7) {
+      switch(name,
+        loss_function = obj@loss_function,
+        regularization = obj@regularization,
+        n_trees = obj@n_trees,
+        accuracy = obj@accuracy,
+        X_train = obj@X_train,
+        is_regression = obj@is_regression,
+        predictions = obj@predictions,
+        probabilities = obj@probabilities,
+        n_train = NULL,  # S7 doesn't have n_train
+        training_time = NULL,  # S7 doesn't have these
+        training_iterations = NULL,
+        NULL  # return NULL for unknown properties on S7
+      )
+    } else {
+      obj[[name]]
+    }
   }
-  
-  cat("Training time:", round(x$training_time, 3), "seconds\n")
-  cat("Training iterations:", x$training_iterations, "\n")
-  
-  # Get probabilities with lazy evaluation if available
-  if (x$n_trees > 0) {
+
+  cat("TreeFARMS Model\n")
+  cat("===============\n")
+  cat("Loss function:", get_prop(x, "loss_function"), "\n")
+  cat("Regularization:", get_prop(x, "regularization"), "\n")
+  cat("Number of trees:", get_prop(x, "n_trees"), "\n")
+
+  # Get accuracy
+  is_regression <- get_prop(x, "is_regression")
+  if (!is.null(is_regression) && is_regression) {
+    cat("(Regression model - accuracy not applicable)\n")
+  } else {
     tryCatch({
-      probs <- get_probabilities(x)
-      cat("\nProbability range:\n")
-      prob_range <- range(probs)
-      cat("  Min:", round(prob_range[1], 3), "\n")
-      cat("  Max:", round(prob_range[2], 3), "\n")
-      cat("  Mean:", round(mean(probs), 3), "\n")
+      acc <- if (is_s7) get_prop(x, "accuracy") else get_accuracy(x)
+      if (!is.na(acc)) {
+        cat("Training accuracy:", round(acc, 4), "\n")
+      }
     }, error = function(e) {
-      cat("\nProbabilities: (not computed - use compute_probabilities=TRUE or access via $probabilities)\n")
+      cat("Training accuracy: (not available)\n")
     })
+  }
+
+  # Get training data info
+  X_train <- get_prop(x, "X_train")
+  n_train_prop <- get_prop(x, "n_train")
+  n_samp <- if (!is.null(n_train_prop)) n_train_prop else if (!is.null(X_train)) nrow(X_train) else NA
+
+  if (!is.na(n_samp)) {
+    cat("Training samples:", n_samp, "\n")
+  }
+  if (!is.null(X_train) && nrow(X_train) > 0) {
+    cat("Features:", ncol(X_train), "\n")
+  }
+
+  # Training time/iterations (S3 only)
+  if (!is_s7) {
+    training_time <- get_prop(x, "training_time")
+    training_iterations <- get_prop(x, "training_iterations")
+    if (!is.null(training_time)) {
+      cat("Training time:", round(training_time, 3), "seconds\n")
+    }
+    if (!is.null(training_iterations)) {
+      cat("Training iterations:", training_iterations, "\n")
+    }
+  }
+
+  # Probabilities (classification only)
+  if (is.null(is_regression) || !is_regression) {
+    if (get_prop(x, "n_trees") > 0) {
+      tryCatch({
+        probs <- if (is_s7) get_prop(x, "probabilities") else get_probabilities(x)
+        if (!is.null(probs)) {
+          cat("\nProbability range:\n")
+          prob_range <- range(probs[, 2])  # P(class=1)
+          cat("  Min:", round(prob_range[1], 3), "\n")
+          cat("  Max:", round(prob_range[2], 3), "\n")
+          cat("  Mean:", round(mean(probs[, 2]), 3), "\n")
+        }
+      }, error = function(e) {
+        # Silently skip if not available
+      })
+    }
   }
 }
 

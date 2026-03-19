@@ -38,33 +38,53 @@
 #' @return Discretized and validated data frame (guaranteed binary)
 #' @keywords internal
 apply_model_discretization <- function(newdata, object) {
+  # Helper to get properties for both S3 and S7
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  get_prop <- function(name) {
+    if (is_s7) {
+      switch(name,
+        discretization = object@discretization_metadata,
+        X_train = object@X_train,
+        X_original_names = NULL,  # S7 doesn't have this
+        object[[name]]
+      )
+    } else {
+      object[[name]]
+    }
+  }
+
   # Apply discretization if model was trained on continuous features
-  if (!is.null(object$discretization)) {
-    if (isTRUE(object$discretization$all_binary)) {
+  discret <- get_prop("discretization")
+  if (!is.null(discret)) {
+    if (isTRUE(discret$all_binary)) {
       # Data was already binary during training, no transformation needed
-      expected_original <- object$X_original_names
+      expected_original <- get_prop("X_original_names")
+      if (is.null(expected_original)) {
+        expected_original <- colnames(get_prop("X_train"))
+      }
       if (!all(expected_original %in% colnames(newdata))) {
         stop("newdata must have the same features as training data (all_binary branch)")
       }
       newdata <- newdata[, expected_original, drop = FALSE]
     } else {
       # Apply stored discretization to continuous features
-      expected_original <- names(object$discretization$features)
+      expected_original <- names(discret$features)
       if (!all(expected_original %in% colnames(newdata))) {
         stop("newdata must have the same features as training data: ",
              paste(expected_original, collapse = ", "))
       }
       apply_discretization <- get("apply_discretization", envir = asNamespace("optimaltrees"))
-      newdata <- apply_discretization(newdata, object$discretization)
+      newdata <- apply_discretization(newdata, discret)
     }
   } else {
     # No discretization metadata - assume binary features
-    expected_names <- if (!is.null(object$X_train)) {
-      colnames(object$X_train)
-    } else if (!is.null(object$X_original_names)) {
-      object$X_original_names
+    X_train <- get_prop("X_train")
+    expected_names <- if (!is.null(X_train)) {
+      colnames(X_train)
     } else {
-      stop("Cannot determine expected feature names. Model object is missing discretization, X_train, and X_original_names.")
+      X_orig <- get_prop("X_original_names")
+      if (!is.null(X_orig)) X_orig else
+        stop("Cannot determine expected feature names. Model object is missing discretization, X_train, and X_original_names.")
     }
     if (!all(expected_names %in% colnames(newdata))) {
       stop("newdata must have the same features as training data (no discretization branch)")
@@ -105,6 +125,19 @@ apply_model_discretization <- function(newdata, object) {
 #' @return Tree structure (tree_json or result_data), or NULL if not found
 #' @keywords internal
 get_tree_structure <- function(object) {
+  # Handle S7 objects
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  if (is_s7) {
+    trees <- object@trees
+    if (length(trees) > 0) {
+      # Return first tree (for single tree models)
+      return(trees[[1]])
+    } else {
+      return(NULL)
+    }
+  }
+
+  # Handle S3 objects
   if (!is.null(object$model$tree_json)) {
     object$model$tree_json
   } else if (!is.null(object$model$result_data)) {
@@ -215,9 +248,10 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
 predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob"), ...) {
   type <- match.arg(type)
 
-  # Validate input
-  if (!inherits(object, "optimaltrees_model")) {
-    stop("object must be a optimaltrees_model")
+  # Validate input (handle both S3 and S7 objects)
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  if (!is_s7 && !inherits(object, "optimaltrees_model")) {
+    stop("object must be an OptimalTreesModel (S7) or optimaltrees_model (S3)")
   }
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {
     stop("newdata must be a data.frame or matrix")
@@ -235,7 +269,8 @@ predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob"
   tree_to_use <- get_tree_structure(object)
 
   # Issue #26: Use extracted prediction helper
-  predict_from_tree(tree_to_use, newdata, object$loss_function, type)
+  loss_fn <- if (is_s7) object@loss_function else object$loss_function
+  predict_from_tree(tree_to_use, newdata, loss_fn, type)
 }
 
 #' Predict method for cf_rashomon objects

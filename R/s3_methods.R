@@ -227,53 +227,93 @@ extract_tree_from_stdout <- function(stdout_lines) {
 #'
 #' @export
 print.optimaltrees_model <- function(x, ...) {
+  # Handle both S3 and S7 objects
+  is_s7 <- S7::S7_inherits(x, OptimalTreesModel)
+
+  # Helper to get properties (works for both S3 and S7)
+  get_prop <- function(obj, name) {
+    if (is_s7) {
+      switch(name,
+        loss_function = obj@loss_function,
+        regularization = obj@regularization,
+        n_trees = obj@n_trees,
+        accuracy = obj@accuracy,
+        X_train = obj@X_train,
+        is_regression = obj@is_regression,
+        obj[[name]]  # fallback for other properties
+      )
+    } else {
+      obj[[name]]
+    }
+  }
+
   cat("TreeFARMS Model\n")
   cat("===============\n")
-  cat("Loss function:", x$loss_function, "\n")
-  cat("Regularization:", x$regularization, "\n")
-  cat("Number of trees:", x$n_trees, "\n")
-  cat("Training accuracy:", round(x$accuracy, 4), "\n")
-  n_samp <- if (!is.null(x$n_train)) x$n_train else nrow(x$X_train)
-  cat("Training samples:", n_samp, "\n")
-  cat("Features:", ncol(x$X_train), "\n")
-  
-  # Get feature names from column names if available
-  feature_names <- if (!is.null(colnames(x$X_train))) {
-    colnames(x$X_train)
-  } else {
-    paste0("V", seq_len(ncol(x$X_train)))
+  cat("Loss function:", get_prop(x, "loss_function"), "\n")
+  cat("Regularization:", get_prop(x, "regularization"), "\n")
+  cat("Number of trees:", get_prop(x, "n_trees"), "\n")
+
+  accuracy <- get_prop(x, "accuracy")
+  is_regression <- get_prop(x, "is_regression")
+  if (!is.null(is_regression) && is_regression) {
+    cat("(Regression model - accuracy not applicable)\n")
+  } else if (!is.na(accuracy)) {
+    cat("Training accuracy:", round(accuracy, 4), "\n")
+  }
+
+  X_train <- get_prop(x, "X_train")
+  n_train_prop <- get_prop(x, "n_train")
+  n_samp <- if (!is.null(n_train_prop)) n_train_prop else if (!is.null(X_train)) nrow(X_train) else NA
+  if (!is.na(n_samp)) {
+    cat("Training samples:", n_samp, "\n")
+  }
+  if (!is.null(X_train) && nrow(X_train) > 0) {
+    cat("Features:", ncol(X_train), "\n")
   }
   
+  # Get feature names from column names if available
+  X_train_for_names <- get_prop(x, "X_train")
+  feature_names <- if (!is.null(X_train_for_names) && !is.null(colnames(X_train_for_names))) {
+    colnames(X_train_for_names)
+  } else if (!is.null(X_train_for_names) && ncol(X_train_for_names) > 0) {
+    paste0("V", seq_len(ncol(X_train_for_names)))
+  } else {
+    NULL
+  }
+
   # Print tree structure if available
-  if (!is.null(x$model$tree_json)) {
-    cat("\nTree Structure:\n")
-    cat("---------------\n")
-    
-    # Handle both single tree and list of trees
+  # For S7 objects: trees stored in x@trees
+  # For S3 objects: trees stored in x$model$tree_json
+  trees <- NULL
+  if (is_s7) {
+    trees <- x@trees
+  } else if (!is.null(x$model$tree_json)) {
+    # Handle both single tree and list of trees for S3
     trees <- if (is.list(x$model$tree_json) && !is.null(x$model$tree_json$type)) {
-      # Single tree
       list(x$model$tree_json)
     } else if (is.list(x$model$tree_json) && length(x$model$tree_json) > 0) {
-      # List of trees
       x$model$tree_json
     } else {
       NULL
     }
-    
-    if (!is.null(trees)) {
-      for (i in seq_along(trees)) {
-        if (i > 1) cat("\n")
-        if (length(trees) > 1) {
-          cat("Tree", i, ":\n")
-        }
-        # Parse and print tree
-        parsed_tree <- parse_tree_json(trees[[i]], feature_names)
-        if (!is.null(parsed_tree)) {
-          print_tree_recursive(parsed_tree, indent = 0, feature_names)
-        }
+  }
+
+  if (!is.null(trees) && length(trees) > 0 && !is.null(feature_names)) {
+    cat("\nTree Structure:\n")
+    cat("---------------\n")
+
+    for (i in seq_along(trees)) {
+      if (i > 1) cat("\n")
+      if (length(trees) > 1) {
+        cat("Tree", i, ":\n")
+      }
+      # Parse and print tree
+      parsed_tree <- parse_tree_json(trees[[i]], feature_names)
+      if (!is.null(parsed_tree)) {
+        print_tree_recursive(parsed_tree, indent = 0, feature_names)
       }
     }
-  } else if (x$n_trees > 0) {
+  } else if (get_prop(x, "n_trees") > 0) {
     cat("\nNote: Tree structure not available for display.\n")
   }
 }
