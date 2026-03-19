@@ -109,10 +109,16 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
   )
   
   # Verify that we got at least one tree
-  if (result$n_trees < 1) {
+  # Handle both S7 and S3 objects
+  n_trees <- if (S7::S7_inherits(result, OptimalTreesModel)) {
+    result@n_trees
+  } else {
+    result$n_trees
+  }
+  if (n_trees < 1) {
     warning("No trees found in rashomon set. Consider adjusting regularization or rashomon_bound_multiplier.")
   }
-  
+
   return(result)
 }
 

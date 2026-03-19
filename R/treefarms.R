@@ -1095,11 +1095,16 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
   # Determine if regression based on loss function
   is_regression <- result$loss_function %in% c("squared_error", "absolute_error", "huber", "quantile", "custom")
 
+  # IMPORTANT: Use actual tree count from extracted trees, not result$n_trees
+  # The result$n_trees may reflect C++ internal state that doesn't match
+  # what we actually extract from tree_json/trees fields
+  n_trees_actual <- length(trees)
+
   # Create S7 model object
   s7_model <- new_optimal_trees_model(
     loss_function = result$loss_function,
     regularization = result$regularization,
-    n_trees = result$n_trees,
+    n_trees = n_trees_actual,
     trees = trees,
     accuracy = if (is_regression) NA_real_ else (result$accuracy %||% NA_real_),
     predictions = result$predictions,
@@ -1467,19 +1472,25 @@ print.optimaltrees_model <- function(x, ...) {
 #' @export
 summary.optimaltrees_model <- function(object, ...) {
   print.optimaltrees_model(object, ...)
-  
-  if (object$n_trees > 0) {
+
+  # Handle both S7 and S3 objects
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  n_trees <- if (is_s7) object@n_trees else object$n_trees
+  y_train <- if (is_s7) object@y_train else object$y_train
+  X_train <- if (is_s7) object@X_train else object$X_train
+
+  if (n_trees > 0) {
     # Show class distribution if training data is available
-    if (!is.null(object$y_train)) {
+    if (!is.null(y_train)) {
       cat("\nClass distribution in training data:\n")
-      class_dist <- table(object$y_train)
+      class_dist <- table(y_train)
       print(round(prop.table(class_dist), 3))
     }
-    
+
     # Show feature names if training data is available
-    if (!is.null(object$X_train)) {
+    if (!is.null(X_train)) {
       cat("\nFeature names:\n")
-      cat(paste(names(object$X_train), collapse = ", "), "\n")
+      cat(paste(names(X_train), collapse = ", "), "\n")
     }
   }
 }

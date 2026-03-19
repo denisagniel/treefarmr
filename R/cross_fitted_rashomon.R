@@ -367,32 +367,26 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     fold_id_per_row[fold_indices[[k]]] <- k
   }
   
-  # Create result object
-  result <- list(
-    intersecting_trees = intersection_result$intersecting_trees,
-    n_intersecting = intersection_result$n_intersecting,
-    tree_jsons = intersection_result$tree_jsons,
-    intersecting_structures = intersection_result$intersecting_structures,
-    tree_risks = intersection_result$tree_risks,
-    fold_refits = fold_refits,
-    fold_id_per_row = fold_id_per_row,
-    fold_models = fold_models,
-    rashomon_sets = rashomon_sets,
-    rashomon_sizes = rashomon_sizes,
-    fold_indices = fold_indices,
-    K = K,
+  # Create S7 result object
+  result <- CFRashomon(
+    K = as.integer(K),
     loss_function = loss_function,
     regularization = regularization,
     rashomon_bound_multiplier = rashomon_bound_multiplier,
     rashomon_bound_adder = rashomon_bound_adder,
-    max_leaves = max_leaves,
+    max_leaves = if (is.null(max_leaves)) NULL else as.integer(max_leaves),
+    rashomon_sizes = as.integer(rashomon_sizes),
+    n_intersecting = as.integer(intersection_result$n_intersecting),
+    intersecting_trees = intersection_result$intersecting_trees,
+    tree_risks = intersection_result$tree_risks,
+    fold_refits = fold_refits,
+    fold_id_per_row = as.integer(fold_id_per_row),
+    fold_indices = fold_indices,
     X_train = X,
     y_train = y,
-    call = match.call()
+    converged = TRUE
   )
-  
-  class(result) <- "cf_rashomon"
-  
+
   return(result)
 }
 
@@ -507,31 +501,26 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
       fold_id_per_row[fold_indices[[k]]] <- k
     }
     
-    # Create result object
-    result <- list(
-      intersecting_trees = intersection_result$intersecting_trees,
-      n_intersecting = intersection_result$n_intersecting,
-      tree_jsons = intersection_result$tree_jsons,
-      intersecting_structures = intersection_result$intersecting_structures,
-      tree_risks = intersection_result$tree_risks,
-      fold_refits = fold_refits,
-      fold_id_per_row = fold_id_per_row,
-      fold_models = fold_models,
-      rashomon_sets = rashomon_sets,
-      rashomon_sizes = rashomon_sizes,
-      fold_indices = fold_indices,
-      K = K,
+    # Create S7 result object
+    result <- CFRashomon(
+      K = as.integer(K),
       loss_function = loss_function,
       regularization = regularization,
       rashomon_bound_multiplier = rashomon_bound_multiplier,
       rashomon_bound_adder = rashomon_bound_adder,
-      max_leaves = max_leaves,
+      max_leaves = if (is.null(max_leaves)) NULL else as.integer(max_leaves),
+      rashomon_sizes = as.integer(rashomon_sizes),
+      n_intersecting = as.integer(intersection_result$n_intersecting),
+      intersecting_trees = intersection_result$intersecting_trees,
+      tree_risks = intersection_result$tree_risks,
+      fold_refits = fold_refits,
+      fold_id_per_row = as.integer(fold_id_per_row),
+      fold_indices = fold_indices,
       X_train = X,
       y_train = y,
-      call = match.call()
+      converged = TRUE
     )
-    
-    class(result) <- "cf_rashomon"
+
     return(result)
   }, error = function(e) {
     if (verbose) {

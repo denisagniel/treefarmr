@@ -207,7 +207,7 @@ CFRashomon <- S7::new_class(
     regularization = S7::class_double,
     rashomon_bound_multiplier = S7::class_double,
     rashomon_bound_adder = S7::new_property(S7::class_double, default = 0),
-    max_leaves = S7::new_property(S7::class_integer, default = NULL),
+    max_leaves = S7::new_property(S7::new_union(S7::class_integer, NULL), default = NULL),
 
     # Results per fold
     rashomon_sizes = S7::class_integer,  # Vector of length K

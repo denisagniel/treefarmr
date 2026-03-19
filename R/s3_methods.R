@@ -615,31 +615,40 @@ summary.optimaltrees_logloss_model <- function(object, ...) {
 summary.cf_rashomon <- function(object, ...) {
   cat("Cross-Fitted Rashomon Set Summary\n")
   cat("=================================\n\n")
-  
+
+  # Handle both S7 and S3 objects
+  is_s7 <- S7::S7_inherits(object, CFRashomon)
+  K <- if (is_s7) object@K else object$K
+  loss_function <- if (is_s7) object@loss_function else object$loss_function
+  regularization <- if (is_s7) object@regularization else object$regularization
+  X_train <- if (is_s7) object@X_train else object$X_train
+  rashomon_sizes <- if (is_s7) object@rashomon_sizes else object$rashomon_sizes
+  n_intersecting <- if (is_s7) object@n_intersecting else object$n_intersecting
+
   # Configuration
   cat("Configuration:\n")
-  cat("  K-fold cross-fitting: K =", object$K, "\n")
-  cat("  Loss function:", object$loss_function, "\n")
-  cat("  Regularization:", object$regularization, "\n\n")
-  
+  cat("  K-fold cross-fitting: K =", K, "\n")
+  cat("  Loss function:", loss_function, "\n")
+  cat("  Regularization:", regularization, "\n\n")
+
   # Data information
   cat("Data:\n")
-  n_samp <- if (!is.null(object$n_train)) object$n_train else nrow(object$X_train)
+  n_samp <- nrow(X_train)
   cat("  Samples:", n_samp, "\n")
-  cat("  Features:", ncol(object$X_train), "\n\n")
-  
+  cat("  Features:", ncol(X_train), "\n\n")
+
   # Fold results
   cat("Fold Results:\n")
-  for (i in seq_along(object$rashomon_sizes)) {
-    cat(sprintf("  Fold %d: %d trees\n", i, object$rashomon_sizes[i]))
+  for (i in seq_along(rashomon_sizes)) {
+    cat(sprintf("  Fold %d: %d trees\n", i, rashomon_sizes[i]))
   }
   cat("\n")
-  
+
   # Intersection results
   cat("Intersection Results:\n")
-  cat("  Trees in all folds:", object$n_intersecting, "\n")
-  
-  if (object$n_intersecting > 0) {
+  cat("  Trees in all folds:", n_intersecting, "\n")
+
+  if (n_intersecting > 0) {
     cat("  ✓ Stable trees found!\n")
     cat("  Use predict() to make predictions with stable model.\n")
   } else {

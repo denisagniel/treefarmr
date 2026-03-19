@@ -41,11 +41,22 @@ count_leaves_tree <- function(tree) {
 #'
 #' @export
 get_rashomon_trees <- function(model, max_leaves = NULL) {
-  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model", "optimaltrees_model", "optimaltrees_logloss_model"))) {
-    stop("model must be a treefarms_model, treefarms_logloss_model, optimaltrees_model, or optimaltrees_logloss_model object")
+  # Check for S7 or S3 objects
+  is_s7 <- S7::S7_inherits(model, OptimalTreesModel)
+  is_s3 <- inherits(model, c("treefarms_model", "treefarms_logloss_model", "optimaltrees_model", "optimaltrees_logloss_model"))
+
+  if (!is_s7 && !is_s3) {
+    stop("model must be a treefarms_model, treefarms_logloss_model, optimaltrees_model, optimaltrees_logloss_model object, or OptimalTreesModel (S7)")
   }
-  
-  if (inherits(model, c("treefarms_logloss_model", "optimaltrees_logloss_model"))) {
+
+  # Handle S7 objects
+  if (is_s7) {
+    if (model@n_trees == 0) {
+      warning("No trees in Rashomon set")
+      return(list())
+    }
+    trees <- model@trees
+  } else if (inherits(model, c("treefarms_logloss_model", "optimaltrees_logloss_model"))) {
     # For log_loss models, trees are stored in model$trees
     if (model$n_trees == 0) {
       warning("No trees in Rashomon set")
@@ -53,17 +64,17 @@ get_rashomon_trees <- function(model, max_leaves = NULL) {
     }
     trees <- model$trees
   } else {
-    # For regular models, extract from JSON structure
+    # For regular S3 models, extract from JSON structure
     # Note: Current implementation stores trees as JSON, not C++ objects
     # If C++ model_set exists in the future, we can add backward compatibility here
     {
       tree_json <- model$model$tree_json
-      
+
       if (is.null(tree_json)) {
         # Try result_data as fallback
         tree_json <- model$model$result_data
       }
-      
+
       if (is.null(tree_json)) {
         warning("No tree structure found in model")
         trees <- list()
@@ -539,11 +550,19 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
 #'
 #' @export
 count_trees <- function(model) {
-  if (!inherits(model, "treefarms_model")) {
-    stop("model must be a treefarms_model object")
+  # Check for S7 or S3 objects
+  is_s7 <- S7::S7_inherits(model, OptimalTreesModel)
+  is_s3 <- inherits(model, "treefarms_model")
+
+  if (!is_s7 && !is_s3) {
+    stop("model must be a treefarms_model object or OptimalTreesModel (S7)")
   }
-  
-  return(model$n_trees)
+
+  if (is_s7) {
+    return(model@n_trees)
+  } else {
+    return(model$n_trees)
+  }
 }
 
 #' Get Human-Readable Rules from Tree

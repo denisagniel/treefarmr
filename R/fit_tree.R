@@ -208,15 +208,27 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     }
     model_obj <- result$model
     # Verify single tree (should always be 1 when single_tree=TRUE)
-    if (model_obj$n_trees != 1) {
-      warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", model_obj$n_trees))
+    # Handle both S7 and S3 objects
+    n_trees <- if (S7::S7_inherits(model_obj, OptimalTreesModel)) {
+      model_obj@n_trees
+    } else {
+      model_obj$n_trees
+    }
+    if (n_trees != 1) {
+      warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", n_trees))
     }
     return(model_obj)
   }
 
   # Verify single tree (should always be 1 when single_tree=TRUE)
-  if (result$n_trees != 1) {
-    warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", result$n_trees))
+  # Handle both S7 and S3 objects
+  n_trees <- if (S7::S7_inherits(result, OptimalTreesModel)) {
+    result@n_trees
+  } else {
+    result$n_trees
+  }
+  if (n_trees != 1) {
+    warning(sprintf("Expected exactly one tree, but got n_trees = %d. This should not happen.", n_trees))
   }
   return(result)
 }
