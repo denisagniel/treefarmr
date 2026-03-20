@@ -155,6 +155,120 @@ tree_structure_to_canonical <- function(tree) {
   stop("Tree node has neither feature nor prediction")
 }
 
+#' Extract partition signature from tree (for binary features)
+#'
+#' @description
+#' For trees with binary features, extract which inputs go to which leaf IDs.
+#' Two trees with different split orders but the same partition structure
+#' (same grouping of inputs into leaves) will have equivalent signatures.
+#'
+#' This captures the STRUCTURE of the partition, not the leaf values, which
+#' is appropriate for DML where we want to use the same partition across folds
+#' but fit different leaf values per fold.
+#'
+#' @param tree A tree as list (with \code{feature}/\code{prediction}) or JSON string
+#' @param n_features Number of binary features (default: detect from tree)
+#' @return A sorted character vector mapping inputs to leaf IDs
+#' @export
+tree_to_partition_signature <- function(tree, n_features = NULL) {
+  if (is.character(tree)) {
+    tree <- jsonlite::fromJSON(tree, simplifyVector = FALSE)
+  }
+  if (!is.list(tree)) {
+    stop("tree must be a list or JSON string")
+  }
+
+  # Auto-detect number of features if not provided
+  if (is.null(n_features)) {
+    max_feat <- get_max_feature_index(tree)
+    if (is.null(max_feat)) {
+      # Tree is just a single leaf node
+      n_features <- 1
+    } else {
+      # max_feat is 0-indexed, so we need +1 to get count
+      n_features <- max_feat + 1
+    }
+  }
+
+  # Validate n_features
+  if (n_features < 1) {
+    stop("n_features must be at least 1, got: ", n_features)
+  }
+
+  # For binary features, enumerate all 2^n possible input combinations
+  # and determine which inputs are grouped together (same leaf)
+  n_combos <- 2^n_features
+
+  # Helper to get path to leaf (as string of features checked)
+  get_leaf_path <- function(node, feature_vec, path = character(0)) {
+    if (is.null(node)) return("NULL")
+
+    # Leaf node - return the path taken to get here
+    if (!is.null(node$prediction)) {
+      return(paste(sort(path), collapse=","))  # Sort for canonical form
+    }
+
+    # Internal node
+    if (!is.null(node$feature)) {
+      feat_idx <- node$feature + 1  # Convert to 1-indexed
+      if (feat_idx > length(feature_vec)) {
+        stop("Feature index out of range: tree uses feature ", node$feature,
+             " but only have ", length(feature_vec), " features in feature_vec. ",
+             "n_features=", n_features, ", max feature in tree might be higher.")
+      }
+
+      # Add this feature check to the path
+      feat_name <- paste0("X", node$feature)
+      feat_val <- feature_vec[feat_idx]
+      new_path <- c(path, paste0(feat_name, "=", feat_val))
+
+      # Follow the appropriate branch
+      if (feat_val == 1) {
+        return(get_leaf_path(node$true, feature_vec, new_path))
+      } else {
+        return(get_leaf_path(node$false, feature_vec, new_path))
+      }
+    }
+
+    stop("Node has neither feature nor prediction")
+  }
+
+  # Generate all binary combinations and group by leaf path
+  input_to_path <- character(n_combos)
+
+  for (i in 0:(n_combos-1)) {
+    # Convert i to binary vector
+    binary_vec <- as.integer(intToBits(i)[1:n_features])
+    input_str <- paste(binary_vec, collapse="")
+
+    # Get path to leaf for this input
+    leaf_path <- get_leaf_path(tree, binary_vec)
+
+    input_to_path[i+1] <- leaf_path
+  }
+
+  # Create partition signature: for each unique leaf path, list all inputs that go there
+  # This captures the partition structure independent of split order
+  unique_paths <- sort(unique(input_to_path))
+
+  partition_groups <- character(length(unique_paths))
+  for (i in seq_along(unique_paths)) {
+    path <- unique_paths[i]
+    # Find all inputs that reach this path
+    inputs <- which(input_to_path == path) - 1  # 0-indexed
+    # Convert to binary strings
+    input_strs <- sapply(inputs, function(idx) {
+      paste(as.integer(intToBits(idx)[1:n_features]), collapse="")
+    })
+    # Sort and concatenate
+    partition_groups[i] <- paste(sort(input_strs), collapse="|")
+  }
+
+  # Return sorted partition groups
+  # Two trees with same partition will have same groups (maybe in different order)
+  return(sort(partition_groups))
+}
+
 #' Get maximum feature index referenced in tree structure
 #' @noRd
 get_max_feature_index <- function(node) {
@@ -169,7 +283,7 @@ get_max_feature_index <- function(node) {
     max_idx <- node$feature
   }
 
-  # Recursively check children
+  # Recursively check children (handle both left/right and true/false naming)
   if (!is.null(node$left)) {
     left_max <- get_max_feature_index(node$left)
     if (!is.null(left_max)) {
@@ -181,6 +295,21 @@ get_max_feature_index <- function(node) {
     right_max <- get_max_feature_index(node$right)
     if (!is.null(right_max)) {
       max_idx <- if (is.null(max_idx)) right_max else max(max_idx, right_max)
+    }
+  }
+
+  # Also check true/false branches (used by log_loss trees)
+  if (!is.null(node$true)) {
+    true_max <- get_max_feature_index(node$true)
+    if (!is.null(true_max)) {
+      max_idx <- if (is.null(max_idx)) true_max else max(max_idx, true_max)
+    }
+  }
+
+  if (!is.null(node$false)) {
+    false_max <- get_max_feature_index(node$false)
+    if (!is.null(false_max)) {
+      max_idx <- if (is.null(max_idx)) false_max else max(max_idx, false_max)
     }
   }
 
@@ -354,28 +483,32 @@ compare_trees <- function(tree1, tree2) {
   return(identical(json1, json2))
 }
 
-#' Find Intersection of Trees Across Rashomon Sets (by structure)
+#' Find Intersection of Trees Across Rashomon Sets (by partition)
 #'
 #' @description
-#' Find tree *structures* that appear in ALL Rashomon sets from cross-fitting.
-#' Comparison is by structure only (splits), so the same splits with different
-#' leaf values (e.g. from different folds) count as one. This is required for
-#' DML so that each fold can refit the chosen structure on its training data.
+#' Find tree *partitions* that appear in ALL Rashomon sets from cross-fitting.
+#' Comparison is by partition (leaf definitions), not split order. Trees that
+#' define the same leaves via different split orders are considered equivalent.
+#' This is critical for DML where fold-specific sampling variation causes
+#' different optimal split orders while maintaining functionally identical trees.
 #'
 #' @param rashomon_list A list of Rashomon sets, where each element is a list of trees
 #' @param verbose Logical. Print progress information. Default: TRUE
 #'
 #' @return A list containing:
-#'   \item{intersecting_trees}{List of tree objects (from first set) with structures in all sets}
-#'   \item{n_intersecting}{Number of intersecting structures}
+#'   \item{intersecting_trees}{List of tree objects (from first set) with partitions in all sets}
+#'   \item{n_intersecting}{Number of intersecting partitions}
 #'   \item{tree_jsons}{JSON representations of those trees}
 #'   \item{intersecting_structures}{Same as intersecting_trees; full trees usable for \code{refit_structure_on_data}}
+#'   \item{tree_risks}{List of risk information for each intersecting tree}
 #'
 #' @details
-#' Trees are compared by canonical structure only (feature, relation, reference,
-#' and recursive branches; leaf values ignored). So the same structure refit on
-#' different folds matches. One representative full tree per structure (from the
-#' first set) is returned for backward compatibility and for refitting.
+#' Trees are compared by partition signature (predictions for all input combinations).
+#' Two trees with the same 16 leaves (for 4 binary features) but different split
+#' orders are considered equivalent. This addresses the common case where different
+#' folds find different optimal split orders due to sampling variation, but the
+#' underlying partition is the same. One representative full tree per partition
+#' (from the first set) is returned for refitting on fold-specific data.
 #'
 #' @examples
 #' \dontrun{
@@ -418,34 +551,39 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   }
   
   if (verbose) {
-    cat(sprintf("Finding intersection across %d Rashomon sets (by structure)...\n", K))
+    cat(sprintf("Finding intersection across %d Rashomon sets (by partition)...\n", K))
     set_sizes <- sapply(rashomon_list, length)
     cat(sprintf("Rashomon set sizes: %s\n", paste(set_sizes, collapse = ", ")))
+    cat("Note: Trees with same leaves but different split orders are considered equivalent\n")
   }
   
-  # OPTIMIZATION: Use hash-based comparison instead of JSON string comparison
-  # For large Rashomon sets (1000+ trees), JSON serialization + string matching is O(n*m) and very slow
-  # Hashing is O(n) and comparison is O(1) per lookup
+  # OPTIMIZATION: Use partition-based comparison instead of structural comparison
+  # For binary features, two trees are functionally equivalent if they define
+  # the same partition of the input space, even if they use different split orders.
+  # This is critical for DML where fold-specific sampling variation causes
+  # different optimal split orders while maintaining the same leaves.
 
-  # Extract structure hashes for each fold (digest of canonical structure)
+  # Extract partition signatures for each fold (digest of leaf predictions)
   structure_hash_sets <- lapply(rashomon_list, function(trees) {
     if (length(trees) == 0) return(character(0))
     vapply(trees, function(t) {
-      # Get canonical structure (no prediction values, just splits)
+      # Get partition signature (predictions for all input combinations)
+      # This captures functional equivalence, not structural equivalence
       if (is.character(t)) {
-        canonical <- tree_structure_to_canonical(jsonlite::fromJSON(t, simplifyVector = FALSE))
+        partition_sig <- tree_to_partition_signature(jsonlite::fromJSON(t, simplifyVector = FALSE))
       } else {
-        canonical <- tree_structure_to_canonical(t)
+        partition_sig <- tree_to_partition_signature(t)
       }
-      # Fast hash instead of full JSON string
-      digest::digest(canonical, algo = "xxhash64")
+      # Hash the sorted partition signature
+      # Trees with same leaves but different split orders will have same hash
+      digest::digest(partition_sig, algo = "xxhash64")
     }, character(1))
   })
 
   # Intersect by hash (much faster than string matching)
   intersection_hashes <- structure_hash_sets[[1]]
   if (verbose) {
-    cat(sprintf("Starting intersection with %d structure(s) from fold 1\n", length(intersection_hashes)))
+    cat(sprintf("Starting with %d unique partition(s) from fold 1\n", length(unique(intersection_hashes))))
   }
 
   for (k in 2:K) {
@@ -454,13 +592,12 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     curr_size <- length(intersection_hashes)
 
     if (verbose) {
-      cat(sprintf("After fold %d: %d -> %d structure(s)\n", k, prev_size, curr_size))
+      cat(sprintf("After intersecting with fold %d: %d partitions remain\n", k, curr_size))
     }
 
     if (curr_size == 0) {
       if (verbose) {
-        cat(sprintf("  Intersection became empty at fold %d\n", k))
-        cat("No structures appear in all sets\n")
+        cat("No common partitions appear in all folds\n")
       }
       return(list(
         intersecting_trees = list(),
@@ -521,7 +658,7 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   })
   
   if (verbose) {
-    cat(sprintf("Found %d structure(s) in all %d Rashomon sets\n", length(intersecting_trees), K))
+    cat(sprintf("\n✓ Found %d unique partition(s) appearing in all %d folds\n", length(intersecting_trees), K))
   }
 
   list(
