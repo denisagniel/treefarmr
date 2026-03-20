@@ -1,10 +1,21 @@
-# TreeFARMR
+# optimaltrees (TreeFARMR)
 
 [![R-CMD-check](https://github.com/denisagniel/treefarmr/workflows/R-CMD-check/badge.svg)](https://github.com/denisagniel/treefarmr/actions)
 [![Coverage](https://codecov.io/gh/denisagniel/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/denisagniel/treefarmr)
 [![CRAN](https://www.r-pkg.org/badges/version/treefarmr)](https://cran.r-project.org/package=treefarmr)
 
-R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models) with support for log-loss optimization and probability predictions. This package provides direct Rcpp bindings to the integrated C++ implementation, eliminating external dependencies for easier distribution and better performance.
+R implementation of optimal decision trees with flexible loss functions, including classification (misclassification, log-loss) and regression (squared-error, absolute-error, Huber, quantile). Provides direct Rcpp bindings to the integrated C++ implementation for high performance and easy distribution.
+
+**Current version:** 0.4.0
+**Repository:** [github.com/denisagniel/treefarmr](https://github.com/denisagniel/treefarmr)
+
+## Recent Updates (March 2026)
+
+- **S7 Class System:** Migrated to S7 for type-safe, validated model objects
+- **Thread Safety:** Comprehensive fixes for parallel execution (March 13, 2026)
+- **Predict Integration:** Full S7 integration with S3 generics via `methods_register()`
+- **Rashomon Sets:** Cross-fitted Rashomon sets with structure intersection
+- **Performance:** Optimized C++ core with numerical stability improvements
 
 ## Installation
 
@@ -31,11 +42,16 @@ sudo apt-get install libgmp-dev
 install.packages(c("Rcpp", "jsonlite", "devtools"))
 ```
 
-### Install TreeFARMR Package
+### Install optimaltrees Package
 
 ```r
 # Install from GitHub
 devtools::install_github("denisagniel/treefarmr")
+
+# Or clone and install locally (for development)
+git clone git@github.com:denisagniel/treefarmr.git
+cd treefarmr
+R CMD INSTALL .
 ```
 
 ## Quick Start
