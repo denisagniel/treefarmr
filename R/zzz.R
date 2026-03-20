@@ -15,6 +15,10 @@ NULL
 #'
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
+  # Register S7 methods with S3 dispatch system
+  # This enables S7 methods to work with S3 generics like predict()
+  S7::methods_register()
+
   # Set package options (minimal, safe operations only)
   options(
     treefarms.verbose = FALSE,

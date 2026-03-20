@@ -36,9 +36,10 @@ NULL
 #' - is_regression: Logical flag for regression vs classification
 #'
 #' All properties are validated on creation and modification.
+#' @export
 OptimalTreesModel <- S7::new_class(
   name = "OptimalTreesModel",
-  package = "optimaltrees",
+  package = NULL,  # No package prefix to enable S3 dispatch
 
   properties = list(
     # Core configuration
@@ -196,9 +197,10 @@ new_optimal_trees_model <- function(loss_function,
 #' - X_train: Training features
 #' - y_train: Training outcomes
 #' - converged: Logical, TRUE if intersection found (auto-tuning)
+#' @export
 CFRashomon <- S7::new_class(
   name = "CFRashomon",
-  package = "optimaltrees",
+  package = NULL,  # No package prefix to enable S3 dispatch
 
   properties = list(
     # Configuration
@@ -351,9 +353,9 @@ S7::method(print, OptimalTreesModel) <- function(x, ...) {
   print.optimaltrees_model(x)
 }
 
-# Predict method for OptimalTreesModel
+# Predict method for OptimalTreesModel (S7)
+# methods_register() in .onLoad() will automatically create S3 dispatch
 S7::method(predict, OptimalTreesModel) <- function(object, newdata, type = "class", ...) {
-  # Call existing S3 implementation for now
   predict.optimaltrees_model(object, newdata, type, ...)
 }
 
@@ -362,7 +364,8 @@ S7::method(print, CFRashomon) <- function(x, ...) {
   print.cf_rashomon(x)
 }
 
-# Predict method for CFRashomon
+# Predict method for CFRashomon (S7)
+# methods_register() in .onLoad() will automatically create S3 dispatch
 S7::method(predict, CFRashomon) <- function(object, newdata, ...) {
   predict.cf_rashomon(object, newdata, ...)
 }
