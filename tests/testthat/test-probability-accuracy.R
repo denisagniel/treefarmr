@@ -226,7 +226,7 @@ test_that("Probabilities match training distribution in leaves", {
   pred_probs <- predict(model, data$X, type = "prob")
   
   # Get tree structure
-  tree <- model$model$tree_json
+  tree <- model@model$tree_json
   expect_true(!is.null(tree), info = "Tree structure should be available")
   
   # For each unique feature combination, check that predicted probability

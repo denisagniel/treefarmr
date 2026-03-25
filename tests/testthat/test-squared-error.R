@@ -24,9 +24,9 @@ test_that("squared_error fit and model structure", {
                            verbose = FALSE)
   })
   expect_valid_treefarms_model(model, "squared_error")
-  expect_null(model$probabilities)
-  expect_true(is.numeric(model$predictions))
-  expect_equal(length(model$predictions), nrow(dat$X))
+  expect_null(model@probabilities)
+  expect_true(is.numeric(model@predictions))
+  expect_equal(length(model@predictions), nrow(dat$X))
 })
 
 test_that("squared_error predictions and predict() match", {
@@ -40,8 +40,8 @@ test_that("squared_error predictions and predict() match", {
   expect_true(is.numeric(pred_train), info = "predict() should return numeric vector")
   expect_equal(length(pred_train), nrow(dat$X),
                info = "predict length should match training rows")
-  expect_equal(unname(pred_train), unname(model$predictions),
-               info = "predict(X_train) should match model$predictions")
+  expect_equal(unname(pred_train), unname(model@predictions),
+               info = "predict(X_train) should match model@predictions")
   expect_valid_predictions(pred_train, nrow(dat$X), type = "response")
 })
 
@@ -65,10 +65,10 @@ test_that("squared_error accuracy is MSE", {
                          regularization = 0.2,
                          store_training_data = TRUE,
                          verbose = FALSE)
-  expect_true(is.numeric(model$accuracy))
-  expect_true(model$accuracy >= 0)
-  mse_manual <- mean((dat$y - model$predictions)^2)
-  expect_equal(model$accuracy, mse_manual, tolerance = 1e-10)
+  expect_true(is.numeric(model@accuracy))
+  expect_true(model@accuracy >= 0)
+  mse_manual <- mean((dat$y - model@predictions)^2)
+  expect_equal(model@accuracy, mse_manual, tolerance = 1e-10)
 })
 
 test_that("refit_structure_on_data works for regression", {

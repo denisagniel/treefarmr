@@ -36,7 +36,7 @@ test_that("auto_tune_treefarms basic functionality works", {
   expect_true("converged" %in% names(result))
   
   # Check data types
-  expect_true(is.numeric(result$regularization))
+  expect_true(is.numeric(result@regularization))
   expect_true(is.numeric(result$rashomon_bound_multiplier))
   expect_true(is.numeric(result$n_trees))
   expect_true(is.numeric(result$iterations))
@@ -144,8 +144,8 @@ test_that("auto_tune_treefarms with different loss functions", {
     )
   })
   
-  expect_equal(result_misclass$model$loss_function, "misclassification")
-  expect_equal(result_logloss$model$loss_function, "log_loss")
+  expect_equal(result_misclass$model@loss_function, "misclassification")
+  expect_equal(result_logloss$model@loss_function, "log_loss")
 })
 
 test_that("auto_tune_treefarms with custom search range", {
@@ -163,8 +163,8 @@ test_that("auto_tune_treefarms with custom search range", {
   })
   
   # Regularization should be within search range
-  expect_true(result$regularization >= 0.01)
-  expect_true(result$regularization <= 0.2)
+  expect_true(result@regularization >= 0.01)
+  expect_true(result@regularization <= 0.2)
 })
 
 test_that("auto_tune_treefarms convergence behavior", {
@@ -288,7 +288,7 @@ test_that("auto_tune_treefarms parameter ranges are reasonable", {
   )
   
   # Regularization should be positive
-  expect_true(result$regularization > 0)
+  expect_true(result@regularization > 0)
   
   # Rashomon bound multiplier should be positive
   expect_true(result$rashomon_bound_multiplier > 0)

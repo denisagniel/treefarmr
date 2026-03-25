@@ -84,7 +84,7 @@ test_that("count_trees works", {
   expect_true(is.numeric(count))
   expect_true(count >= 0)
   expect_true(length(count) == 1)
-  expect_equal(count, test_model$n_trees)
+  expect_equal(count, test_model@n_trees)
 })
 
 test_that("find_tree_intersection works", {
@@ -234,9 +234,9 @@ test_that("rashomon utilities preserve tree structure", {
 })
 
 test_that("count_trees matches model n_trees", {
-  # Test that count_trees returns the same as model$n_trees
+  # Test that count_trees returns the same as model@n_trees
   count <- count_trees(test_model)
-  expect_equal(count, test_model$n_trees)
+  expect_equal(count, test_model@n_trees)
   
   # Test with different models
   models <- list(
@@ -247,6 +247,6 @@ test_that("count_trees matches model n_trees", {
   
   for (model in models) {
     count <- count_trees(model)
-    expect_equal(count, model$n_trees)
+    expect_equal(count, model@n_trees)
   }
 })

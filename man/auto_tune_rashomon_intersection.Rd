@@ -12,6 +12,7 @@ auto_tune_rashomon_intersection(
   loss_function,
   regularization,
   c_start = 1,
+  c_min = 0.01,
   c_max = 100,
   binary_tolerance = 0.1,
   verbose = TRUE,
@@ -33,7 +34,9 @@ auto_tune_rashomon_intersection(
 
 \item{c_start}{Starting constant (default: 1)}
 
-\item{c_max}{Maximum constant (default: 100)}
+\item{c_min}{Minimum constant for downward search (default: 0.01)}
+
+\item{c_max}{Maximum constant for upward search (default: 100)}
 
 \item{binary_tolerance}{Tolerance for binary refinement (default: 0.1)}
 
@@ -50,14 +53,18 @@ List with:
   - result: Full cross_fitted_rashomon result (or NULL if failed)
 }
 \description{
-Uses exponential search followed by binary refinement to find the smallest
-epsilon_n that yields non-empty intersection across K folds. Then selects
-the best tree from the intersection by lowest penalized risk.
+Uses bidirectional exponential search followed by binary refinement to find
+the smallest epsilon_n that yields non-empty intersection across K folds.
+Then selects the best tree from the intersection by lowest penalized risk.
 
-Algorithm:
-1. Exponential phase: Try c = 1, 2, 4, 8, 16, ... (doubling)
-2. Stop when first intersection found
-3. Binary refinement: Search between last-fail and first-success
+Algorithm (Bidirectional Search):
+1. Initial test: Try c = 1 (c_start)
+2a. If c = 1 succeeds: Downward search c = 0.5, 0.25, 0.125, ... (minimize bias)
+2b. If c = 1 fails: Upward search c = 2, 4, 8, ... (find intersection)
+3. Binary refinement: Narrow to smallest working epsilon_n
 4. Tree selection: Pick tree with lowest R_pen from final intersection
+
+Why bidirectional? Starting at c=1 may be too large for easy intersection
+problems. Downward search minimizes bias by finding smallest working epsilon_n.
 }
 \keyword{internal}

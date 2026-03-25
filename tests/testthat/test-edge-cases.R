@@ -40,7 +40,7 @@ test_that("all same class labels handling", {
   expect_valid_treefarms_model(model)
   
   # Should handle single class gracefully
-  expect_true(is.finite(model$accuracy))
+  expect_true(is.finite(model@accuracy))
 })
 
 test_that("minimal features handling", {
@@ -67,7 +67,7 @@ test_that("many features handling", {
   expect_valid_treefarms_model(model)
   
   # Should handle many features without issues
-  expect_true(is.finite(model$accuracy))
+  expect_true(is.finite(model@accuracy))
 })
 
 test_that("extreme regularization values", {

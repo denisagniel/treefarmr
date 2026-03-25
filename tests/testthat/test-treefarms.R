@@ -34,11 +34,11 @@ test_that("optimaltrees basic functionality works", {
   })
 
   # Check model structure
-  expect_true(inherits(model, "optimaltrees_model"))
-  expect_true(is.numeric(model$n_trees))
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_equal(model$loss_function, "misclassification")
+  expect_true(S7::S7_inherits(model, OptimalTreesModel))
+  expect_true(is.numeric(model@n_trees))
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_equal(model@loss_function, "misclassification")
 
   # Test with log_loss
   expect_no_error({
@@ -120,21 +120,21 @@ test_that("optimaltrees returns expected structure", {
   }
 
   # Check data types
-  expect_true(is.numeric(model$n_trees))
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_true(is.numeric(model$regularization))
-  expect_true(is.data.frame(model$X_train))
-  expect_true(is.numeric(model$y_train))  # Only numeric when store_training_data=TRUE
-  expect_true(is.numeric(model$training_time))
-  expect_true(is.numeric(model$training_iterations))
+  expect_true(is.numeric(model@n_trees))
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_true(is.numeric(model@regularization))
+  expect_true(is.data.frame(model@X_train))
+  expect_true(is.numeric(model@y_train))  # Only numeric when store_training_data=TRUE
+  expect_true(is.numeric(model@training_time))
+  expect_true(is.numeric(model@training_iterations))
 
   # Check predictions and probabilities
-  expect_true(is.numeric(model$predictions))
-  expect_true(is.matrix(model$probabilities))
-  expect_equal(length(model$predictions), nrow(test_data$X))
-  expect_equal(nrow(model$probabilities), nrow(test_data$X))
-  expect_equal(ncol(model$probabilities), 2)
+  expect_true(is.numeric(model@predictions))
+  expect_true(is.matrix(model@probabilities))
+  expect_equal(length(model@predictions), nrow(test_data$X))
+  expect_equal(nrow(model@probabilities), nrow(test_data$X))
+  expect_equal(ncol(model@probabilities), 2)
 })
 
 test_that("optimaltrees handles edge cases", {
@@ -205,8 +205,8 @@ test_that("optimaltrees with pattern data generates trees", {
                     verbose = FALSE)
   
   # Should generate at least one tree for clear pattern
-  expect_true(model$n_trees >= 1)
-  expect_true(model$accuracy > 0.5)  # Should be better than random
+  expect_true(model@n_trees >= 1)
+  expect_true(model@accuracy > 0.5)  # Should be better than random
 })
 
 test_that("optimaltrees verbose output works", {
@@ -242,13 +242,13 @@ test_that("optimaltrees model object structure", {
                     verbose = FALSE)
   
   # Check model object structure
-  expect_true(is.list(model$model))
-  expect_true("result_data" %in% names(model$model))
-  expect_true("config" %in% names(model$model))
-  expect_true("time" %in% names(model$model))
-  expect_true("iterations" %in% names(model$model))
-  expect_true("size" %in% names(model$model))
-  expect_true("status" %in% names(model$model))
+  expect_true(is.list(model@model))
+  expect_true("result_data" %in% names(model@model))
+  expect_true("config" %in% names(model@model))
+  expect_true("time" %in% names(model@model))
+  expect_true("iterations" %in% names(model@model))
+  expect_true("size" %in% names(model@model))
+  expect_true("status" %in% names(model@model))
 })
 
 test_that("optimaltrees with logical y works", {
@@ -262,7 +262,7 @@ test_that("optimaltrees with logical y works", {
                       verbose = FALSE)
   })
 
-  expect_true(is.numeric(model$y_train))  # Should be converted to numeric
+  expect_true(is.numeric(model@y_train))  # Should be converted to numeric
 })
 
 test_that("optimaltrees probability bounds are reasonable", {
@@ -272,11 +272,11 @@ test_that("optimaltrees probability bounds are reasonable", {
                     verbose = FALSE)
   
   # Probabilities should be between 0 and 1
-  expect_true(all(model$probabilities >= 0))
-  expect_true(all(model$probabilities <= 1))
+  expect_true(all(model@probabilities >= 0))
+  expect_true(all(model@probabilities <= 1))
   
   # Probabilities should sum to 1 for each row
-  row_sums <- rowSums(model$probabilities)
+  row_sums <- rowSums(model@probabilities)
   expect_true(all(abs(row_sums - 1) < 1e-10))
 })
 
@@ -287,8 +287,8 @@ test_that("optimaltrees predictions are binary", {
                     verbose = FALSE)
   
   # Predictions should be 0 or 1
-  expect_true(all(model$predictions %in% c(0, 1)))
+  expect_true(all(model@predictions %in% c(0, 1)))
   
   # Predictions should match length of training data
-  expect_equal(length(model$predictions), length(test_data$y))
+  expect_equal(length(model@predictions), length(test_data$y))
 })

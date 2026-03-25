@@ -188,7 +188,7 @@ test_that("parallel execution with imbalanced data", {
   expect_valid_treefarms_model(model)
   
   # Should handle imbalanced data without issues
-  expect_true(is.finite(model$accuracy))
+  expect_true(is.finite(model@accuracy))
 })
 
 test_that("parallel execution with auto-tuning", {
@@ -204,7 +204,7 @@ test_that("parallel execution with auto-tuning", {
   expect_valid_treefarms_model(model)
   
   # Auto-tuned parameters should be reasonable
-  expect_true(model$regularization > 0)
+  expect_true(model@regularization > 0)
 })
 
 test_that("performance sanity check", {

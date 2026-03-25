@@ -105,13 +105,13 @@ test_that("treefarms returns expected structure", {
   expect_valid_treefarms_model(model)
   
   # Check model object structure
-  expect_true(is.list(model$model))
-  expect_true("result_data" %in% names(model$model))
-  expect_true("config" %in% names(model$model))
-  expect_true("time" %in% names(model$model))
-  expect_true("iterations" %in% names(model$model))
-  expect_true("size" %in% names(model$model))
-  expect_true("status" %in% names(model$model))
+  expect_true(is.list(model@model))
+  expect_true("result_data" %in% names(model@model))
+  expect_true("config" %in% names(model@model))
+  expect_true("time" %in% names(model@model))
+  expect_true("iterations" %in% names(model@model))
+  expect_true("size" %in% names(model@model))
+  expect_true("status" %in% names(model@model))
 })
 
 test_that("treefarms handles edge cases", {
@@ -184,8 +184,8 @@ test_that("treefarms with pattern data generates trees", {
   expect_valid_treefarms_model(model)
   
   # Should generate at least one tree for clear pattern
-  expect_true(model$n_trees >= 1)
-  expect_true(model$accuracy > 0.5)  # Should be better than random
+  expect_true(model@n_trees >= 1)
+  expect_true(model@accuracy > 0.5)  # Should be better than random
 })
 
 test_that("treefarms verbose output works", {
@@ -237,7 +237,7 @@ test_that("treefarms with logical y works", {
   
   expect_valid_treefarms_model(model)
   # y_train is numeric when stored, or NULL when store_training_data=FALSE
-  expect_true(is.numeric(model$y_train) || is.null(model$y_train))
+  expect_true(is.numeric(model@y_train) || is.null(model@y_train))
 })
 
 test_that("treefarms probability bounds are reasonable", {
@@ -249,11 +249,11 @@ test_that("treefarms probability bounds are reasonable", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Probabilities should be between 0 and 1
-  expect_true(all(model$probabilities >= 0))
-  expect_true(all(model$probabilities <= 1))
+  expect_true(all(model@probabilities >= 0))
+  expect_true(all(model@probabilities <= 1))
   
   # Probabilities should sum to 1 for each row
-  row_sums <- rowSums(model$probabilities)
+  row_sums <- rowSums(model@probabilities)
   expect_true(all(abs(row_sums - 1) < 1e-10))
 })
 
@@ -266,10 +266,10 @@ test_that("treefarms predictions are binary", {
   expect_valid_treefarms_model(model)
   
   # Predictions should be 0 or 1
-  expect_true(all(model$predictions %in% c(0, 1)))
+  expect_true(all(model@predictions %in% c(0, 1)))
   
   # Predictions should match length of training data
-  expect_equal(length(model$predictions), length(simple_dataset$y))
+  expect_equal(length(model@predictions), length(simple_dataset$y))
 })
 
 test_that("treefarms handles different data sizes", {
@@ -305,7 +305,7 @@ test_that("treefarms handles imbalanced data", {
   expect_valid_treefarms_model(model)
   
   # Should handle imbalanced data without crashing
-  expect_true(is.finite(model$accuracy))
+  expect_true(is.finite(model@accuracy))
 })
 
 test_that("treefarms parameter ranges are validated", {

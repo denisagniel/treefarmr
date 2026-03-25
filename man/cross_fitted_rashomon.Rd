@@ -49,22 +49,27 @@ a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via th
 
 \item{auto_tune_intersecting}{Logical. If TRUE, automatically search for the
   smallest \code{rashomon_bound_multiplier} that yields non-empty intersection.
-  Uses exponential search (c = 1, 2, 4, 8, ...) followed by binary refinement
-  to find epsilon_n = c * sqrt(log(n)/n). Default: FALSE.
+  Uses bidirectional exponential search followed by binary refinement to find
+  epsilon_n = c * sqrt(log(n)/n). Default: FALSE.
 
-  \strong{How it works:}
+  \strong{How it works (Bidirectional Search):}
   \enumerate{
-    \item Exponential phase: Tries c = 1, 2, 4, 8, ... (doubling) until intersection found
-    \item Binary phase: Refines between last-fail and first-success to within 10\%
-    \item Tree selection: If multiple trees in intersection, picks best by penalized risk
+    \item Initial test: Try c = 1 (reasonable default)
+    \item If c = 1 succeeds: Downward search c = 0.5, 0.25, 0.125, ... to minimize bias
+    \item If c = 1 fails: Upward search c = 2, 4, 8, ... to find intersection
+    \item Binary refinement: Narrow to smallest working epsilon_n (within 10\%)
+    \item Tree selection: If multiple trees, picks best by penalized risk
   }
 
-  \strong{Efficiency:} O(log c) exponential attempts + O(log precision) binary attempts.
-  Typical: 3-6 attempts total. Guaranteed to find solution if one exists (c up to 100).
+  \strong{Why bidirectional?} Minimizes bias by finding smallest epsilon_n.
+  If c=1 works but c=0.25 also works, using c=1 accepts 4x higher bias unnecessarily.
 
-  \strong{When it fails:} If no intersection found up to c=100, indicates
+  \strong{Efficiency:} O(log c) exponential attempts + O(log precision) binary attempts.
+  Typical: 3-6 attempts total. Guaranteed to find solution if one exists (c in [0.01, 100]).
+
+  \strong{When it fails:} If no intersection found from c=0.01 to c=100, indicates
   substantial cross-fold heterogeneity. Returns fold-specific trees with warning.
-  Consider using \code{use_rashomon = FALSE} for such datasets.
+  Consider using fold-specific nuisance functions instead of intersection.
 
   \strong{Theory guarantee:} All tried values satisfy epsilon_n = o(n^{-1/2}),
   ensuring asymptotically valid inference. The adaptive selection is data-dependent

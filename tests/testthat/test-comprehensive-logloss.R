@@ -256,7 +256,7 @@ test_that("Single tree fitting with log-loss - probability accuracy and runtime"
       runtime = runtime_metrics,
       validation = validation,
       regularization = reg,
-      n_trees = model$n_trees
+      n_trees = model@n_trees
     )
     
     # Print results
@@ -265,12 +265,12 @@ test_that("Single tree fitting with log-loss - probability accuracy and runtime"
       accuracy_metrics,
       runtime_metrics,
       validation,
-      list(regularization = reg, n_trees = model$n_trees)
+      list(regularization = reg, n_trees = model@n_trees)
     )
     
     # Validate model
-    expect_equal(model$n_trees, 1, info = "fit_tree should return exactly 1 tree")
-    expect_equal(model$loss_function, "log_loss")
+    expect_equal(model@n_trees, 1, info = "fit_tree should return exactly 1 tree")
+    expect_equal(model@loss_function, "log_loss")
     expect_true(validation$valid, info = "Probabilities should be valid for log-loss")
 
     # Clean up memory
@@ -300,8 +300,8 @@ test_that("Single tree fitting with log-loss - probability accuracy and runtime"
     accuracy = accuracy_metrics,
     runtime = runtime_metrics,
     validation = validation,
-    regularization = model$regularization,
-    n_trees = model$n_trees
+    regularization = model@regularization,
+    n_trees = model@n_trees
   )
   
   print_test_results(
@@ -309,11 +309,11 @@ test_that("Single tree fitting with log-loss - probability accuracy and runtime"
     accuracy_metrics,
     runtime_metrics,
     validation,
-    list(regularization = model$regularization, n_trees = model$n_trees)
+    list(regularization = model@regularization, n_trees = model@n_trees)
   )
   
-  expect_equal(model$n_trees, 1)
-  expect_equal(model$loss_function, "log_loss")
+  expect_equal(model@n_trees, 1)
+  expect_equal(model@loss_function, "log_loss")
   expect_true(validation$valid)
 })
 
@@ -351,7 +351,7 @@ test_that("Cross-fitted single trees with log-loss - probability accuracy and ru
       # Extract probabilities from each fold and average
       fold_probs_list <- list()
       for (k in 1:K) {
-        fold_model <- result$fold_models[[k]]
+        fold_model <- result@fold_models[[k]]
         fold_probs <- predict(fold_model, data$X, type = "prob")
         fold_probs_list[[k]] <- fold_probs
       }
@@ -372,7 +372,7 @@ test_that("Cross-fitted single trees with log-loss - probability accuracy and ru
         validation,
         list(
           K = K,
-          regularization = if (is.null(reg)) result$regularization else reg,
+          regularization = if (is.null(reg)) result@regularization else reg,
           n_intersecting = result$n_intersecting,
           rashomon_sizes = paste(result$rashomon_sizes, collapse = ", ")
         )
@@ -448,15 +448,15 @@ test_that("Rashomon set with log-loss - probability accuracy and runtime", {
         runtime_metrics,
         validation,
         list(
-          regularization = if (is.null(reg)) model$regularization else reg,
+          regularization = if (is.null(reg)) model@regularization else reg,
           rashomon_multiplier = mult,
-          n_trees = model$n_trees
+          n_trees = model@n_trees
         )
       )
       
       # Validate
-      expect_true(model$n_trees >= 1, info = "Rashomon set should have at least 1 tree")
-      expect_equal(model$loss_function, "log_loss")
+      expect_true(model@n_trees >= 1, info = "Rashomon set should have at least 1 tree")
+      expect_equal(model@loss_function, "log_loss")
       expect_true(validation$valid)
 
       # Clean up memory
@@ -502,7 +502,7 @@ test_that("Cross-fitted rashomon set with log-loss - probability accuracy and ru
       # Extract probabilities from each fold's rashomon set (use optimal tree from each fold)
       fold_probs_list <- list()
       for (k in 1:K) {
-        fold_model <- result$fold_models[[k]]
+        fold_model <- result@fold_models[[k]]
         fold_probs <- predict(fold_model, data$X, type = "prob")
         fold_probs_list[[k]] <- fold_probs
       }
@@ -523,7 +523,7 @@ test_that("Cross-fitted rashomon set with log-loss - probability accuracy and ru
         validation,
         list(
           K = K,
-          regularization = if (is.null(reg)) result$regularization else reg,
+          regularization = if (is.null(reg)) result@regularization else reg,
           rashomon_multiplier = rashomon_multiplier,
           n_intersecting = result$n_intersecting,
           rashomon_sizes = paste(result$rashomon_sizes, collapse = ", ")
@@ -588,7 +588,7 @@ test_that("Intersecting trees from cross-fitted rashomon set - probability accur
           pred_probs <- predict(result, data$X, type = "prob")
         } else {
           # Fallback: use first fold model
-          pred_probs <- predict(result$fold_models[[1]], data$X, type = "prob")
+          pred_probs <- predict(result@fold_models[[1]], data$X, type = "prob")
         }
       } else {
         # No intersecting trees, skip probability evaluation but report
@@ -609,7 +609,7 @@ test_that("Intersecting trees from cross-fitted rashomon set - probability accur
       # Print results
       additional_info <- list(
         K = K,
-        regularization = if (is.null(reg)) result$regularization else reg,
+        regularization = if (is.null(reg)) result@regularization else reg,
         rashomon_multiplier = rashomon_multiplier,
         n_intersecting = result$n_intersecting,
         rashomon_sizes = paste(result$rashomon_sizes, collapse = ", ")
@@ -689,7 +689,7 @@ test_that("Single tree fitting with different dataset sizes", {
       accuracy_metrics,
       runtime_metrics,
       validation,
-      list(n_samples = nrow(data$X), n_trees = model$n_trees)
+      list(n_samples = nrow(data$X), n_trees = model@n_trees)
     )
 
 

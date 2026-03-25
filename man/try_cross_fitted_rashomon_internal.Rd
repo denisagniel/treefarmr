@@ -16,6 +16,7 @@ try_cross_fitted_rashomon_internal(
   single_tree,
   fold_indices,
   verbose,
+  parallel = TRUE,
   ...
 )
 }
@@ -41,6 +42,8 @@ try_cross_fitted_rashomon_internal(
 \item{fold_indices}{Pre-computed fold indices}
 
 \item{verbose}{Whether to print progress}
+
+\item{parallel}{Whether to use parallel processing}
 
 \item{...}{Additional parameters}
 }

@@ -67,7 +67,7 @@ test_that("summary.treefarms_model works", {
   expect_true(is.numeric(summary_result$n_trees))
   expect_true(is.numeric(summary_result$accuracy))
   expect_true(is.character(summary_result$loss_function))
-  expect_true(is.numeric(summary_result$regularization))
+  expect_true(is.numeric(summary_result@regularization))
   expect_true(is.numeric(summary_result$training_time))
   expect_true(is.numeric(summary_result$training_iterations))
   
@@ -167,10 +167,10 @@ test_that("summary.cf_rashomon works", {
   
   # Check data types
   expect_true(is.character(summary_result$model_type))
-  expect_true(is.numeric(summary_result$K))
+  expect_true(is.numeric(summary_result@K))
   expect_true(is.numeric(summary_result$n_intersecting))
   expect_true(is.character(summary_result$loss_function))
-  expect_true(is.numeric(summary_result$regularization))
+  expect_true(is.numeric(summary_result@regularization))
   expect_true(is.numeric(summary_result$rashomon_sizes))
 })
 
@@ -325,8 +325,8 @@ test_that("S3 methods with auto-tuned models", {
   })
   
   # Summary should show auto-tuned regularization
-  expect_true(is.numeric(summary_result$regularization))
-  expect_true(summary_result$regularization > 0)
+  expect_true(is.numeric(summary_result@regularization))
+  expect_true(summary_result@regularization > 0)
 })
 
 

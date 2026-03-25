@@ -36,7 +36,7 @@ test_that("cross_fitted_rashomon basic functionality works", {
   # Check result structure
   expect_true(inherits(result, "cf_rashomon"))
   expect_true(is.numeric(result$n_intersecting))
-  expect_true(is.numeric(result$K))
+  expect_true(is.numeric(result@K))
   expect_true(is.character(result$loss_function))
   expect_equal(result$loss_function, "misclassification")
 })
@@ -85,12 +85,12 @@ test_that("cross_fitted_rashomon returns expected structure", {
   
   # Check data types
   expect_true(is.numeric(result$n_intersecting))
-  expect_true(is.numeric(result$K))
+  expect_true(is.numeric(result@K))
   expect_true(is.character(result$loss_function))
-  expect_true(is.numeric(result$regularization))
+  expect_true(is.numeric(result@regularization))
   expect_true(is.data.frame(result$X_train))
   expect_true(is.numeric(result$y_train))
-  expect_true(is.list(result$fold_models))
+  expect_true(is.list(result@fold_models))
   expect_true(is.numeric(result$fold_assignments))
 })
 
@@ -240,8 +240,8 @@ test_that("cross_fitted_rashomon with auto-tuning", {
                                    verbose = FALSE)
   })
   
-  expect_true(is.numeric(result$regularization))
-  expect_true(result$regularization > 0)
+  expect_true(is.numeric(result@regularization))
+  expect_true(result@regularization > 0)
 })
 
 test_that("cross_fitted_rashomon fold assignments are valid", {
@@ -342,7 +342,7 @@ test_that("cross_fitted_rashomon intersecting trees structure", {
   
   # Check rashomon sizes
   expect_true(is.numeric(result$rashomon_sizes))
-  expect_equal(length(result$rashomon_sizes), result$K)
+  expect_equal(length(result$rashomon_sizes), result@K)
   expect_true(all(result$rashomon_sizes >= 0))
 })
 
@@ -354,12 +354,12 @@ test_that("cross_fitted_rashomon fold models structure", {
                                  verbose = FALSE)
   
   # Check fold models structure
-  expect_true(is.list(result$fold_models))
-  expect_equal(length(result$fold_models), result$K)
+  expect_true(is.list(result@fold_models))
+  expect_equal(length(result@fold_models), result@K)
   
   # Each fold model should be a treefarms_model
-  for (i in seq_along(result$fold_models)) {
-    expect_true(inherits(result$fold_models[[i]], "treefarms_model"))
+  for (i in seq_along(result@fold_models)) {
+    expect_true(inherits(result@fold_models[[i]], "treefarms_model"))
   }
 })
 
@@ -373,9 +373,9 @@ test_that("cross_fitted_rashomon with single_tree=TRUE works", {
                                  verbose = FALSE)
   
   # Check that all folds have exactly 1 tree
-  for (k in 1:result$K) {
-    fold_model <- result$fold_models[[k]]
-    expect_equal(fold_model$n_trees, 1, 
+  for (k in 1:result@K) {
+    fold_model <- result@fold_models[[k]]
+    expect_equal(fold_model@n_trees, 1, 
                  info = paste("Fold", k, "should have exactly 1 tree"))
     
     trees <- get_rashomon_trees(fold_model)
@@ -398,9 +398,9 @@ test_that("cross_fitted_rashomon with single_tree=FALSE works", {
                                  verbose = FALSE)
   
   # Check that all folds have at least 1 tree
-  for (k in 1:result$K) {
-    fold_model <- result$fold_models[[k]]
-    expect_true(fold_model$n_trees >= 1,
+  for (k in 1:result@K) {
+    fold_model <- result@fold_models[[k]]
+    expect_true(fold_model@n_trees >= 1,
                 info = paste("Fold", k, "should have at least 1 tree"))
     
     trees <- get_rashomon_trees(fold_model)
@@ -408,7 +408,7 @@ test_that("cross_fitted_rashomon with single_tree=FALSE works", {
                 info = paste("Fold", k, "should have at least 1 tree in rashomon set"))
     
     # Number of trees should match
-    expect_equal(fold_model$n_trees, length(trees),
+    expect_equal(fold_model@n_trees, length(trees),
                  info = paste("Fold", k, "n_trees should match rashomon set size"))
   }
   

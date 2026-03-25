@@ -31,7 +31,7 @@ test_that("log-loss models serialize probabilities to JSON", {
                          verbose = FALSE)
   
   # Check that model has tree_json
-  expect_true(!is.null(model$model$tree_json), 
+  expect_true(!is.null(model@model$tree_json), 
               info = "Model should have tree_json")
   
   # Helper function to check if a node has probabilities
@@ -69,7 +69,7 @@ test_that("log-loss models serialize probabilities to JSON", {
   }
   
   # Check that tree has probabilities serialized
-  tree <- model$model$tree_json
+  tree <- model@model$tree_json
   expect_true(check_node_probabilities(tree),
               info = "Tree nodes should have probabilities serialized in JSON")
 })
@@ -103,7 +103,7 @@ test_that("log-loss probabilities are not empty arrays", {
     return(probs)
   }
   
-  tree <- model$model$tree_json
+  tree <- model@model$tree_json
   leaf_probs <- extract_leaf_probabilities(tree)
   
   # Should have at least one leaf with probabilities
@@ -130,12 +130,12 @@ test_that("log-loss probabilities sum to approximately 1", {
                          verbose = FALSE)
   
   # Check that probabilities are computed
-  expect_true(!is.null(model$probabilities),
+  expect_true(!is.null(model@probabilities),
               info = "Model should have probabilities computed")
   
   # Each row should sum to approximately 1
-  if (!is.null(model$probabilities)) {
-    row_sums <- rowSums(model$probabilities)
+  if (!is.null(model@probabilities)) {
+    row_sums <- rowSums(model@probabilities)
     expect_true(all(abs(row_sums - 1) < 1e-6),
                 info = "Probability rows should sum to 1")
   }

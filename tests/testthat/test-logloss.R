@@ -38,15 +38,15 @@ test_that("log-loss probability outputs are bounded", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Probabilities should be strictly between 0 and 1 (bounded away from extremes)
-  expect_true(all(model$probabilities > 0), 
+  expect_true(all(model@probabilities > 0), 
               info = "Log-loss probabilities should be > 0")
-  expect_true(all(model$probabilities < 1), 
+  expect_true(all(model@probabilities < 1), 
               info = "Log-loss probabilities should be < 1")
   
   # Probabilities should not be too extreme (reasonable bounds)
-  expect_true(all(model$probabilities > 0.01), 
+  expect_true(all(model@probabilities > 0.01), 
               info = "Log-loss probabilities should be bounded away from 0")
-  expect_true(all(model$probabilities < 0.99), 
+  expect_true(all(model@probabilities < 0.99), 
               info = "Log-loss probabilities should be bounded away from 1")
 })
 
@@ -59,7 +59,7 @@ test_that("log-loss probabilities sum to 1 per row", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Each row should sum to 1
-  row_sums <- rowSums(model$probabilities)
+  row_sums <- rowSums(model@probabilities)
   expect_true(all(abs(row_sums - 1) < 1e-10), 
               info = "Log-loss probability rows should sum to 1")
 })
@@ -99,11 +99,11 @@ test_that("log-loss handles entropy dataset without crashes", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Should produce reasonable probabilities
-  expect_true(all(model$probabilities > 0))
-  expect_true(all(model$probabilities < 1))
+  expect_true(all(model@probabilities > 0))
+  expect_true(all(model@probabilities < 1))
   
   # Probabilities should reflect the probabilistic nature of the data
-  prob_range <- range(model$probabilities)
+  prob_range <- range(model@probabilities)
   expect_true(prob_range[2] - prob_range[1] > 0.1, 
               info = "Log-loss should produce varied probabilities for entropy data")
 })
@@ -120,13 +120,13 @@ test_that("log-loss with different regularization values", {
     })
     
     expect_valid_treefarms_model(model, "log_loss")
-    expect_equal(model$regularization, reg)
+    expect_equal(model@regularization, reg)
     
     # All models should produce valid probabilities
-    expect_true(all(model$probabilities > 0))
-    expect_true(all(model$probabilities < 1))
+    expect_true(all(model@probabilities > 0))
+    expect_true(all(model@probabilities < 1))
     
-    row_sums <- rowSums(model$probabilities)
+    row_sums <- rowSums(model@probabilities)
     expect_true(all(abs(row_sums - 1) < 1e-10))
   }
 })
@@ -168,9 +168,9 @@ test_that("log-loss handles imbalanced data", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Should handle imbalanced data gracefully
-  expect_true(is.finite(model$accuracy))
-  expect_true(all(model$probabilities > 0))
-  expect_true(all(model$probabilities < 1))
+  expect_true(is.finite(model@accuracy))
+  expect_true(all(model@probabilities > 0))
+  expect_true(all(model@probabilities < 1))
 })
 
 test_that("log-loss with many features", {
@@ -185,9 +185,9 @@ test_that("log-loss with many features", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Should handle many features without issues
-  expect_true(is.finite(model$accuracy))
-  expect_true(all(model$probabilities > 0))
-  expect_true(all(model$probabilities < 1))
+  expect_true(is.finite(model@accuracy))
+  expect_true(all(model@probabilities > 0))
+  expect_true(all(model@probabilities < 1))
 })
 
 test_that("log-loss probability calibration", {
@@ -200,7 +200,7 @@ test_that("log-loss probability calibration", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Probabilities should be well-distributed (not all near 0.5)
-  prob_class_1 <- model$probabilities[, 2]
+  prob_class_1 <- model@probabilities[, 2]
   prob_range <- range(prob_class_1)
   
   # Should have some variation in probabilities
@@ -225,11 +225,11 @@ test_that("log-loss with auto-tuning", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Auto-tuned regularization should be positive
-  expect_true(model$regularization > 0)
+  expect_true(model@regularization > 0)
   
   # Should still produce valid probabilities
-  expect_true(all(model$probabilities > 0))
-  expect_true(all(model$probabilities < 1))
+  expect_true(all(model@probabilities > 0))
+  expect_true(all(model@probabilities < 1))
 })
 
 test_that("log-loss handles edge cases", {
@@ -304,7 +304,7 @@ test_that("log-loss cross-entropy calculation is reasonable", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Compute cross-entropy manually
-  manual_loss <- compute_cross_entropy_loss(model$probabilities, simple_dataset$y)
+  manual_loss <- compute_cross_entropy_loss(model@probabilities, simple_dataset$y)
   
   # Loss should be finite and reasonable (between 0 and log(2) for binary classification)
   expect_true(is.finite(manual_loss),
@@ -377,7 +377,7 @@ test_that("log-loss produces well-calibrated probabilities", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Probabilities should be well-distributed (not all near 0.5)
-  prob_class_1 <- model$probabilities[, 2]
+  prob_class_1 <- model@probabilities[, 2]
   prob_range <- range(prob_class_1)
   
   # Should have some variation
@@ -402,7 +402,7 @@ test_that("log-loss bounds hold under perfect separation", {
   expect_valid_treefarms_model(model, "log_loss")
   
   # Even with perfect separation, probabilities should be bounded
-  expect_logloss_bounds(model$probabilities,
+  expect_logloss_bounds(model@probabilities,
                        info = "Perfect separation with log-loss")
 })
 

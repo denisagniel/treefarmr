@@ -2,7 +2,7 @@
 % Please edit documentation in R/rashomon.R
 \name{find_tree_intersection}
 \alias{find_tree_intersection}
-\title{Find Intersection of Trees Across Rashomon Sets (by structure)}
+\title{Find Intersection of Trees Across Rashomon Sets (by partition)}
 \usage{
 find_tree_intersection(rashomon_list, verbose = TRUE)
 }
@@ -13,22 +13,26 @@ find_tree_intersection(rashomon_list, verbose = TRUE)
 }
 \value{
 A list containing:
-  \item{intersecting_trees}{List of tree objects (from first set) with structures in all sets}
-  \item{n_intersecting}{Number of intersecting structures}
+  \item{intersecting_trees}{List of tree objects (from first set) with partitions in all sets}
+  \item{n_intersecting}{Number of intersecting partitions}
   \item{tree_jsons}{JSON representations of those trees}
   \item{intersecting_structures}{Same as intersecting_trees; full trees usable for \code{refit_structure_on_data}}
+  \item{tree_risks}{List of risk information for each intersecting tree}
 }
 \description{
-Find tree *structures* that appear in ALL Rashomon sets from cross-fitting.
-Comparison is by structure only (splits), so the same splits with different
-leaf values (e.g. from different folds) count as one. This is required for
-DML so that each fold can refit the chosen structure on its training data.
+Find tree *partitions* that appear in ALL Rashomon sets from cross-fitting.
+Comparison is by partition (leaf definitions), not split order. Trees that
+define the same leaves via different split orders are considered equivalent.
+This is critical for DML where fold-specific sampling variation causes
+different optimal split orders while maintaining functionally identical trees.
 }
 \details{
-Trees are compared by canonical structure only (feature, relation, reference,
-and recursive branches; leaf values ignored). So the same structure refit on
-different folds matches. One representative full tree per structure (from the
-first set) is returned for backward compatibility and for refitting.
+Trees are compared by partition signature (predictions for all input combinations).
+Two trees with the same 16 leaves (for 4 binary features) but different split
+orders are considered equivalent. This addresses the common case where different
+folds find different optimal split orders due to sampling variation, but the
+underlying partition is the same. One representative full tree per partition
+(from the first set) is returned for refitting on fold-specific data.
 }
 \examples{
 \dontrun{

@@ -38,11 +38,11 @@ test_that("fit_tree basic functionality works", {
   
   # Check model structure
   expect_true(inherits(model, "treefarms_model"))
-  expect_true(is.numeric(model$n_trees))
-  expect_equal(model$n_trees, 1)  # CRITICAL: fit_tree must return exactly 1 tree
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_equal(model$loss_function, "misclassification")
+  expect_true(is.numeric(model@n_trees))
+  expect_equal(model@n_trees, 1)  # CRITICAL: fit_tree must return exactly 1 tree
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_equal(model@loss_function, "misclassification")
 })
 
 test_that("fit_tree always returns exactly one tree", {
@@ -74,12 +74,12 @@ test_that("fit_tree works with log_loss", {
                      verbose = FALSE)
   })
   
-  expect_equal(model$loss_function, "log_loss")
-  expect_equal(model$n_trees, 1)
+  expect_equal(model@loss_function, "log_loss")
+  expect_equal(model@n_trees, 1)
   
   # Should have probabilities
-  expect_true(!is.null(model$probabilities))
-  expect_true(is.matrix(model$probabilities))
+  expect_true(!is.null(model@probabilities))
+  expect_true(is.matrix(model@probabilities))
 })
 
 test_that("fit_tree input validation works", {
@@ -115,13 +115,13 @@ test_that("fit_tree returns expected structure", {
   }
   
   # Check data types
-  expect_true(is.numeric(model$n_trees))
-  expect_equal(model$n_trees, 1)  # Must be exactly 1
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_true(is.numeric(model$regularization))
-  expect_true(is.numeric(model$predictions))
-  expect_true(is.matrix(model$probabilities))
+  expect_true(is.numeric(model@n_trees))
+  expect_equal(model@n_trees, 1)  # Must be exactly 1
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_true(is.numeric(model@regularization))
+  expect_true(is.numeric(model@predictions))
+  expect_true(is.matrix(model@probabilities))
 })
 
 test_that("fit_tree predictions work", {
@@ -187,7 +187,7 @@ test_that("fit_tree works with matrix input", {
     model <- fit_tree(X_matrix, test_data$y, regularization = 0.1, verbose = FALSE)
   })
   
-  expect_equal(model$n_trees, 1)
+  expect_equal(model@n_trees, 1)
 })
 
 test_that("fit_tree works with logical y", {
@@ -197,7 +197,7 @@ test_that("fit_tree works with logical y", {
     model <- fit_tree(test_data$X, y_logical, regularization = 0.1, verbose = FALSE)
   })
   
-  expect_equal(model$n_trees, 1)
+  expect_equal(model@n_trees, 1)
 })
 
 test_that("fit_tree works with pattern data", {
@@ -205,9 +205,9 @@ test_that("fit_tree works with pattern data", {
                    regularization = 0.1, 
                    verbose = FALSE)
   
-  expect_equal(model$n_trees, 1)
-  expect_true(model$accuracy >= 0)
-  expect_true(model$accuracy <= 1)
+  expect_equal(model@n_trees, 1)
+  expect_true(model@accuracy >= 0)
+  expect_true(model@accuracy <= 1)
 })
 
 # ============================================================================
@@ -225,11 +225,11 @@ test_that("fit_rashomon basic functionality works", {
   
   # Check model structure
   expect_true(inherits(model, "treefarms_model"))
-  expect_true(is.numeric(model$n_trees))
-  expect_true(model$n_trees >= 1)  # Should have at least 1 tree
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_equal(model$loss_function, "misclassification")
+  expect_true(is.numeric(model@n_trees))
+  expect_true(model@n_trees >= 1)  # Should have at least 1 tree
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_equal(model@loss_function, "misclassification")
 })
 
 test_that("fit_rashomon returns at least one tree", {
@@ -274,11 +274,11 @@ test_that("fit_rashomon can return multiple trees", {
                        rashomon_bound_multiplier = 0.05,
                        verbose = FALSE)
   
-  expect_true(model$n_trees >= 1)
+  expect_true(model@n_trees >= 1)
   
   trees <- get_rashomon_trees(model)
   expect_true(length(trees) >= 1)
-  expect_equal(model$n_trees, length(trees))
+  expect_equal(model@n_trees, length(trees))
   
   # If we got multiple trees, they should be different
   if (length(trees) > 1) {
@@ -299,12 +299,12 @@ test_that("fit_rashomon works with log_loss", {
                          verbose = FALSE)
   })
   
-  expect_equal(model$loss_function, "log_loss")
-  expect_true(model$n_trees >= 1)
+  expect_equal(model@loss_function, "log_loss")
+  expect_true(model@n_trees >= 1)
   
   # Should have probabilities
-  expect_true(!is.null(model$probabilities))
-  expect_true(is.matrix(model$probabilities))
+  expect_true(!is.null(model@probabilities))
+  expect_true(is.matrix(model@probabilities))
 })
 
 test_that("fit_rashomon input validation works", {
@@ -341,13 +341,13 @@ test_that("fit_rashomon returns expected structure", {
   }
   
   # Check data types
-  expect_true(is.numeric(model$n_trees))
-  expect_true(model$n_trees >= 1)  # Should have at least 1 tree
-  expect_true(is.numeric(model$accuracy))
-  expect_true(is.character(model$loss_function))
-  expect_true(is.numeric(model$regularization))
-  expect_true(is.numeric(model$predictions))
-  expect_true(is.matrix(model$probabilities))
+  expect_true(is.numeric(model@n_trees))
+  expect_true(model@n_trees >= 1)  # Should have at least 1 tree
+  expect_true(is.numeric(model@accuracy))
+  expect_true(is.character(model@loss_function))
+  expect_true(is.numeric(model@regularization))
+  expect_true(is.numeric(model@predictions))
+  expect_true(is.matrix(model@probabilities))
 })
 
 test_that("fit_rashomon predictions work", {
@@ -423,7 +423,7 @@ test_that("fit_rashomon works with matrix input", {
                          verbose = FALSE)
   })
   
-  expect_true(model$n_trees >= 1)
+  expect_true(model@n_trees >= 1)
 })
 
 test_that("fit_rashomon works with logical y", {
@@ -436,7 +436,7 @@ test_that("fit_rashomon works with logical y", {
                          verbose = FALSE)
   })
   
-  expect_true(model$n_trees >= 1)
+  expect_true(model@n_trees >= 1)
 })
 
 test_that("fit_rashomon works with pattern data", {
@@ -445,9 +445,9 @@ test_that("fit_rashomon works with pattern data", {
                        rashomon_bound_multiplier = 0.05,
                            verbose = FALSE)
   
-  expect_true(model$n_trees >= 1)
-  expect_true(model$accuracy >= 0)
-  expect_true(model$accuracy <= 1)
+  expect_true(model@n_trees >= 1)
+  expect_true(model@accuracy >= 0)
+  expect_true(model@accuracy <= 1)
 })
 
 # ============================================================================

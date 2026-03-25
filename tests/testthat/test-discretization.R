@@ -235,7 +235,7 @@ test_that("Regression with continuous features works", {
 
   # Check model is valid
   expect_valid_treefarms_model(model)
-  expect_equal(model$loss_function, "squared_error")
+  expect_equal(model@loss_function, "squared_error")
 
   # Check discretization happened
   expect_false(is.null(model$discretization))

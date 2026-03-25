@@ -92,10 +92,10 @@ test_that("treefarms_isolated works with log-loss", {
                info = "Loss function should be log_loss")
   
   # If probabilities were computed, check them
-  if (!is.null(result$probabilities)) {
-    expect_true(is.matrix(result$probabilities),
+  if (!is.null(result@probabilities)) {
+    expect_true(is.matrix(result@probabilities),
                 info = "Probabilities should be a matrix")
-    expect_equal(ncol(result$probabilities), 2,
+    expect_equal(ncol(result@probabilities), 2,
                  info = "Should have 2 probability columns")
   }
 })

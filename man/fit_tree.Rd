@@ -27,7 +27,12 @@ Options: "misclassification" (default) or "log_loss".}
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
 
-\item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
+\item{worker_limit}{Integer: number of parallel workers to use (default: 1).
+\strong{Performance note:} Parallelization has significant overhead due to shared
+queue contention. Typical speedups: 1.2-1.4x with 4 workers on medium-sized problems
+(n=500-1000). Small problems often see slowdowns. Users should benchmark their
+specific problem before using worker_limit > 1. See benchmarks/performance_results.txt
+for detailed measurements.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 

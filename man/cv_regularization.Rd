@@ -13,6 +13,7 @@ cv_regularization(
   refit = TRUE,
   verbose = FALSE,
   worker_limit = 1L,
+  parallel = TRUE,
   seed = NULL,
   ...
 )
@@ -33,6 +34,8 @@ cv_regularization(
 \item{verbose}{Logical. Whether to print progress. Default: \code{FALSE}.}
 
 \item{worker_limit}{Integer: number of parallel workers for \code{fit_tree}. Default: 1.}
+
+\item{parallel}{Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.}
 
 \item{seed}{Optional integer. If provided, \code{set.seed(seed)} is called before creating folds for reproducibility.}
 

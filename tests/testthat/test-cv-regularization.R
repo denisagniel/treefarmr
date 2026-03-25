@@ -38,7 +38,7 @@ test_that("cv_regularization with refit = TRUE returns model with correct regula
   cv <- cv_regularization(X, y, loss_function = "misclassification",
                           K = 3, lambda_grid = lambda_grid, refit = TRUE)
   expect_true("model" %in% names(cv))
-  expect_equal(cv$model$regularization, cv$best_lambda,
+  expect_equal(cv$model@regularization, cv$best_lambda,
                info = "refitted model regularization must equal best_lambda")
   X_new <- X[1:2, , drop = FALSE]
   expect_no_error({
@@ -54,7 +54,7 @@ test_that("cv_regularization with log_loss runs and refit model has correct regu
   expect_true(is.numeric(cv$cv_loss))
   expect_length(cv$cv_loss, length(lambda_grid))
   expect_true("model" %in% names(cv))
-  expect_equal(cv$model$regularization, cv$best_lambda)
+  expect_equal(cv$model@regularization, cv$best_lambda)
 })
 
 test_that("cv_regularization with NULL lambda_grid uses default grid", {
