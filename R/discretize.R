@@ -54,10 +54,10 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
 
   if (all_binary) {
     # Minimal metadata for binary-only data
-    features_meta <- lapply(names(X), function(name) {
+    features_meta <- purrr::map(names(X), ~ {
       list(
         type = "binary",
-        new_names = name
+        new_names = .x
       )
     })
     names(features_meta) <- names(X)
@@ -109,7 +109,7 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
   X_binary <- do.call(cbind, binary_cols_list)
 
   # Check for feature name collisions
-  all_names <- unlist(lapply(features_meta, function(m) m$new_names))
+  all_names <- purrr::map(features_meta, "new_names") |> unlist()
   if (any(duplicated(all_names))) {
     dups <- unique(all_names[duplicated(all_names)])
     stop("Feature name collision detected after discretization: ",
@@ -211,8 +211,8 @@ discretize_feature_column <- function(x, name, method, n_bins, user_threshold = 
 
   # Create binary indicators
   binary_cols <- data.frame(
-    lapply(seq_along(thresholds), function(i) {
-      as.numeric(x <= thresholds[i])
+    purrr::map(seq_along(thresholds), ~ {
+      as.numeric(x <= thresholds[.x])
     })
   )
 
@@ -358,8 +358,8 @@ apply_discretization <- function(X, metadata) {
              "This indicates corrupted discretization metadata.", call. = FALSE)
       }
       binary_cols <- data.frame(
-        lapply(seq_along(thresholds), function(i) {
-          as.numeric(x <= thresholds[i])
+        purrr::map(seq_along(thresholds), ~ {
+          as.numeric(x <= thresholds[.x])
         })
       )
       names(binary_cols) <- feature_meta$new_names

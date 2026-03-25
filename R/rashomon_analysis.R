@@ -98,11 +98,11 @@ compare_rashomon_sets <- function(set1, set2, verbose = FALSE) {
     if (is.character(set1[[1]])) {
       set1_json <- set1
     } else {
-      set1_json <- sapply(set1, function(tree) {
-        if (is.list(tree) && "json" %in% names(tree)) {
-          return(as.character(tree$json))
-        } else if ("json" %in% names(tree)) {
-          return(as.character(tree$json()))
+      set1_json <- purrr::map_chr(set1, ~ {
+        if (is.list(.x) && "json" %in% names(.x)) {
+          return(as.character(.x$json))
+        } else if ("json" %in% names(.x)) {
+          return(as.character(.x$json()))
         } else {
           stop("Tree object does not have a json() method or json field")
         }
@@ -116,11 +116,11 @@ compare_rashomon_sets <- function(set1, set2, verbose = FALSE) {
     if (is.character(set2[[1]])) {
       set2_json <- set2
     } else {
-      set2_json <- sapply(set2, function(tree) {
-        if (is.list(tree) && "json" %in% names(tree)) {
-          return(as.character(tree$json))
-        } else if ("json" %in% names(tree)) {
-          return(as.character(tree$json()))
+      set2_json <- purrr::map_chr(set2, ~ {
+        if (is.list(.x) && "json" %in% names(.x)) {
+          return(as.character(.x$json))
+        } else if ("json" %in% names(.x)) {
+          return(as.character(.x$json()))
         } else {
           stop("Tree object does not have a json() method or json field")
         }
@@ -291,8 +291,8 @@ plot_tree_rules <- function(tree_json, feature_names = NULL, title = "Tree Decis
   # Create data frame for plotting
   plot_data <- data.frame(
     rule_id = 1:length(rules_data$rules),
-    prediction = sapply(rules_data$rules, function(x) x$prediction),
-    loss = sapply(rules_data$rules, function(x) if (!is.na(x$loss)) x$loss else 0)
+    prediction = purrr::map_dbl(rules_data$rules, ~ .x$prediction),
+    loss = purrr::map_dbl(rules_data$rules, ~ if (!is.na(.x$loss)) .x$loss else 0)
   )
   
   # Create the plot

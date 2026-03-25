@@ -257,8 +257,8 @@ tree_to_partition_signature <- function(tree, n_features = NULL) {
     # Find all inputs that reach this path
     inputs <- which(input_to_path == path) - 1  # 0-indexed
     # Convert to binary strings
-    input_strs <- sapply(inputs, function(idx) {
-      paste(as.integer(intToBits(idx)[1:n_features]), collapse="")
+    input_strs <- purrr::map_chr(inputs, ~ {
+      paste(as.integer(intToBits(.x)[1:n_features]), collapse="")
     })
     # Sort and concatenate
     partition_groups[i] <- paste(sort(input_strs), collapse="|")
@@ -535,10 +535,10 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     } else if (is.character(trees[[1]])) {
       tree_jsons <- trees
     } else {
-      tree_jsons <- sapply(trees, tree_to_json)
+      tree_jsons <- purrr::map_chr(trees, tree_to_json)
     }
     # Create placeholder tree_risks (no selection needed for single fold)
-    tree_risks <- lapply(seq_along(trees), function(i) {
+    tree_risks <- purrr::map(seq_along(trees), ~ {
       list(empirical_risk = NULL, complexity = NULL, penalized_risk = NULL)
     })
     return(list(
@@ -552,7 +552,7 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   
   if (verbose) {
     cat(sprintf("Finding intersection across %d Rashomon sets (by partition)...\n", K))
-    set_sizes <- sapply(rashomon_list, length)
+    set_sizes <- purrr::map_int(rashomon_list, length)
     cat(sprintf("Rashomon set sizes: %s\n", paste(set_sizes, collapse = ", ")))
     cat("Note: Trees with same leaves but different split orders are considered equivalent\n")
   }
@@ -564,7 +564,8 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   # different optimal split orders while maintaining the same leaves.
 
   # Extract partition signatures for each fold (digest of leaf predictions)
-  structure_hash_sets <- lapply(rashomon_list, function(trees) {
+  structure_hash_sets <- purrr::map(rashomon_list, ~ {
+    trees <- .x
     if (length(trees) == 0) return(character(0))
     vapply(trees, function(t) {
       # Get partition signature (predictions for all input combinations)
@@ -631,12 +632,12 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   intersecting_trees <- rashomon_list[[1]][idx]
 
   # Only serialize to JSON at the end for the final intersecting trees
-  tree_jsons <- sapply(intersecting_trees, tree_to_json)
+  tree_jsons <- purrr::map_chr(intersecting_trees, tree_to_json)
 
   # Store penalized risk for each intersecting tree (for tree selection)
   # Extract risk information from tree metadata if available
-  tree_risks <- lapply(seq_along(intersecting_trees), function(i) {
-    tree <- intersecting_trees[[i]]
+  tree_risks <- purrr::map(seq_along(intersecting_trees), ~ {
+    tree <- intersecting_trees[[.x]]
     # Try to extract risk information from tree structure
     # optimaltrees may store this in various locations depending on tree type
     empirical_risk <- NULL

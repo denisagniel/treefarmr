@@ -240,7 +240,7 @@ get_probabilities_from_tree <- function(tree_json, X) {
   
   # Validate tree structure before traversal
   if (!validate_tree_structure(tree_json)) {
-    warning("Invalid tree structure detected. Using default probabilities.")
+    cli::cli_warn("Invalid tree structure detected. Using default probabilities.")
     n_samples <- nrow(X)
     return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
   }
@@ -251,7 +251,7 @@ get_probabilities_from_tree <- function(tree_json, X) {
     tree_json <- tree_json[[1]]
     # Re-validate after extraction
     if (!validate_tree_structure(tree_json)) {
-      warning("Invalid tree structure after extraction. Using default probabilities.")
+      cli::cli_warn("Invalid tree structure after extraction. Using default probabilities.")
       n_samples <- nrow(X)
       return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
     }
@@ -289,7 +289,7 @@ get_probabilities_from_tree <- function(tree_json, X) {
   traverse_batch <- function(node, row_indices, depth) {
     if (length(row_indices) == 0) return()
     if (depth > max_depth) {
-      warning("Tree traversal exceeded maximum depth (", max_depth, "). Using default probabilities.")
+      cli::cli_warn("Tree traversal exceeded maximum depth ({max_depth}). Using default probabilities.")
       return()
     }
     if (is.null(node) || !is.list(node)) return()
@@ -399,19 +399,19 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   
   # Input validation
   if (!is.data.frame(X) && !is.matrix(X)) {
-    stop("X must be a data.frame or matrix")
+    cli::cli_abort("{.arg X} must be a data.frame or matrix.")
   }
   
   if (!is.numeric(y) && !is.logical(y)) {
-    stop("y must be numeric or logical")
+    cli::cli_abort("{.arg y} must be numeric or logical.")
   }
 
   if (nrow(X) == 0) {
-    stop("X must have at least one row")
+    cli::cli_abort("{.arg X} must have at least one row.")
   }
 
   if (length(y) != nrow(X)) {
-    stop("Length of y must match number of rows in X")
+    cli::cli_abort("Length of {.arg y} must match number of rows in {.arg X}.")
   }
   
   
@@ -419,7 +419,7 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   if (loss_function == "custom") {
     # For custom losses, check specification first
     if (is.null(custom_loss)) {
-      stop("custom_loss must be provided when loss_function = 'custom'")
+      cli::cli_abort("{.arg custom_loss} must be provided when {.code loss_function = 'custom'}.")
     }
     validate_custom_loss(custom_loss)
     # Determine if regression based on custom loss specification
@@ -430,15 +430,15 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   }
 
   if (!is_regression && !all(y %in% c(0, 1))) {
-    stop("y must contain only binary values (0 and 1) for classification")
+    cli::cli_abort("{.arg y} must contain only binary values (0 and 1) for classification.")
   }
   if (is_regression && !is.numeric(y)) {
-    stop("y must be numeric for regression")
+    cli::cli_abort("{.arg y} must be numeric for regression.")
   }
   valid_losses <- c("misclassification", "log_loss", "squared_error", "regression",
                     "absolute_error", "huber", "quantile", "custom")
   if (!loss_function %in% valid_losses) {
-    stop("loss_function must be one of: ", paste(valid_losses, collapse = ", "))
+    cli::cli_abort("{.arg loss_function} must be one of: {.val {valid_losses}}.")
   }
   if (loss_function == "regression") {
     loss_function <- "squared_error"
@@ -446,15 +446,15 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
 
   # Validate loss-specific parameters
   if (!is.numeric(huber_delta) || length(huber_delta) != 1 || huber_delta <= 0) {
-    stop("huber_delta must be a positive number")
+    cli::cli_abort("{.arg huber_delta} must be a positive number.")
   }
   if (!is.numeric(quantile_tau) || length(quantile_tau) != 1 ||
       quantile_tau <= 0 || quantile_tau >= 1) {
-    stop("quantile_tau must be a number in (0, 1)")
+    cli::cli_abort("{.arg quantile_tau} must be a number in (0, 1).")
   }
   
   if (!is.numeric(worker_limit) || length(worker_limit) != 1 || worker_limit < 1) {
-    stop("worker_limit must be a positive integer")
+    cli::cli_abort("{.arg worker_limit} must be a positive integer.")
   }
   
   
@@ -517,7 +517,7 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     idx <- which(bad)[1L]
     col_idx <- ((idx - 1L) %/% nrow(m)) + 1L
     col <- names(X)[col_idx]
-    stop(paste("Feature", col, "must contain only binary values (0 and 1)"))
+    cli::cli_abort("Feature {.field {col}} must contain only binary values (0 and 1).")
   }
   
   # Convert y to numeric if logical
@@ -593,7 +593,7 @@ parse_cpp_json_result <- function(json_output, verbose = FALSE) {
   # Handle NULL or empty output
   if (is.null(json_output) || json_output == "") {
     if (verbose) {
-      message("C++ returned empty or NULL JSON output")
+      cli::cli_inform("C++ returned empty or NULL JSON output")
     }
     return(NULL)
   }
@@ -602,7 +602,7 @@ parse_cpp_json_result <- function(json_output, verbose = FALSE) {
   json_trimmed <- trimws(json_output)
   if (json_trimmed == "{}" || json_trimmed == "null") {
     if (verbose) {
-      message("C++ returned empty JSON object: ", json_trimmed)
+      cli::cli_inform("C++ returned empty JSON object: {json_trimmed}")
     }
     return(NULL)
   }
@@ -612,16 +612,16 @@ parse_cpp_json_result <- function(json_output, verbose = FALSE) {
     result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
     if (verbose) {
       if (!is.null(result_data$storage)) {
-        message("Parsed JSON with storage field")
+        cli::cli_inform("Parsed JSON with storage field")
       }
       if (!is.null(result_data$trees)) {
-        message("Parsed JSON with trees field (", length(result_data$trees), " trees)")
+        cli::cli_inform("Parsed JSON with trees field ({length(result_data$trees)} trees)")
       }
     }
     return(result_data)
   }, error = function(e) {
     # If parsing fails, provide detailed error information
-    warning("Failed to parse JSON result from C++ code. This may indicate a serialization error. ",
+    cli::cli_warn("Failed to parse JSON result from C++ code. This may indicate a serialization error. ",
             "Error: ", e$message,
             ". JSON length: ", nchar(json_output),
             ". First 200 chars: ", substr(json_output, 1, min(200, nchar(json_output))))
@@ -1273,7 +1273,7 @@ get_predictions <- function(object) {
     # Compute lazily
     return(object$.compute_predictions())
   } else {
-    stop("Cannot compute predictions: model structure incomplete")
+    cli::cli_abort("Cannot compute predictions: model structure incomplete.")
   }
 }
 
@@ -1336,7 +1336,7 @@ predict_optimaltrees <- function(object, newdata, type = "class", ...) {
   # Check for binary features
   for (col in names(newdata)) {
     if (!all(newdata[[col]] %in% c(0, 1))) {
-      stop(paste("Feature", col, "must contain only binary values (0 and 1)"))
+      cli::cli_abort("Feature {.field {col}} must contain only binary values (0 and 1).")
     }
   }
   

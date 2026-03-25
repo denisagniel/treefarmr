@@ -358,7 +358,7 @@ select_best_tree_from_intersection <- function(result, verbose = TRUE) {
   }
 
   # Check if any tree has non-null penalized risk
-  has_risk_info <- sapply(tree_risks, function(x) !is.null(x$penalized_risk))
+  has_risk_info <- purrr::map_lgl(tree_risks, ~ !is.null(.x$penalized_risk))
 
   if (!any(has_risk_info)) {
     if (verbose) {
@@ -368,9 +368,9 @@ select_best_tree_from_intersection <- function(result, verbose = TRUE) {
   }
 
   # Find tree with minimum penalized risk
-  risks <- sapply(tree_risks, function(x) {
-    if (!is.null(x$penalized_risk)) {
-      return(x$penalized_risk)
+  risks <- purrr::map_dbl(tree_risks, ~ {
+    if (!is.null(.x$penalized_risk)) {
+      return(.x$penalized_risk)
     } else {
       return(Inf)  # Trees without risk info get Inf (won't be selected)
     }

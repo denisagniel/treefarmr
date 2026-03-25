@@ -60,25 +60,25 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
                              seed = NULL, ...) {
   # Input validation (aligned with fit_tree)
   if (!is.data.frame(X) && !is.matrix(X)) {
-    stop("X must be a data.frame or matrix")
+    cli::cli_abort("{.arg X} must be a data.frame or matrix.")
   }
   if (!is.numeric(y) && !is.logical(y)) {
-    stop("y must be numeric or logical")
+    cli::cli_abort("{.arg y} must be numeric or logical.")
   }
   if (nrow(X) == 0) {
-    stop("X must have at least one row")
+    cli::cli_abort("{.arg X} must have at least one row.")
   }
   if (length(y) != nrow(X)) {
-    stop("Length of y must match number of rows in X")
+    cli::cli_abort("Length of {.arg y} must match number of rows in {.arg X}.")
   }
   if (!all(y %in% c(0, 1))) {
-    stop("y must contain only binary values (0 and 1)")
+    cli::cli_abort("{.arg y} must contain only binary values (0 and 1).")
   }
   if (!loss_function %in% c("misclassification", "log_loss")) {
-    stop("loss_function must be either 'misclassification' or 'log_loss'")
+    cli::cli_abort("{.arg loss_function} must be either 'misclassification' or 'log_loss'.")
   }
   if (length(K) != 1 || !is.numeric(K) || K < 2) {
-    stop("K must be an integer >= 2")
+    cli::cli_abort("{.arg K} must be an integer >= 2.")
   }
   K <- as.integer(K)
   n <- nrow(X)

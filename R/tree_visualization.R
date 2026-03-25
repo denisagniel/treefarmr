@@ -285,12 +285,12 @@ plot_tree_comparison <- function(model, trees_to_compare = NULL, ...) {
   # Create comparison data
   comparison_data <- data.frame(
     tree_id = trees_to_compare,
-    prediction = sapply(trees_to_compare, function(i) {
-      tree_data <- jsonlite::fromJSON(model$trees[[i]])
+    prediction = purrr::map_dbl(trees_to_compare, ~ {
+      tree_data <- jsonlite::fromJSON(model$trees[[.x]])
       tree_data$prediction
     }),
-    loss = sapply(trees_to_compare, function(i) {
-      tree_data <- jsonlite::fromJSON(model$trees[[i]])
+    loss = purrr::map_dbl(trees_to_compare, ~ {
+      tree_data <- jsonlite::fromJSON(model$trees[[.x]])
       tree_data$loss
     }),
     stringsAsFactors = FALSE
@@ -400,7 +400,7 @@ plot_cf_stability <- function(cf_result, ...) {
   # Create stability data
   stability_data <- data.frame(
     fold = rep(1:cf_result$K, each = max(cf_result$rashomon_sizes)),
-    tree_id = unlist(lapply(cf_result$rashomon_sizes, function(n) 1:n)),
+    tree_id = purrr::map(cf_result$rashomon_sizes, ~ 1:.x) |> unlist(),
     present = TRUE,
     stringsAsFactors = FALSE
   )

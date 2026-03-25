@@ -462,17 +462,17 @@ plot_tree_diagrammer <- function(tree, feature_names = NULL) {
   # Convert to DiagrammeR format
   if (length(nodes_list) > 0) {
     nodes_df <- data.frame(
-      id = sapply(nodes_list, function(x) x$id),
-      label = sapply(nodes_list, function(x) x$label),
-      type = sapply(nodes_list, function(x) x$type),
+      id = purrr::map_int(nodes_list, ~ .x$id),
+      label = purrr::map_chr(nodes_list, ~ .x$label),
+      type = purrr::map_chr(nodes_list, ~ .x$type),
       stringsAsFactors = FALSE
     )
-    
+
     if (length(edges_list) > 0) {
       edges_df <- data.frame(
-        from = sapply(edges_list, function(x) x$from),
-        to = sapply(edges_list, function(x) x$to),
-        label = sapply(edges_list, function(x) x$label),
+        from = purrr::map_int(edges_list, ~ .x$from),
+        to = purrr::map_int(edges_list, ~ .x$to),
+        label = purrr::map_chr(edges_list, ~ .x$label),
         stringsAsFactors = FALSE
       )
     } else {

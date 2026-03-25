@@ -120,30 +120,30 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   
   # Input validation
   if (!is.data.frame(X) && !is.matrix(X)) {
-    stop("X must be a data.frame or matrix")
+    cli::cli_abort("{.arg X} must be a data.frame or matrix.")
   }
   
   if (!is.numeric(y) && !is.logical(y)) {
-    stop("y must be numeric or logical")
+    cli::cli_abort("{.arg y} must be numeric or logical.")
   }
 
   if (nrow(X) == 0) {
-    stop("X must have at least one row")
+    cli::cli_abort("{.arg X} must have at least one row.")
   }
 
   if (length(y) != nrow(X)) {
-    stop("Length of y must match number of rows in X")
+    cli::cli_abort("Length of {.arg y} must match number of rows in {.arg X}.")
   }
   
   if (!loss_function %in% c("misclassification", "log_loss", "squared_error", "regression")) {
-    stop("loss_function must be 'misclassification', 'log_loss', or 'squared_error'")
+    cli::cli_abort("{.arg loss_function} must be 'misclassification', 'log_loss', or 'squared_error'.")
   }
   if (loss_function == "regression") loss_function <- "squared_error"
   if (loss_function != "squared_error" && !all(y %in% c(0, 1))) {
-    stop("y must contain only binary values (0 and 1) for classification")
+    cli::cli_abort("{.arg y} must contain only binary values (0 and 1) for classification.")
   }
   if (loss_function == "squared_error" && !is.numeric(y)) {
-    stop("y must be numeric for squared_error (regression)")
+    cli::cli_abort("{.arg y} must be numeric for squared_error (regression).")
   }
   
   n <- nrow(X)
@@ -151,23 +151,23 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   # Resolve folds: external fold_indices (vector) or create internally
   if (!is.null(fold_indices)) {
     if (!is.vector(fold_indices) || length(fold_indices) != n) {
-      stop("fold_indices must be a vector of length nrow(X)")
+      cli::cli_abort("{.arg fold_indices} must be a vector of length {.code nrow(X)}.")
     }
     fold_indices <- as.integer(fold_indices)
     K <- max(fold_indices, na.rm = TRUE)
     if (K < 2) {
-      stop("fold_indices must have at least 2 distinct folds (values in 1..K)")
+      cli::cli_abort("{.arg fold_indices} must have at least 2 distinct folds (values in 1..K).")
     }
     if (any(is.na(fold_indices)) || any(fold_indices < 1L) || any(fold_indices > K)) {
-      stop("fold_indices must contain integers in 1..K only")
+      cli::cli_abort("{.arg fold_indices} must contain integers in 1..K only.")
     }
-    fold_indices <- lapply(1:K, function(k) which(fold_indices == k))
+    fold_indices <- purrr::map(1:K, ~ which(fold_indices == .x))
   } else {
     if (K < 2) {
-      stop("K must be at least 2")
+      cli::cli_abort("{.arg K} must be at least 2.")
     }
     if (K > n) {
-      stop("K cannot be larger than the number of observations")
+      cli::cli_abort("{.arg K} cannot be larger than the number of observations.")
     }
     # Set seed for reproducibility
     if (!is.null(seed)) {
@@ -187,7 +187,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   }
   
   if (verbose) {
-    fold_sizes <- sapply(fold_indices, length)
+    fold_sizes <- purrr::map_int(fold_indices, length)
     cat(sprintf("Fold sizes: %s\n\n", paste(fold_sizes, collapse = ", ")))
   }
   
@@ -355,8 +355,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       train_idx <- setdiff(1:n, fold_indices[[k]])
       X_k <- X[train_idx, , drop = FALSE]
       y_k <- y[train_idx]
-      fold_refits[[k]] <- lapply(intersection_result$intersecting_structures, function(st) {
-        refit_structure_on_data(st, X_k, y_k)
+      fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
+        refit_structure_on_data(.x, X_k, y_k)
       })
     }
   }
@@ -471,7 +471,7 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
       fold_results <- furrr::future_map(1:K, fit_one_fold,
                                         .options = furrr::furrr_options(seed = TRUE))
     } else {
-      fold_results <- lapply(1:K, fit_one_fold)
+      fold_results <- purrr::map(1:K, fit_one_fold)
     }
 
     # Extract results
@@ -491,8 +491,8 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
         train_idx <- setdiff(1:n, fold_indices[[k]])
         X_k <- X[train_idx, , drop = FALSE]
         y_k <- y[train_idx]
-        fold_refits[[k]] <- lapply(intersection_result$intersecting_structures, function(st) {
-          refit_structure_on_data(st, X_k, y_k)
+        fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
+          refit_structure_on_data(.x, X_k, y_k)
         })
       }
     }
@@ -560,8 +560,8 @@ create_folds <- function(y, K) {
   fold_assignment[class_1_idx] <- fold_1
   
   # Convert to list of indices
-  fold_indices <- lapply(1:K, function(k) {
-    which(fold_assignment == k)
+  fold_indices <- purrr::map(1:K, ~ {
+    which(fold_assignment == .x)
   })
   
   return(fold_indices)

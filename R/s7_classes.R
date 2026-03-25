@@ -147,7 +147,7 @@ new_optimal_trees_model <- function(loss_function,
     list(jsonlite::fromJSON(trees, simplifyVector = FALSE))
   } else if (is.character(trees)) {
     # Multiple trees as JSON strings
-    lapply(trees, function(t) jsonlite::fromJSON(t, simplifyVector = FALSE))
+    purrr::map(trees, ~ jsonlite::fromJSON(.x, simplifyVector = FALSE))
   } else {
     list()
   }
