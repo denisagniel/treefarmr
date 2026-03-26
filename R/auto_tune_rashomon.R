@@ -44,23 +44,7 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
                                            binary_tolerance = 0.1,
                                            verbose = TRUE,
                                            ...) {
-  # Helper to get properties from S7 or S3 objects
-  get_prop <- function(obj, prop) {
-    if (is.null(obj)) return(NULL)
-    if (S7::S7_inherits(obj, CFRashomon)) {
-      switch(prop,
-        n_intersecting = obj@n_intersecting,
-        tree_risks = obj@tree_risks,
-        rashomon_bound_multiplier = obj@rashomon_bound_multiplier,
-        intersecting_trees = obj@intersecting_trees,
-        tree_jsons = NULL,  # S7 doesn't have this
-        intersecting_structures = NULL,  # S7 doesn't have this
-        NULL
-      )
-    } else {
-      obj[[prop]]
-    }
-  }
+  # Use package-level get_rashomon_prop helper from rashomon_utils.R
 
   n <- nrow(X)
   sqrt_log_n_over_n <- sqrt(log(n) / n)
@@ -109,7 +93,7 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
   result_start <- try_epsilon(c_start)
 
   # Determine search direction
-  n_int_start <- get_prop(result_start, "n_intersecting")
+  n_int_start <- get_rashomon_prop(result_start, "n_intersecting")
   if (!is.null(result_start) && !is.null(n_int_start) && n_int_start > 0) {
     # SUCCESS at c_start → search DOWNWARD for smaller epsilon_n
     if (verbose) {
@@ -133,12 +117,12 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 
       result <- try_epsilon(c_current)
 
-      if (!is.null(result) && get_prop(result, "n_intersecting") > 0) {
+      if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
         # Still works! Try even smaller
         c_last_success <- c_current
         result_success <- result
         if (verbose) {
-          cat(sprintf("  SUCCESS: %d tree(s), trying smaller\n", get_prop(result, "n_intersecting")))
+          cat(sprintf("  SUCCESS: %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
         }
         c_current <- c_current / 2  # Halve for next attempt
       } else {
@@ -173,12 +157,12 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 
         result <- try_epsilon(c_mid)
 
-        if (!is.null(result) && get_prop(result, "n_intersecting") > 0) {
+        if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
           # Success: this is a candidate, try smaller
           c_high <- c_mid
           result_success <- result
           if (verbose) {
-            cat(sprintf("  %d tree(s), trying smaller\n", get_prop(result, "n_intersecting")))
+            cat(sprintf("  %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
           }
         } else {
           # Failure: need larger
@@ -218,11 +202,11 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 
       result <- try_epsilon(c_current)
 
-      if (!is.null(result) && get_prop(result, "n_intersecting") > 0) {
+      if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
         # Found intersection!
         result_success <- result
         if (verbose) {
-          cat(sprintf("  SUCCESS: %d tree(s) found\n", get_prop(result, "n_intersecting")))
+          cat(sprintf("  SUCCESS: %d tree(s) found\n", get_rashomon_prop(result, "n_intersecting")))
         }
         break
       } else {
@@ -271,12 +255,12 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 
         result <- try_epsilon(c_mid)
 
-        if (!is.null(result) && get_prop(result, "n_intersecting") > 0) {
+        if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
           # Success: try smaller
           c_high <- c_mid
           result_success <- result
           if (verbose) {
-            cat(sprintf("  %d tree(s), trying smaller\n", get_prop(result, "n_intersecting")))
+            cat(sprintf("  %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
           }
         } else {
           # Failure: try larger
@@ -296,13 +280,13 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
   # Phase 3: Select best tree from intersection
   if (verbose) {
     cat(sprintf("\n--- Phase 3: Tree Selection (%d candidates) ---\n",
-               get_prop(result_success, "n_intersecting")))
+               get_rashomon_prop(result_success, "n_intersecting")))
   }
 
   # Select tree with lowest penalized risk from intersection
   result_success <- select_best_tree_from_intersection(result_success, verbose)
 
-  final_epsilon <- get_prop(result_success, "rashomon_bound_multiplier")
+  final_epsilon <- get_rashomon_prop(result_success, "rashomon_bound_multiplier")
 
   if (verbose) {
     cat(sprintf("\nAuto-tuning complete: epsilon_n = %.4f (c ~ %.2f)\n",
@@ -312,7 +296,7 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 
   return(list(
     epsilon_n = final_epsilon,
-    n_intersecting = get_prop(result_success, "n_intersecting"),
+    n_intersecting = get_rashomon_prop(result_success, "n_intersecting"),
     converged = TRUE,
     attempts = attempts,
     result = result_success
@@ -330,9 +314,9 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 #' @return Updated result with selected tree moved to first position
 #' @keywords internal
 select_best_tree_from_intersection <- function(result, verbose = TRUE) {
-  if (get_prop(result, "n_intersecting") <= 1) {
+  if (get_rashomon_prop(result, "n_intersecting") <= 1) {
     # Only one tree, nothing to select
-    if (verbose && get_prop(result, "n_intersecting") == 1) {
+    if (verbose && get_rashomon_prop(result, "n_intersecting") == 1) {
       cat("  Single tree in intersection, no selection needed\n")
     }
     return(result)
@@ -349,7 +333,7 @@ select_best_tree_from_intersection <- function(result, verbose = TRUE) {
 
   # Extract penalized risks for each intersecting tree (S3 only)
   # Check if tree_risks is available from intersection results
-  tree_risks <- get_prop(result, "tree_risks")
+  tree_risks <- get_rashomon_prop(result, "tree_risks")
   if (is.null(tree_risks) || length(tree_risks) == 0) {
     if (verbose) {
       cat("  No risk information available, using first tree\n")
@@ -392,9 +376,9 @@ select_best_tree_from_intersection <- function(result, verbose = TRUE) {
 
   # Reorder so best tree is first (used by predict.cf_rashomon) - S3 only
   if (best_idx != 1 && is.finite(risks[best_idx])) {
-    intersecting_trees <- get_prop(result, "intersecting_trees")
-    tree_jsons <- get_prop(result, "tree_jsons")
-    intersecting_structures <- get_prop(result, "intersecting_structures")
+    intersecting_trees <- get_rashomon_prop(result, "intersecting_trees")
+    tree_jsons <- get_rashomon_prop(result, "tree_jsons")
+    intersecting_structures <- get_rashomon_prop(result, "intersecting_structures")
 
     result[["intersecting_trees"]] <- c(
       intersecting_trees[best_idx],

@@ -3,8 +3,7 @@
 
 library(testthat)
 # library(treefarmr) # REMOVED: legacy package name
-
-setup_test_environment()
+# Setup/teardown now handled by testthat hooks in helper-setup.R
 
 # Small regression dataset: binary X, continuous y
 regression_dataset <- function(n = 40, p = 3, seed = 42) {
@@ -18,7 +17,7 @@ regression_dataset <- function(n = 40, p = 3, seed = 42) {
 test_that("squared_error fit and model structure", {
   dat <- regression_dataset(n = 40, p = 3)
   expect_no_error({
-    model <- safe_treefarms(dat$X, dat$y,
+    model <- safe_optimaltrees(dat$X, dat$y,
                            loss_function = "squared_error",
                            regularization = 0.1,
                            verbose = FALSE)
@@ -31,7 +30,7 @@ test_that("squared_error fit and model structure", {
 
 test_that("squared_error predictions and predict() match", {
   dat <- regression_dataset(n = 30, p = 2)
-  model <- safe_treefarms(dat$X, dat$y,
+  model <- safe_optimaltrees(dat$X, dat$y,
                          loss_function = "squared_error",
                          regularization = 0.15,
                          store_training_data = TRUE,
@@ -47,7 +46,7 @@ test_that("squared_error predictions and predict() match", {
 
 test_that("squared_error predict on newdata", {
   dat <- regression_dataset(n = 25, p = 3)
-  model <- safe_treefarms(dat$X, dat$y,
+  model <- safe_optimaltrees(dat$X, dat$y,
                          loss_function = "squared_error",
                          regularization = 0.1,
                          verbose = FALSE)
@@ -60,7 +59,7 @@ test_that("squared_error predict on newdata", {
 
 test_that("squared_error accuracy is MSE", {
   dat <- regression_dataset(n = 20, p = 2)
-  model <- safe_treefarms(dat$X, dat$y,
+  model <- safe_optimaltrees(dat$X, dat$y,
                          loss_function = "squared_error",
                          regularization = 0.2,
                          store_training_data = TRUE,
@@ -73,7 +72,7 @@ test_that("squared_error accuracy is MSE", {
 
 test_that("refit_structure_on_data works for regression", {
   dat <- regression_dataset(n = 20, p = 2)
-  model <- safe_treefarms(dat$X, dat$y,
+  model <- safe_optimaltrees(dat$X, dat$y,
                          loss_function = "squared_error",
                          regularization = 0.1,
                          single_tree = TRUE,
@@ -86,5 +85,3 @@ test_that("refit_structure_on_data works for regression", {
   })
   expect_true(is.list(refit))
 })
-
-teardown_test_environment()

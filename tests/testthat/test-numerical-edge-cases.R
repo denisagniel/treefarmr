@@ -11,7 +11,7 @@ test_that("Numerical validation catches malformed input", {
   X <- matrix(runif(n * 3, -100, 100), n, 3)
   y <- rbinom(n, 1, 0.5)
 
-  result <- treefarms(
+  result <- optimaltrees(
     X = X,
     y = y,
     loss = "misclassification",
@@ -35,7 +35,7 @@ test_that("Division by zero protection in computeScore", {
   y <- rep(1, n)  # All positive class
 
   result <- try({
-    treefarms(
+    optimaltrees(
       X = X,
       y = y,
       loss = "misclassification",
@@ -59,7 +59,7 @@ test_that("Model loss/complexity validation catches non-finite values", {
   X <- matrix(rnorm(n * 4), n, 4)
   y <- rbinom(n, 1, 0.4)
 
-  result <- treefarms(
+  result <- optimaltrees(
     X = X,
     y = y,
     loss = "misclassification",
@@ -88,7 +88,7 @@ test_that("Log-loss handles extreme probabilities", {
   y <- rbinom(n, 1, 0.5)
 
   result <- try({
-    treefarms(
+    optimaltrees(
       X = X,
       y = y,
       loss = "log_loss",
@@ -114,7 +114,7 @@ test_that("Squared error with extreme targets", {
   y <- rnorm(n, mean = 0, sd = 100)
 
   result <- try({
-    treefarms(
+    optimaltrees(
       X = X,
       y = y,
       loss = "squared_error",
@@ -141,7 +141,7 @@ test_that("Dataset variance computation is numerically stable", {
   y <- rnorm(n, mean = 1e6, sd = 1.0)
 
   result <- try({
-    treefarms(
+    optimaltrees(
       X = X,
       y = y,
       loss = "squared_error",
@@ -164,7 +164,7 @@ test_that("Zero support protection in information calculation", {
   y <- rbinom(n, 1, 0.5)
 
   result <- try({
-    treefarms(
+    optimaltrees(
       X = X,
       y = y,
       loss = "misclassification",

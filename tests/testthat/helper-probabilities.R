@@ -137,10 +137,10 @@ expect_valid_get_probabilities <- function(model, loss_function = NULL, info = N
   # Validate probabilities
   expect_valid_probabilities(probs, loss_function = loss_function, info = info)
   
-  # Check that probabilities match model$probabilities (if computed)
-  if (!is.null(model$probabilities)) {
-    expect_equal(probs, model$probabilities, tolerance = 1e-10,
-                info = paste(info, "- get_probabilities() should match model$probabilities"))
+  # Check that probabilities match model@probabilities (if computed)
+  if (!is.null(model@probabilities)) {
+    expect_equal(probs, model@probabilities, tolerance = 1e-10,
+                info = paste(info, "- get_probabilities() should match model@probabilities"))
   }
 }
 

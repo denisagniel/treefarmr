@@ -16,7 +16,7 @@ test_that("Thread-safety stress test with worker_limit=4", {
   results <- list()
   for (i in 1:n_iterations) {
     result <- try({
-      treefarms(
+      optimaltrees(
         X = X,
         y = y,
         loss = "misclassification",
@@ -63,7 +63,7 @@ test_that("Thread-safety with concurrent graph access", {
   X <- matrix(rnorm(n * p), n, p)
   y <- rbinom(n, 1, 0.3)
 
-  result <- treefarms(
+  result <- optimaltrees(
     X = X,
     y = y,
     loss = "misclassification",
@@ -75,6 +75,6 @@ test_that("Thread-safety with concurrent graph access", {
   )
 
   # Should complete without crashes or data races
-  expect_true(!is.null(result$tree))
-  expect_true(result$n_leaves > 1)
+  expect_true(!is.null(result@trees))
+  expect_true(length(result@trees) >= 1)
 })

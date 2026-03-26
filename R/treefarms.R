@@ -1471,6 +1471,7 @@ print.optimaltrees_model <- function(x, ...) {
 #'
 #' @export
 summary.optimaltrees_model <- function(object, ...) {
+  # Print summary information
   print.optimaltrees_model(object, ...)
 
   # Handle both S7 and S3 objects
@@ -1478,6 +1479,9 @@ summary.optimaltrees_model <- function(object, ...) {
   n_trees <- if (is_s7) object@n_trees else object$n_trees
   y_train <- if (is_s7) object@y_train else object$y_train
   X_train <- if (is_s7) object@X_train else object$X_train
+  loss_function <- if (is_s7) object@loss_function else object$loss_function
+  regularization <- if (is_s7) object@regularization else object$regularization
+  accuracy <- if (is_s7) object@accuracy else object$accuracy
 
   if (n_trees > 0) {
     # Show class distribution if training data is available
@@ -1493,6 +1497,25 @@ summary.optimaltrees_model <- function(object, ...) {
       cat(paste(names(X_train), collapse = ", "), "\n")
     }
   }
+
+  # Return a list with summary information (for programmatic use)
+  result <- list(
+    model_type = "OptimalTreesModel",
+    n_trees = n_trees,
+    loss_function = loss_function,
+    regularization = regularization,
+    accuracy = accuracy,
+    training_time = NA,  # Not currently stored in S7 model
+    training_iterations = NA  # Not currently stored in S7 model
+  )
+
+  # Add optional fields if available
+  if (!is.null(X_train)) {
+    result$n_features <- ncol(X_train)
+    result$n_samples <- nrow(X_train)
+  }
+
+  invisible(result)
 }
 
 # Example usage function

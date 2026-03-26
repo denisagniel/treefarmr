@@ -658,6 +658,20 @@ summary.cf_rashomon <- function(object, ...) {
     cat("    - Adjusting rashomon_bound_multiplier\n")
     cat("    - Using different K value\n")
   }
+
+  # Return a list with summary information (for programmatic use)
+  result <- list(
+    model_type = "CFRashomon",
+    K = K,
+    loss_function = loss_function,
+    regularization = regularization,
+    n_intersecting = n_intersecting,
+    rashomon_sizes = rashomon_sizes,
+    n_samples = n_samp,
+    n_features = ncol(X_train)
+  )
+
+  invisible(result)
 }
 
 #' Predict method for optimaltrees_logloss_model
