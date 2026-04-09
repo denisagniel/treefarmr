@@ -657,9 +657,56 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
       penalized_risk = penalized_risk
     )
   })
-  
+
   if (verbose) {
     cat(sprintf("\n✓ Found %d unique partition(s) appearing in all %d folds\n", length(intersecting_trees), K))
+  }
+
+  # Select tree with minimum penalized risk
+  # Check if any tree has non-null penalized risk
+  has_risk_info <- purrr::map_lgl(tree_risks, ~ !is.null(.x$penalized_risk))
+
+  if (any(has_risk_info)) {
+    # Extract penalized risks (use Inf for missing values so they won't be selected)
+    risks <- purrr::map_dbl(tree_risks, ~ {
+      if (!is.null(.x$penalized_risk)) {
+        return(.x$penalized_risk)
+      } else {
+        return(Inf)
+      }
+    })
+
+    best_idx <- which.min(risks)
+
+    if (verbose) {
+      valid_risks <- risks[is.finite(risks)]
+      if (length(valid_risks) > 0) {
+        cat(sprintf("  Penalized risks: %s\n",
+                   paste(sprintf("%.4f", valid_risks), collapse = ", ")))
+        cat(sprintf("  Selected tree %d with minimum penalized risk (R_pen = %.4f)\n",
+                   best_idx, risks[best_idx]))
+      }
+    }
+
+    # Reorder so best tree is first (used by predict.cf_rashomon which takes [[1]])
+    if (best_idx != 1 && is.finite(risks[best_idx])) {
+      intersecting_trees <- c(
+        intersecting_trees[best_idx],
+        intersecting_trees[-best_idx]
+      )
+      tree_jsons <- c(
+        tree_jsons[best_idx],
+        tree_jsons[-best_idx]
+      )
+      tree_risks <- c(
+        tree_risks[best_idx],
+        tree_risks[-best_idx]
+      )
+    }
+  } else {
+    if (verbose) {
+      cat("  No penalized risk information available, using first tree by fold order\n")
+    }
   }
 
   list(
