@@ -245,7 +245,7 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
 #'
 #' @return Predictions based on type
 #' @export
-predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob"), ...) {
+predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob", "response"), ...) {
   type <- match.arg(type)
 
   # Validate input (handle both S3 and S7 objects)
@@ -270,6 +270,12 @@ predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob"
 
   # Issue #26: Use extracted prediction helper
   loss_fn <- if (is_s7) object@loss_function else object$loss_function
+
+  # For regression, "response" is the same as "class" (fitted values)
+  if (type == "response" && loss_fn == "squared_error") {
+    type <- "class"
+  }
+
   predict_from_tree(tree_to_use, newdata, loss_fn, type)
 }
 
