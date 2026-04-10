@@ -20,7 +20,7 @@ test_that("extract_tree_structure works for simple tree", {
 
   expect_true(S7::S7_inherits(structure, optimaltrees::TreeStructure))
   expect_true(structure@n_leaves > 0)
-  expect_equal(length(structure@leaf_ids), structure@n_leaves)
+  expect_equal(length(structure@leaf_paths), structure@n_leaves)
   expect_true(structure@max_depth >= 0)
   expect_equal(length(structure@feature_names), 2)
   expect_true(all(c("x1", "x2") %in% structure@feature_names))

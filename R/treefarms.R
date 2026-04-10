@@ -233,27 +233,42 @@ validate_tree_structure <- function(tree_json) {
 # Helper function to traverse tree and get probabilities for a single sample
 get_probabilities_from_tree <- function(tree_json, X) {
   if (is.null(tree_json)) {
-    # No tree available, return default probabilities
-    n_samples <- nrow(X)
-    return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+    stop(
+      "Cannot get probabilities: tree is NULL.\n\n",
+      "This usually means:\n",
+      "  - The tree structure was not properly stored in the model object\n",
+      "  - Model reconstruction failed during refit\n",
+      "  - The model object is corrupted or incomplete\n\n",
+      "Check that the model was created/refit correctly and tree structure exists.",
+      call. = FALSE
+    )
   }
-  
+
   # Validate tree structure before traversal
   if (!validate_tree_structure(tree_json)) {
-    cli::cli_warn("Invalid tree structure detected. Using default probabilities.")
-    n_samples <- nrow(X)
-    return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+    stop(
+      "Invalid tree structure detected.\n\n",
+      "Tree root has fields: ", paste(names(tree_json), collapse = ", "), "\n",
+      "Expected: 'prediction' (for leaf) OR 'feature' (for split node)\n\n",
+      "This indicates a bug in tree construction or reconstruction.\n",
+      "If using refit_tree_structure(), check that structure extraction worked correctly.",
+      call. = FALSE
+    )
   }
-  
+
   # Handle Rashomon set (list of trees) - use first tree
   if (is.list(tree_json) && length(tree_json) > 1 && is.null(tree_json$feature) && is.null(tree_json$prediction)) {
     # This is a list of trees, use the first one
     tree_json <- tree_json[[1]]
     # Re-validate after extraction
     if (!validate_tree_structure(tree_json)) {
-      cli::cli_warn("Invalid tree structure after extraction. Using default probabilities.")
-      n_samples <- nrow(X)
-      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+      stop(
+        "Invalid tree structure after extracting first tree from Rashomon set.\n\n",
+        "First tree has fields: ", paste(names(tree_json), collapse = ", "), "\n",
+        "Expected: 'prediction' (for leaf) OR 'feature' (for split node)\n\n",
+        "This indicates a bug in Rashomon set construction.",
+        call. = FALSE
+      )
     }
   }
   
@@ -265,24 +280,51 @@ get_probabilities_from_tree <- function(tree_json, X) {
   state_env$probabilities <- matrix(0.5, nrow = n_samples, ncol = 2)
 
   leaf_probs_from_node <- function(node) {
-    if (is.null(node) || !is.list(node)) return(c(0.5, 0.5))
-    if (is.null(node$prediction)) return(c(0.5, 0.5))
+    if (is.null(node) || !is.list(node)) {
+      stop(
+        "Leaf node is NULL or not a list.\n\n",
+        "This indicates a bug in tree traversal or reconstruction.\n",
+        "Node type: ", typeof(node),
+        call. = FALSE
+      )
+    }
+    if (is.null(node$prediction)) {
+      stop(
+        "Leaf node missing 'prediction' field.\n\n",
+        "Node has fields: ", paste(names(node), collapse = ", "), "\n",
+        "Expected 'prediction' field for leaf node.\n\n",
+        "This indicates a bug in tree construction.",
+        call. = FALSE
+      )
+    }
     tryCatch({
       if (!is.null(node$probabilities) && length(node$probabilities) >= 2) {
         probs <- as.numeric(node$probabilities)
         if (length(probs) == 2 && all(is.finite(probs)) && all(probs >= 0)) {
           prob_sum <- sum(probs)
-          if (prob_sum > 0) probs <- probs / prob_sum else probs <- c(0.5, 0.5)
+          if (prob_sum > 0) {
+            probs <- probs / prob_sum
+          } else {
+            stop(
+              "Leaf probabilities sum to zero: ", paste(node$probabilities, collapse = ", "), "\n\n",
+              "This indicates invalid probability values in tree.",
+              call. = FALSE
+            )
+          }
           return(probs)
         }
       }
       pred <- as.numeric(node$prediction)
       if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
     }, error = function(e) {
-      tryCatch({
-        pred <- as.numeric(node$prediction)
-        if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
-      }, error = function(e2) c(0.5, 0.5))
+      stop(
+        "Failed to extract probabilities from leaf node.\n\n",
+        "Node fields: ", paste(names(node), collapse = ", "), "\n",
+        "Prediction value: ", node$prediction, "\n",
+        "Original error: ", conditionMessage(e), "\n\n",
+        "This indicates invalid leaf node structure.",
+        call. = FALSE
+      )
     })
   }
 
@@ -333,17 +375,34 @@ get_probabilities_from_tree <- function(tree_json, X) {
 #' @export
 get_fitted_from_tree <- function(tree_json, X) {
   if (is.null(tree_json)) {
-    return(rep(NA_real_, nrow(X)))
+    stop(
+      "Cannot get fitted values: tree is NULL.\n\n",
+      "This usually means the tree structure was not properly stored.\n",
+      "Check that the model was created correctly.",
+      call. = FALSE
+    )
   }
   if (!is.list(tree_json)) {
-    return(rep(NA_real_, nrow(X)))
+    stop(
+      "Cannot get fitted values: tree is not a list.\n\n",
+      "Tree type: ", typeof(tree_json), "\n",
+      "Expected: list with tree structure.\n\n",
+      "This indicates invalid tree object.",
+      call. = FALSE
+    )
   }
   if (!is.null(tree_json$feature) || !is.null(tree_json$prediction)) {
     tree <- tree_json
   } else if (length(tree_json) >= 1 && is.list(tree_json[[1]])) {
     tree <- tree_json[[1]]
   } else {
-    return(rep(NA_real_, nrow(X)))
+    stop(
+      "Cannot get fitted values: invalid tree structure.\n\n",
+      "Tree has fields: ", paste(names(tree_json), collapse = ", "), "\n",
+      "Expected: 'feature' or 'prediction' field, or list of trees.\n\n",
+      "This indicates a bug in tree construction.",
+      call. = FALSE
+    )
   }
   n_samples <- nrow(X)
   max_depth <- 100L
@@ -901,8 +960,20 @@ build_regression_result <- function(has_tree, X, y, stored_X, stored_y,
                                    n_trees, result_list) {
   # Define lazy evaluation functions
   compute_predictions_lazy <- function() {
-    if (is.null(stored_X)) return(rep(NA_real_, length(y)))
-    if (is.null(stored_tree)) return(rep(NA_real_, nrow(stored_X)))
+    if (is.null(stored_X)) {
+      stop(
+        "Cannot compute predictions: training data not stored.\n\n",
+        "Re-train with store_training_data = TRUE or use predict(model, newdata).",
+        call. = FALSE
+      )
+    }
+    if (is.null(stored_tree)) {
+      stop(
+        "Cannot compute predictions: tree is NULL.\n\n",
+        "Model fitting may have failed. Check that fit_tree() completed successfully.",
+        call. = FALSE
+      )
+    }
     get_fitted_from_tree(stored_tree, stored_X)
   }
 
@@ -1000,9 +1071,15 @@ build_classification_result <- function(compute_probabilities, has_tree, X, y,
   compute_probabilities_lazy <- function() {
     if (exists("probabilities", cache, inherits = FALSE)) return(cache$probabilities)
     if (is.null(stored_tree)) {
-      n_samples <- if (!is.null(stored_X)) nrow(stored_X) else 0
-      if (n_samples == 0) return(matrix(c(0.5, 0.5), nrow = 1, ncol = 2, byrow = TRUE))
-      return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
+      stop(
+        "Cannot compute probabilities: tree is NULL.\n\n",
+        "This usually means:\n",
+        "  - Model fitting failed\n",
+        "  - Tree was not properly stored during construction\n",
+        "  - Model object is incomplete\n\n",
+        "Check that fit_tree() completed successfully.",
+        call. = FALSE
+      )
     }
     if (is.null(stored_X)) {
       stop("Cannot compute probabilities: training data not stored. ",

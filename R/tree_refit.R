@@ -74,6 +74,27 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
   # Step 2: Compute leaf predictions based on loss function
   leaf_preds <- compute_leaf_predictions(y_new, leaf_assignments, loss_function)
 
+  # Step 2.5: Handle empty leaves (leaves in structure but no observations assigned)
+  all_leaf_paths <- structure@leaf_paths
+  missing_leaves <- setdiff(all_leaf_paths, names(leaf_preds))
+
+  if (length(missing_leaves) > 0) {
+    # Use overall mean as default for empty leaves
+    default_pred <- mean(y_new)
+
+    warning(sprintf(
+      "refit_tree_structure: %d leaf(ves) received no training observations: %s\nUsing overall mean (%.4f) for these leaves. This can happen when the new data has a different covariate distribution than the original training data.",
+      length(missing_leaves),
+      paste(missing_leaves, collapse = ", "),
+      default_pred
+    ), call. = FALSE)
+
+    # Add default predictions for missing leaves
+    for (leaf_path in missing_leaves) {
+      leaf_preds[[leaf_path]] <- default_pred
+    }
+  }
+
   # Step 3: Reconstruct tree with new leaf values
   tree_list <- reconstruct_tree_with_leaves(structure, leaf_preds)
 
@@ -156,59 +177,59 @@ traverse_to_leaf <- function(structure, x_row, feature_names) {
 
   # Build path by following splits
   path <- integer(0)
-  remaining_splits <- structure@splits
-  current_leaf_ids <- structure@leaf_ids
 
-  while (length(remaining_splits) > 0) {
-    # Get first split (top of current subtree)
-    split <- remaining_splits[[1]]
+  while (TRUE) {
+    # Find split at current path
+    current_split <- NULL
+    for (split in structure@splits) {
+      if (identical(split$path, path)) {
+        current_split <- split
+        break
+      }
+    }
+
+    # If no split found at current path, we've reached a leaf
+    if (is.null(current_split)) {
+      # Return path as leaf ID
+      if (length(path) == 0) {
+        return("root")
+      } else {
+        return(paste(path, collapse = "-"))
+      }
+    }
 
     # Get feature value (0-indexed feature to 1-indexed column)
-    feature_col <- feature_names[split$feature + 1]
+    feature_col <- feature_names[current_split$feature + 1]
     feature_val <- as.numeric(x_row[[feature_col]])
 
     # Evaluate split condition
-    if (split$relation == "==") {
-      goes_right <- (abs(feature_val - split$reference) < 1e-10)
-    } else if (split$relation == "<=") {
-      goes_right <- (feature_val <= split$reference)
-    } else if (split$relation == ">") {
-      goes_right <- (feature_val > split$reference)
+    if (current_split$relation == "==") {
+      goes_right <- (abs(feature_val - current_split$reference) < 1e-10)
+    } else if (current_split$relation == "<=") {
+      goes_right <- (feature_val <= current_split$reference)
+    } else if (current_split$relation == ">") {
+      goes_right <- (feature_val > current_split$reference)
     } else {
-      stop(sprintf("Unknown relation: %s", split$relation), call. = FALSE)
+      stop(sprintf("Unknown relation: %s", current_split$relation), call. = FALSE)
     }
 
     # Follow branch
     if (goes_right) {
       path <- c(path, 1L)
-      # Check if we've reached a leaf
-      path_str <- paste(path, collapse = "-")
-      if (path_str %in% split$right_leaf_ids) {
-        return(path_str)
+      # Check if right child is a leaf (using explicit flag)
+      if (current_split$right_is_leaf) {
+        return(paste(path, collapse = "-"))
       }
-      # Continue down right subtree (filter splits)
-      # For now, simplified: just add to path and check leaves
     } else {
       path <- c(path, 0L)
-      # Check if we've reached a leaf
-      path_str <- paste(path, collapse = "-")
-      if (path_str %in% split$left_leaf_ids) {
-        return(path_str)
+      # Check if left child is a leaf (using explicit flag)
+      if (current_split$left_is_leaf) {
+        return(paste(path, collapse = "-"))
       }
     }
 
-    # Move to next split (simplified traversal)
-    # This is a simplified implementation - full version would filter remaining_splits
-    remaining_splits <- remaining_splits[-1]
-
-    # Safety check: if we've exhausted splits, return current path
-    if (length(remaining_splits) == 0) {
-      return(paste(path, collapse = "-"))
-    }
+    # Continue loop to find split at new path
   }
-
-  # Fallback
-  paste(path, collapse = "-")
 }
 
 #' Compute Leaf Predictions from Assignments
@@ -248,8 +269,20 @@ compute_leaf_predictions <- function(y_new, leaf_assignments, loss_function) {
 reconstruct_tree_with_leaves <- function(structure, leaf_predictions) {
   # Base case: single-leaf tree
   if (length(structure@splits) == 0) {
+    if (!("root" %in% names(leaf_predictions))) {
+      stop(
+        "Single-leaf tree reconstruction failed: 'root' prediction not found.\n\nThis indicates a bug in leaf prediction computation.",
+        call. = FALSE
+      )
+    }
+
     pred_val <- leaf_predictions[["root"]]
-    if (is.null(pred_val) || is.na(pred_val)) pred_val <- 0.5
+    if (is.null(pred_val) || is.na(pred_val)) {
+      stop(
+        "Single-leaf tree reconstruction failed: 'root' prediction is NULL or NA.\n\nThis indicates a bug in leaf prediction computation.",
+        call. = FALSE
+      )
+    }
 
     return(list(
       prediction = pred_val,
@@ -272,63 +305,71 @@ reconstruct_tree_with_leaves <- function(structure, leaf_predictions) {
 #' @return Nested list (tree node)
 #' @keywords internal
 reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, path) {
-  # Check if left is a leaf
+  # Left child
   left_path <- c(path, 0L)
   left_path_str <- paste(left_path, collapse = "-")
 
-  if (left_path_str %in% current_split$left_leaf_ids) {
-    # Left is a leaf
-    if (left_path_str %in% names(leaf_preds)) {
-      pred_val <- leaf_preds[[left_path_str]]
-      if (is.null(pred_val) || is.na(pred_val)) pred_val <- 0.5
-    } else {
-      # Leaf ID not in predictions - use default
-      pred_val <- 0.5
+  if (current_split$left_is_leaf) {
+    # Left is a leaf - get prediction
+    if (!(left_path_str %in% names(leaf_preds))) {
+      stop(sprintf(
+        "Leaf path '%s' not found in predictions.\n\nAvailable: %s\n\nThis indicates a bug in leaf prediction computation.",
+        left_path_str,
+        paste(names(leaf_preds), collapse = ", ")
+      ), call. = FALSE)
     }
+
+    pred <- leaf_preds[[left_path_str]]
+    if (is.null(pred) || is.na(pred)) {
+      stop(sprintf(
+        "Leaf '%s' has NULL/NA prediction.\n\nThis indicates a bug in leaf prediction computation.",
+        left_path_str
+      ), call. = FALSE)
+    }
+
     false_node <- list(
-      prediction = pred_val,
-      probabilities = c(1 - pred_val, pred_val)
+      prediction = pred,
+      probabilities = c(1 - pred, pred)
     )
   } else {
-    # Left is another split - find it
+    # Left is a split - recurse
     left_split <- find_split_for_path(all_splits, left_path)
-    if (is.null(left_split)) {
-      # Fallback: create leaf with default
-      false_node <- list(prediction = 0.5, probabilities = c(0.5, 0.5))
-    } else {
-      false_node <- reconstruct_from_structure(left_split, all_splits, leaf_preds, left_path)
-    }
+    false_node <- reconstruct_from_structure(left_split, all_splits, leaf_preds, left_path)
   }
 
-  # Check if right is a leaf
+  # Right child
   right_path <- c(path, 1L)
   right_path_str <- paste(right_path, collapse = "-")
 
-  if (right_path_str %in% current_split$right_leaf_ids) {
-    # Right is a leaf
-    if (right_path_str %in% names(leaf_preds)) {
-      pred_val <- leaf_preds[[right_path_str]]
-      if (is.null(pred_val) || is.na(pred_val)) pred_val <- 0.5
-    } else {
-      # Leaf ID not in predictions - use default
-      pred_val <- 0.5
+  if (current_split$right_is_leaf) {
+    # Right is a leaf - get prediction
+    if (!(right_path_str %in% names(leaf_preds))) {
+      stop(sprintf(
+        "Leaf path '%s' not found in predictions.\n\nAvailable: %s\n\nThis indicates a bug in leaf prediction computation.",
+        right_path_str,
+        paste(names(leaf_preds), collapse = ", ")
+      ), call. = FALSE)
     }
+
+    pred <- leaf_preds[[right_path_str]]
+    if (is.null(pred) || is.na(pred)) {
+      stop(sprintf(
+        "Leaf '%s' has NULL/NA prediction.\n\nThis indicates a bug in leaf prediction computation.",
+        right_path_str
+      ), call. = FALSE)
+    }
+
     true_node <- list(
-      prediction = pred_val,
-      probabilities = c(1 - pred_val, pred_val)
+      prediction = pred,
+      probabilities = c(1 - pred, pred)
     )
   } else {
-    # Right is another split - find it
+    # Right is a split - recurse
     right_split <- find_split_for_path(all_splits, right_path)
-    if (is.null(right_split)) {
-      # Fallback: create leaf with default
-      true_node <- list(prediction = 0.5, probabilities = c(0.5, 0.5))
-    } else {
-      true_node <- reconstruct_from_structure(right_split, all_splits, leaf_preds, right_path)
-    }
+    true_node <- reconstruct_from_structure(right_split, all_splits, leaf_preds, right_path)
   }
 
-  # Build current node
+  # Build split node
   list(
     feature = current_split$feature,
     name = current_split$feature_name,
@@ -343,24 +384,21 @@ reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, pa
 #'
 #' @param all_splits List of split information
 #' @param target_path Integer vector (path from root)
-#' @return Split information or NULL
+#' @return Split information, or stops with error if not found
 #' @keywords internal
 find_split_for_path <- function(all_splits, target_path) {
-  # A split corresponds to a path if its left and right leaves
-  # are one level deeper than the target path
-  target_path_str <- paste(target_path, collapse = "-")
-
+  # Simple: just match the path field directly
   for (split in all_splits) {
-    # Check if this split's children match the target path
-    # Left child: target_path + 0, Right child: target_path + 1
-    left_expected <- paste(c(target_path, 0L), collapse = "-")
-    right_expected <- paste(c(target_path, 1L), collapse = "-")
-
-    if ((left_expected %in% split$left_leaf_ids || left_expected %in% split$right_leaf_ids) &&
-        (right_expected %in% split$left_leaf_ids || right_expected %in% split$right_leaf_ids)) {
+    if (identical(split$path, target_path)) {
       return(split)
     }
   }
 
-  NULL
+  # Not found - this is a bug (split should exist)
+  stop(sprintf(
+    "Split not found for path '%s'.\n\nAvailable split paths: %s\n\nThis indicates a bug in tree structure extraction.",
+    paste(target_path, collapse = "-"),
+    paste(sapply(all_splits, function(s) paste(s$path, collapse = "-")),
+          collapse = ", ")
+  ), call. = FALSE)
 }

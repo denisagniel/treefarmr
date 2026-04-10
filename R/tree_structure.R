@@ -28,8 +28,8 @@ NULL
 #'
 #' @details
 #' Properties:
-#' - splits: List of split information (feature, relation, reference, child leaves)
-#' - leaf_ids: Character vector of leaf identifiers (paths from root)
+#' - splits: List of split information (path, feature, relation, reference, leaf flags)
+#' - leaf_paths: Character vector of leaf paths from root
 #' - n_leaves: Number of leaves
 #' - max_depth: Maximum depth
 #' - feature_names: Feature names from training data
@@ -40,8 +40,8 @@ TreeStructure <- S7::new_class(
   package = "optimaltrees",
 
   properties = list(
-    splits = S7::class_list,          # List of split information
-    leaf_ids = S7::class_character,   # Leaf identifiers (paths)
+    splits = S7::class_list,           # List of split information
+    leaf_paths = S7::class_character,  # Leaf paths (renamed from leaf_ids)
     n_leaves = S7::class_integer,
     max_depth = S7::class_integer,
     feature_names = S7::class_character
@@ -53,8 +53,9 @@ TreeStructure <- S7::new_class(
       return("@n_leaves must be at least 1")
     }
 
-    if (length(self@leaf_ids) != self@n_leaves) {
-      return("length(@leaf_ids) must equal @n_leaves")
+    if (length(self@leaf_paths) != self@n_leaves) {
+      return(sprintf("length(@leaf_paths) = %d must equal @n_leaves = %d",
+                     length(self@leaf_paths), self@n_leaves))
     }
 
     # Depth validation
@@ -69,15 +70,20 @@ TreeStructure <- S7::new_class(
 
     # Splits validation
     if (length(self@splits) > 0) {
-      # Check each split has required fields
-      required_fields <- c("feature", "feature_name", "relation", "reference")
+      # Check each split has required fields (including new ones)
+      required_fields <- c("path", "feature", "feature_name", "relation",
+                           "reference", "left_is_leaf", "right_is_leaf")
       for (i in seq_along(self@splits)) {
         split <- self@splits[[i]]
-        if (!all(required_fields %in% names(split))) {
-          return(sprintf("Split %d missing required fields", i))
+        missing <- setdiff(required_fields, names(split))
+        if (length(missing) > 0) {
+          return(sprintf("Split %d missing fields: %s",
+                         i, paste(missing, collapse = ", ")))
         }
       }
     }
+
+    NULL
   }
 )
 
@@ -159,7 +165,7 @@ extract_tree_structure <- function(model, tree_index = 1) {
   # Create TreeStructure object
   TreeStructure(
     splits = structure$splits,
-    leaf_ids = structure$leaf_ids,
+    leaf_paths = structure$leaf_paths,
     n_leaves = as.integer(structure$n_leaves),
     max_depth = as.integer(structure$max_depth),
     feature_names = colnames(model@X_train)
@@ -170,15 +176,15 @@ extract_tree_structure <- function(model, tree_index = 1) {
 #'
 #' @param node Current tree node (list)
 #' @param path Path from root (integer vector of 0s and 1s)
-#' @return List with splits, leaf_ids, n_leaves, max_depth
+#' @return List with splits, leaf_paths, n_leaves, max_depth
 #' @keywords internal
 extract_structure_recursive <- function(node, path) {
   # Base case: leaf node
   if (!is.null(node$prediction)) {
-    leaf_id <- if (length(path) == 0) "root" else paste(path, collapse = "-")
+    leaf_path <- if (length(path) == 0) "root" else paste(path, collapse = "-")
     return(list(
       splits = list(),
-      leaf_ids = leaf_id,
+      leaf_paths = leaf_path,
       n_leaves = 1L,
       max_depth = length(path)
     ))
@@ -197,21 +203,22 @@ extract_structure_recursive <- function(node, path) {
   left_struct <- extract_structure_recursive(node$false, left_path)
   right_struct <- extract_structure_recursive(node$true, right_path)
 
-  # Create split information
+  # Create split information WITH EXPLICIT PATH
   split_info <- list(
+    path = path,                                    # NEW: split's own path
     feature = as.integer(node$feature),
     feature_name = if (!is.null(node$name)) node$name else
                    sprintf("feature_%d", node$feature),
     relation = if (!is.null(node$relation)) node$relation else "==",
     reference = if (!is.null(node$reference)) as.numeric(node$reference) else 1.0,
-    left_leaf_ids = left_struct$leaf_ids,
-    right_leaf_ids = right_struct$leaf_ids
+    left_is_leaf = !is.null(node$false$prediction),   # NEW: explicit leaf flag
+    right_is_leaf = !is.null(node$true$prediction)    # NEW: explicit leaf flag
   )
 
   # Combine results
   list(
     splits = c(list(split_info), left_struct$splits, right_struct$splits),
-    leaf_ids = c(left_struct$leaf_ids, right_struct$leaf_ids),
+    leaf_paths = c(left_struct$leaf_paths, right_struct$leaf_paths),
     n_leaves = left_struct$n_leaves + right_struct$n_leaves,
     max_depth = max(left_struct$max_depth, right_struct$max_depth)
   )

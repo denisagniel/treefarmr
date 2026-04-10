@@ -58,9 +58,22 @@ apply_model_discretization <- function(newdata, object) {
   if (!is.null(discret)) {
     if (isTRUE(discret$all_binary)) {
       # Data was already binary during training, no transformation needed
-      expected_original <- get_prop("X_original_names")
+      # Try to get expected names from: original_names, binary_names, or X_train
+      expected_original <- discret$original_names
+      if (is.null(expected_original)) {
+        expected_original <- discret$binary_names
+      }
       if (is.null(expected_original)) {
         expected_original <- colnames(get_prop("X_train"))
+      }
+      if (is.null(expected_original)) {
+        stop(
+          "Cannot determine expected feature names.\n\n",
+          "Model has all_binary=TRUE but discretization metadata is missing both 'original_names' and 'binary_names',\n",
+          "and X_train is NULL (likely store_training_data=FALSE).\n\n",
+          "This indicates a bug in model creation or refit logic.",
+          call. = FALSE
+        )
       }
       if (!all(expected_original %in% colnames(newdata))) {
         stop("newdata must have the same features as training data (all_binary branch)")
