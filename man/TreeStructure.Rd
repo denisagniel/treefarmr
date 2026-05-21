@@ -6,10 +6,11 @@
 \usage{
 TreeStructure(
   splits = list(),
-  leaf_ids = character(0),
+  leaf_paths = character(0),
   n_leaves = integer(0),
   max_depth = integer(0),
-  feature_names = character(0)
+  feature_names = character(0),
+  partition_hash = character(0)
 )
 }
 \description{
@@ -18,8 +19,8 @@ Used for M-split algorithm: select one structure, refit multiple times.
 }
 \details{
 Properties:
-- splits: List of split information (feature, relation, reference, child leaves)
-- leaf_ids: Character vector of leaf identifiers (paths from root)
+- splits: List of split information (path, feature, relation, reference, leaf flags)
+- leaf_paths: Character vector of leaf paths from root
 - n_leaves: Number of leaves
 - max_depth: Maximum depth
 - feature_names: Feature names from training data

@@ -9,6 +9,10 @@
 #' @param y_new Training outcomes (numeric vector)
 #' @param loss_function "squared_error", "log_loss", or "misclassification"
 #' @param store_training_data Logical. Store X_new and y_new in model? (default FALSE)
+#' @param discretization_metadata Optional list containing discretization metadata
+#'   from the original model. If provided, X_new will be discretized using the
+#'   same thresholds as training. Required when structure uses discretized
+#'   feature names but X_new has original continuous features. Default: NULL.
 #'
 #' @return OptimalTreesModel with refit leaf values
 #'
@@ -38,7 +42,8 @@
 #'
 #' @export
 refit_tree_structure <- function(structure, X_new, y_new, loss_function,
-                                  store_training_data = FALSE) {
+                                  store_training_data = FALSE,
+                                  discretization_metadata = NULL) {
   # Validate inputs
   if (!S7::S7_inherits(structure, TreeStructure)) {
     stop("structure must be a TreeStructure object", call. = FALSE)
@@ -66,6 +71,26 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
   # Convert to data.frame if matrix
   if (is.matrix(X_new)) {
     X_new <- as.data.frame(X_new)
+  }
+
+  # Apply discretization if metadata provided
+  if (!is.null(discretization_metadata)) {
+    X_new <- apply_discretization(X_new, discretization_metadata)
+
+    # Verify feature names match structure expectations
+    expected_names <- structure@feature_names
+    actual_names <- colnames(X_new)
+
+    if (!setequal(expected_names, actual_names)) {
+      missing <- setdiff(expected_names, actual_names)
+      extra <- setdiff(actual_names, expected_names)
+      stop(sprintf("Feature name mismatch after discretization.\n  Missing: %s\n  Extra: %s",
+                   paste(missing, collapse=", "), paste(extra, collapse=", ")),
+           call. = FALSE)
+    }
+
+    # Reorder columns to match structure
+    X_new <- X_new[, expected_names, drop = FALSE]
   }
 
   # Step 1: Assign observations to leaves
@@ -112,12 +137,14 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
     is_regression <- FALSE
   }
 
-  # Step 5: Create discretization metadata (all features are binary)
-  discretization_metadata <- list(
-    all_binary = TRUE,
-    features = list(),
-    original_names = colnames(X_new)
-  )
+  # Step 5: Preserve or create discretization metadata
+  if (is.null(discretization_metadata)) {
+    discretization_metadata <- list(
+      all_binary = TRUE,
+      features = list(),
+      original_names = colnames(X_new)
+    )
+  }
 
   # Step 6: Create OptimalTreesModel object
   model <- new_optimal_trees_model(

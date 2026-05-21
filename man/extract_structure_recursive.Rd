@@ -12,7 +12,7 @@ extract_structure_recursive(node, path)
 \item{path}{Path from root (integer vector of 0s and 1s)}
 }
 \value{
-List with splits, leaf_ids, n_leaves, max_depth
+List with splits, leaf_paths, n_leaves, max_depth
 }
 \description{
 Extract Structure Recursively (Internal Helper)

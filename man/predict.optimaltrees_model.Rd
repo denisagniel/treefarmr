@@ -4,7 +4,7 @@
 \alias{predict.optimaltrees_model}
 \title{Predict method for optimaltrees_model objects}
 \usage{
-\method{predict}{optimaltrees_model}(object, newdata, type = c("class", "prob"), ...)
+\method{predict}{optimaltrees_model}(object, newdata, type = c("class", "prob", "response"), ...)
 }
 \arguments{
 \item{object}{A optimaltrees_model object}

@@ -9,7 +9,8 @@ refit_tree_structure(
   X_new,
   y_new,
   loss_function,
-  store_training_data = FALSE
+  store_training_data = FALSE,
+  discretization_metadata = NULL
 )
 }
 \arguments{
@@ -22,6 +23,11 @@ refit_tree_structure(
 \item{loss_function}{"squared_error", "log_loss", or "misclassification"}
 
 \item{store_training_data}{Logical. Store X_new and y_new in model? (default FALSE)}
+
+\item{discretization_metadata}{Optional list containing discretization metadata
+from the original model. If provided, X_new will be discretized using the
+same thresholds as training. Required when structure uses discretized
+feature names but X_new has original continuous features. Default: NULL.}
 }
 \value{
 OptimalTreesModel with refit leaf values

@@ -2,27 +2,33 @@
 % Please edit documentation in R/tree_structure.R
 \name{structure_hash}
 \alias{structure_hash}
-\title{Compute Hash of Tree Structure}
+\title{Compute Hash of Tree Structure (Partition-Based)}
 \usage{
 structure_hash(structure, precision = 8)
 }
 \arguments{
 \item{structure}{TreeStructure object}
 
-\item{precision}{Decimal precision for reference values (default 8)}
+\item{precision}{Unused (kept for API compatibility)}
 }
 \value{
 Character string (xxhash64 digest)
 }
 \description{
-Computes a deterministic hash of a tree structure for fast comparison.
-Structures with the same hash are identical (with high probability).
+Returns the partition-based hash for a TreeStructure.
+Two structures with the same partition (same leaves) get the same hash,
+regardless of split order.
 }
 \details{
-The hash is computed from a string representation of all splits:
-"feature_relation_reference|feature_relation_reference|..."
+The hash is based on the partition defined by the tree: the set of all
+leaf regions. Trees are considered equivalent if they partition the
+feature space into the same regions, even if they achieve this via
+different split sequences.
 
-This allows O(1) comparison via hash table lookup instead of O(n) comparison.
+Example: These two trees get the same hash:
+  Tree A: Root splits on x1, then left splits on x2
+  Tree B: Root splits on x2, then left splits on x1
+  (if they create the same 4 leaf regions)
 }
 \examples{
 \dontrun{

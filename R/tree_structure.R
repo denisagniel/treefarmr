@@ -44,7 +44,8 @@ TreeStructure <- S7::new_class(
     leaf_paths = S7::class_character,  # Leaf paths (renamed from leaf_ids)
     n_leaves = S7::class_integer,
     max_depth = S7::class_integer,
-    feature_names = S7::class_character
+    feature_names = S7::class_character,
+    partition_hash = S7::class_character  # Partition-based hash
   ),
 
   validator = function(self) {
@@ -66,6 +67,11 @@ TreeStructure <- S7::new_class(
     # Feature names validation
     if (length(self@feature_names) == 0) {
       return("@feature_names must not be empty")
+    }
+
+    # Partition hash validation
+    if (length(self@partition_hash) != 1 || nchar(self@partition_hash) == 0) {
+      return("@partition_hash must be a non-empty string")
     }
 
     # Splits validation
@@ -162,13 +168,17 @@ extract_tree_structure <- function(model, tree_index = 1) {
   # Extract structure recursively
   structure <- extract_structure_recursive(tree, path = integer(0))
 
+  # Compute partition-based hash
+  partition_hash_val <- partition_hash(tree)
+
   # Create TreeStructure object
   TreeStructure(
     splits = structure$splits,
     leaf_paths = structure$leaf_paths,
     n_leaves = as.integer(structure$n_leaves),
     max_depth = as.integer(structure$max_depth),
-    feature_names = colnames(model@X_train)
+    feature_names = colnames(model@X_train),
+    partition_hash = partition_hash_val
   )
 }
 
@@ -225,26 +235,141 @@ extract_structure_recursive <- function(node, path) {
 }
 
 # =============================================================================
+# Partition-Based Structure Comparison
+# =============================================================================
+
+#' Extract Leaf Partitions from Tree
+#'
+#' @description
+#' Extract the partition defined by a tree: the set of all leaf regions.
+#' Each region is a conjunction of split conditions from root to leaf.
+#'
+#' @param tree_node Nested list representing tree (from model@trees[[1]])
+#' @param conditions_so_far List of conditions accumulated from root (internal use)
+#' @param path Integer vector of path from root (internal use)
+#'
+#' @return List of leaf regions. Each region is a list with:
+#'   \item{conditions}{Data frame with columns: feature, relation, reference}
+#'   \item{path_str}{Character path for debugging (e.g., "0-1-0")}
+#'
+#' @keywords internal
+extract_tree_partition <- function(tree_node, conditions_so_far = list(), path = integer(0)) {
+  # Check if leaf
+  if (!is.null(tree_node$prediction)) {
+    # This is a leaf - return its conditions
+    conditions_df <- if (length(conditions_so_far) > 0) {
+      do.call(rbind, lapply(conditions_so_far, as.data.frame))
+    } else {
+      data.frame(feature = integer(0), relation = character(0), reference = numeric(0))
+    }
+
+    # Sort conditions by (feature, relation, reference) for canonical form
+    if (nrow(conditions_df) > 0) {
+      conditions_df <- conditions_df[order(conditions_df$feature, conditions_df$relation, conditions_df$reference), ]
+    }
+
+    path_str <- if (length(path) == 0) "root" else paste(path, collapse = "-")
+
+    return(list(list(
+      conditions = conditions_df,
+      path_str = path_str
+    )))
+  }
+
+  # Internal node - recurse
+  feature_idx <- tree_node$feature
+  relation <- tree_node$relation
+  reference <- tree_node$reference
+
+  # Left child (false): condition is NOT satisfied
+  # For "==": goes left if feature != reference
+  # For "<=": goes left if feature > reference
+  left_cond <- if (relation == "==") {
+    list(feature = feature_idx, relation = "!=", reference = reference)
+  } else if (relation == "<=") {
+    list(feature = feature_idx, relation = ">", reference = reference)
+  } else {
+    stop("Unknown relation: ", relation, call. = FALSE)
+  }
+
+  # Right child (true): condition IS satisfied
+  right_cond <- list(feature = feature_idx, relation = relation, reference = reference)
+
+  # Recurse
+  left_leaves <- extract_tree_partition(tree_node$false, c(conditions_so_far, list(left_cond)), c(path, 0L))
+  right_leaves <- extract_tree_partition(tree_node$true, c(conditions_so_far, list(right_cond)), c(path, 1L))
+
+  c(left_leaves, right_leaves)
+}
+
+#' Compute Partition-Based Structure Hash
+#'
+#' @description
+#' Hash a tree based on its partition (leaf regions), not split sequence.
+#' Trees with the same partition get the same hash.
+#'
+#' @param tree_node Nested list representing tree
+#' @param precision Number of digits for rounding reference values (default 8)
+#'
+#' @return Character hash
+#'
+#' @keywords internal
+partition_hash <- function(tree_node, precision = 8) {
+  # Extract leaf regions
+  leaves <- extract_tree_partition(tree_node)
+
+  # Create canonical string for each leaf
+  leaf_strings <- vapply(leaves, function(leaf) {
+    if (nrow(leaf$conditions) == 0) {
+      return("root")
+    }
+
+    # Create condition strings: "f0_==_1.00000000&f2_==_0.00000000"
+    cond_strs <- apply(leaf$conditions, 1, function(row) {
+      sprintf("f%d_%s_%.8f",
+              as.integer(row["feature"]),
+              row["relation"],
+              round(as.numeric(row["reference"]), precision))
+    })
+
+    paste(cond_strs, collapse = "&")
+  }, character(1))
+
+  # Sort leaf strings for canonical ordering
+  leaf_strings <- sort(leaf_strings)
+
+  # Hash the sorted list
+  partition_str <- paste(leaf_strings, collapse = "|")
+  digest::digest(partition_str, algo = "xxhash64")
+}
+
+# =============================================================================
 # Compare Structures
 # =============================================================================
 
-#' Compare Two Tree Structures
+#' Compare Two Tree Structures (Partition-Based)
 #'
 #' @description
-#' Determines if two TreeStructure objects represent identical tree structures.
-#' Compares split decisions (feature, relation, reference) but not leaf values.
+#' Determines if two TreeStructure objects represent equivalent tree structures.
+#' Uses partition-based comparison: trees are equal if they define the same
+#' set of leaf regions, regardless of split order.
 #'
 #' @param structure1 TreeStructure object
 #' @param structure2 TreeStructure object
-#' @param tol Numerical tolerance for reference values (default 1e-8)
-#' @return Logical: TRUE if structures are identical, FALSE otherwise
+#' @param tol Unused (kept for API compatibility)
+#' @return Logical: TRUE if structures are equivalent, FALSE otherwise
 #'
 #' @details
-#' Two structures are identical if:
-#' - Same number of leaves
-#' - Same number of splits
-#' - All splits match (feature, relation, reference within tol)
-#' - Splits are in the same order (depth-first traversal)
+#' Two trees are considered equivalent if they partition the feature space
+#' into the same regions, even if they achieve this via different split sequences.
+#'
+#' Example: These two trees are equivalent:
+#'   Tree A: Root splits on x1, then left splits on x2
+#'   Tree B: Root splits on x2, then left splits on x1
+#'   (if they create the same 4 leaf regions)
+#'
+#' The comparison is based on partition hashes, which are computed when
+#' the TreeStructure is created.
 #'
 #' @examples
 #' \dontrun{
@@ -252,65 +377,42 @@ extract_structure_recursive <- function(node, path) {
 #' model2 <- fit_tree(X, y, seed = 1)
 #' s1 <- extract_tree_structure(model1)
 #' s2 <- extract_tree_structure(model2)
-#' compare_structures(s1, s2)  # Should be TRUE (same seed)
+#' compare_structures(s1, s2)  # TRUE if same partition
 #' }
 #'
 #' @export
 compare_structures <- function(structure1, structure2, tol = 1e-8) {
-  # Quick checks
+  # Validate input
   if (!S7::S7_inherits(structure1, TreeStructure) ||
       !S7::S7_inherits(structure2, TreeStructure)) {
     stop("Both arguments must be TreeStructure objects", call. = FALSE)
   }
 
-  if (structure1@n_leaves != structure2@n_leaves) {
-    return(FALSE)
-  }
-
-  if (length(structure1@splits) != length(structure2@splits)) {
-    return(FALSE)
-  }
-
-  # Compare splits one by one
-  for (i in seq_along(structure1@splits)) {
-    s1 <- structure1@splits[[i]]
-    s2 <- structure2@splits[[i]]
-
-    # Compare feature
-    if (s1$feature != s2$feature) {
-      return(FALSE)
-    }
-
-    # Compare relation
-    if (s1$relation != s2$relation) {
-      return(FALSE)
-    }
-
-    # Compare reference (within tolerance)
-    if (abs(s1$reference - s2$reference) > tol) {
-      return(FALSE)
-    }
-  }
-
-  # All checks passed
-  TRUE
+  # Compare partition hashes
+  structure1@partition_hash == structure2@partition_hash
 }
 
-#' Compute Hash of Tree Structure
+#' Compute Hash of Tree Structure (Partition-Based)
 #'
 #' @description
-#' Computes a deterministic hash of a tree structure for fast comparison.
-#' Structures with the same hash are identical (with high probability).
+#' Returns the partition-based hash for a TreeStructure.
+#' Two structures with the same partition (same leaves) get the same hash,
+#' regardless of split order.
 #'
 #' @param structure TreeStructure object
-#' @param precision Decimal precision for reference values (default 8)
+#' @param precision Unused (kept for API compatibility)
 #' @return Character string (xxhash64 digest)
 #'
 #' @details
-#' The hash is computed from a string representation of all splits:
-#' "feature_relation_reference|feature_relation_reference|..."
+#' The hash is based on the partition defined by the tree: the set of all
+#' leaf regions. Trees are considered equivalent if they partition the
+#' feature space into the same regions, even if they achieve this via
+#' different split sequences.
 #'
-#' This allows O(1) comparison via hash table lookup instead of O(n) comparison.
+#' Example: These two trees get the same hash:
+#'   Tree A: Root splits on x1, then left splits on x2
+#'   Tree B: Root splits on x2, then left splits on x1
+#'   (if they create the same 4 leaf regions)
 #'
 #' @examples
 #' \dontrun{
@@ -331,21 +433,6 @@ structure_hash <- function(structure, precision = 8) {
     stop("structure must be a TreeStructure object", call. = FALSE)
   }
 
-  if (length(structure@splits) == 0) {
-    # Single-leaf tree (no splits)
-    return(digest::digest("single-leaf", algo = "xxhash64"))
-  }
-
-  # Create deterministic string representation
-  str_rep <- paste(
-    vapply(structure@splits, function(s) {
-      sprintf("f%d_%s_%.8f",
-              s$feature,
-              s$relation,
-              round(s$reference, precision))
-    }, character(1)),
-    collapse = "|"
-  )
-
-  digest::digest(str_rep, algo = "xxhash64")
+  # Return pre-computed partition hash
+  structure@partition_hash
 }

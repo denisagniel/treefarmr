@@ -2,7 +2,7 @@
 % Please edit documentation in R/tree_structure.R
 \name{compare_structures}
 \alias{compare_structures}
-\title{Compare Two Tree Structures}
+\title{Compare Two Tree Structures (Partition-Based)}
 \usage{
 compare_structures(structure1, structure2, tol = 1e-08)
 }
@@ -11,21 +11,27 @@ compare_structures(structure1, structure2, tol = 1e-08)
 
 \item{structure2}{TreeStructure object}
 
-\item{tol}{Numerical tolerance for reference values (default 1e-8)}
+\item{tol}{Unused (kept for API compatibility)}
 }
 \value{
-Logical: TRUE if structures are identical, FALSE otherwise
+Logical: TRUE if structures are equivalent, FALSE otherwise
 }
 \description{
-Determines if two TreeStructure objects represent identical tree structures.
-Compares split decisions (feature, relation, reference) but not leaf values.
+Determines if two TreeStructure objects represent equivalent tree structures.
+Uses partition-based comparison: trees are equal if they define the same
+set of leaf regions, regardless of split order.
 }
 \details{
-Two structures are identical if:
-- Same number of leaves
-- Same number of splits
-- All splits match (feature, relation, reference within tol)
-- Splits are in the same order (depth-first traversal)
+Two trees are considered equivalent if they partition the feature space
+into the same regions, even if they achieve this via different split sequences.
+
+Example: These two trees are equivalent:
+  Tree A: Root splits on x1, then left splits on x2
+  Tree B: Root splits on x2, then left splits on x1
+  (if they create the same 4 leaf regions)
+
+The comparison is based on partition hashes, which are computed when
+the TreeStructure is created.
 }
 \examples{
 \dontrun{
@@ -33,7 +39,7 @@ model1 <- fit_tree(X, y, seed = 1)
 model2 <- fit_tree(X, y, seed = 1)
 s1 <- extract_tree_structure(model1)
 s2 <- extract_tree_structure(model2)
-compare_structures(s1, s2)  # Should be TRUE (same seed)
+compare_structures(s1, s2)  # TRUE if same partition
 }
 
 }
