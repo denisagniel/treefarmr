@@ -177,9 +177,15 @@ test_that("refit_tree_structure works for classification", {
   )
   y_new <- rbinom(n_new, 1, 0.5)
 
-  refit_model <- refit_tree_structure(structure, X_new, y_new, "log_loss",
+  refit_result <- refit_tree_structure(structure, X_new, y_new, "log_loss",
                                        store_training_data = TRUE)
 
+  # Check return structure
+  expect_true(is.list(refit_result))
+  expect_true("model" %in% names(refit_result))
+  expect_true("n_per_leaf" %in% names(refit_result))
+
+  refit_model <- refit_result$model
   expect_s3_class(refit_model, "OptimalTreesModel")
   expect_equal(refit_model@n_trees, 1)
   expect_equal(refit_model@loss_function, "log_loss")
@@ -215,9 +221,15 @@ test_that("refit_tree_structure works for regression", {
   )
   y_new <- rnorm(n_new, mean = 5, sd = 2)
 
-  refit_model <- refit_tree_structure(structure, X_new, y_new, "squared_error",
+  refit_result <- refit_tree_structure(structure, X_new, y_new, "squared_error",
                                        store_training_data = TRUE)
 
+  # Check return structure
+  expect_true(is.list(refit_result))
+  expect_true("model" %in% names(refit_result))
+  expect_true("n_per_leaf" %in% names(refit_result))
+
+  refit_model <- refit_result$model
   expect_s3_class(refit_model, "OptimalTreesModel")
   expect_equal(refit_model@n_trees, 1)
   expect_equal(refit_model@loss_function, "squared_error")
@@ -247,8 +259,10 @@ test_that("refit preserves structure but changes leaf values", {
   # Refit with very different outcomes
   y_new <- 1 - y  # Flip all outcomes
 
-  model2 <- refit_tree_structure(structure, X, y_new, "log_loss",
+  refit_result2 <- refit_tree_structure(structure, X, y_new, "log_loss",
                                   store_training_data = TRUE)
+
+  model2 <- refit_result2$model
 
   # Structure should have same number of leaves (note: exact structure comparison
   # may fail due to tree reconstruction order, but leaf count should match)

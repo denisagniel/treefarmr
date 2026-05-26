@@ -14,7 +14,11 @@
 #'   same thresholds as training. Required when structure uses discretized
 #'   feature names but X_new has original continuous features. Default: NULL.
 #'
-#' @return OptimalTreesModel with refit leaf values
+#' @return List with class "refit_result" containing:
+#'   \item{model}{OptimalTreesModel with refit leaf values}
+#'   \item{n_per_leaf}{Named integer vector of observation counts per leaf.
+#'     Names are leaf paths (e.g., "0-1", "1-0-1", "root"), values are counts.
+#'     Used for weighted tree averaging.}
 #'
 #' @details
 #' Algorithm:
@@ -34,7 +38,9 @@
 #' structure <- extract_tree_structure(model1)
 #'
 #' # Refit same structure on data 2
-#' model2 <- refit_tree_structure(structure, X2, y2, "log_loss")
+#' refit_result <- refit_tree_structure(structure, X2, y2, "log_loss")
+#' model2 <- refit_result$model
+#' leaf_counts <- refit_result$n_per_leaf
 #'
 #' # Make predictions
 #' preds <- predict(model2, X_test, type = "prob")
@@ -95,6 +101,9 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
 
   # Step 1: Assign observations to leaves
   leaf_assignments <- assign_observations_to_leaves(structure, X_new)
+
+  # Step 1.5: Capture counts per leaf (for weighted averaging)
+  n_per_leaf <- table(leaf_assignments)  # Named integer: leaf_id -> count
 
   # Step 2: Compute leaf predictions based on loss function
   leaf_preds <- compute_leaf_predictions(y_new, leaf_assignments, loss_function)
@@ -161,7 +170,11 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
     is_regression = is_regression
   )
 
-  model
+  # Step 7: Return model + leaf counts (for weighted averaging)
+  structure(list(
+    model = model,
+    n_per_leaf = as.integer(n_per_leaf)
+  ), class = c("refit_result", "list"))
 }
 
 # =============================================================================
