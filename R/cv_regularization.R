@@ -1,3 +1,44 @@
+#' Compute safe model_limit for given lambda and n
+#'
+#' Theory prescribes lambda ~ log(n)/n, but small lambda requires
+#' larger model_limit for solver to complete successfully.
+#'
+#' @param lambda Regularization value
+#' @param n Sample size
+#' @param p_features Number of binary features (after discretization)
+#' @return Safe model_limit value
+#' @keywords internal
+compute_safe_model_limit <- function(lambda, n, p_features) {
+  lambda_theory <- log(n) / n
+
+  # Ratio: how much smaller is lambda than theory value?
+  ratio <- lambda / lambda_theory
+
+  if (ratio >= 10) {
+    # Strong regularization: default is fine
+    return(10000)
+  } else if (ratio >= 5) {
+    # Moderate: 5× default
+    return(50000)
+  } else if (ratio >= 2) {
+    # Weak: 10× default
+    return(100000)
+  } else if (ratio >= 1) {
+    # At theory value: 20× default
+    return(200000)
+  } else {
+    # Below theory: unlimited (risky but necessary)
+    # Dimension-based cutoff from fit_tree() logic
+    if (p_features > 100) {
+      return(1000000)
+    } else if (p_features > 50) {
+      return(500000)
+    } else {
+      return(0)  # Unlimited for low-dimensional
+    }
+  }
+}
+
 #' Cross-validation for regularization parameter (lambda)
 #'
 #' @description
@@ -5,6 +46,8 @@
 #' for each candidate lambda in a grid, fit a single tree on training folds,
 #' compute held-out loss on the validation fold using the same loss as for
 #' fitting, and choose the lambda that minimizes average held-out loss.
+#' Automatically adjusts solver parameters for small lambda values to ensure
+#' computational feasibility.
 #'
 #' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
 #' @param y A vector of binary class labels (0/1).
@@ -34,6 +77,12 @@
 #'   \item For \code{loss_function = "log_loss"}: mean cross-entropy on the validation fold; predicted class probabilities are clamped to avoid log(0).
 #' }
 #'
+#' \strong{Computational Considerations:} Small lambda values allow complex trees
+#' and may require larger \code{model_limit} for the solver to complete. This function
+#' automatically scales \code{model_limit} based on lambda magnitude relative to the
+#' theory-driven value \eqn{(\log n)/n}. Additionally, if a lambda value fails on 3 or
+#' more folds, remaining folds for that lambda are skipped to avoid wasted computation.
+#'
 #' @examples
 #' \dontrun{
 #' set.seed(42)
@@ -58,6 +107,10 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
                              lambda_grid = NULL, K = 5L, refit = TRUE,
                              verbose = FALSE, worker_limit = 1L, parallel = TRUE,
                              seed = NULL, ...) {
+  # Capture additional arguments, filtering out model_limit (we set it adaptively)
+  dots <- list(...)
+  dots$model_limit <- NULL
+
   # Input validation (aligned with fit_tree)
   if (!is.data.frame(X) && !is.matrix(X)) {
     cli::cli_abort("{.arg X} must be a data.frame or matrix.")
@@ -92,7 +145,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   fold_indices <- create_folds(y, K = K)
 
   if (is.null(lambda_grid)) {
-    lambda_grid <- (log(n) / n) * c(0.25, 0.5, 1, 2, 4)
+    lambda_grid <- (log(n) / n) * c(0.05, 0.1, 0.25, 0.5, 1, 2)
   }
   lambda_grid <- sort(unique(lambda_grid))
 
@@ -106,6 +159,12 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   # Create a grid of all (lambda, fold) combinations
   grid <- expand.grid(lambda_idx = seq_len(n_lambda), fold_idx = seq_len(K),
                      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+
+  # Sort grid to distribute expensive fits across workers
+  # Smaller lambda = higher computational cost, so sort by 1/lambda (descending)
+  grid$cost_est <- 1 / lambda_grid[grid$lambda_idx]
+  grid <- grid[order(grid$cost_est, decreasing = TRUE), ]
+  grid$cost_est <- NULL  # Remove temporary column
 
   # Progress bar setup
   if (verbose && .has_cli) {
@@ -123,6 +182,9 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     rep(NA_integer_, nrow(grid))  # No seeding if user didn't set seed
   }
 
+  # Track failures per lambda for early stopping
+  lambda_failure_count <- rep(0, n_lambda)
+
   # Function to fit one (lambda, fold) combination with seed support and error handling
   fit_one_combo <- function(i, task_seed) {
     tryCatch(
@@ -133,6 +195,12 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         fold_idx <- grid$fold_idx[i]
         lam <- lambda_grid[lambda_idx]
 
+        # Early stopping: Skip if this lambda has failed multiple times already
+        if (lambda_failure_count[lambda_idx] >= 3) {
+          return(list(lambda_idx = lambda_idx, fold_idx = fold_idx,
+                      loss = NA_real_, skipped = TRUE))
+        }
+
         val_idx <- fold_indices[[fold_idx]]
         train_idx <- setdiff(seq_len(n), val_idx)
         X_train <- X[train_idx, , drop = FALSE]
@@ -140,10 +208,22 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         X_val <- X[val_idx, , drop = FALSE]
         y_val <- y[val_idx]
 
+        # Compute safe model_limit based on lambda magnitude
+        safe_limit <- compute_safe_model_limit(lam, n, ncol(X))
+
         # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
-        fit <- fit_tree(X_train, y_train, loss_function = loss_function,
-                        regularization = lam, worker_limit = 1L,
-                        verbose = FALSE, ...)
+        # Build fit_args, only including model_limit if it's not 0 (unlimited)
+        fit_args <- list(X = X_train, y = y_train, loss_function = loss_function,
+                         regularization = lam, worker_limit = 1L, verbose = FALSE)
+
+        # Only add model_limit if it's not 0 (0 means unlimited, which causes C++ issues)
+        if (safe_limit > 0) {
+          fit_args$model_limit <- safe_limit
+        }
+
+        # Merge with filtered dots
+        fit_args <- c(fit_args, dots)
+        fit <- do.call(fit_tree, fit_args)
 
         if (loss_function == "misclassification") {
           pred <- predict(fit, X_val, type = "class")
@@ -160,6 +240,10 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
       error = function(e) {
         lambda_idx <- grid$lambda_idx[i]
         fold_idx <- grid$fold_idx[i]
+
+        # Increment failure count for early stopping
+        lambda_failure_count[lambda_idx] <<- lambda_failure_count[lambda_idx] + 1
+
         warning("CV task ", i, " (lambda index ", lambda_idx,
                ", fold ", fold_idx, ") failed: ", e$message,
                call. = FALSE)
@@ -189,8 +273,26 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     fold_losses[res$lambda_idx, res$fold_idx] <- res$loss
   }
 
-  cv_loss <- rowMeans(fold_losses)
+  cv_loss <- rowMeans(fold_losses, na.rm = TRUE)
   best_idx <- which.min(cv_loss)
+
+  # Check if CV completely failed (all lambdas failed)
+  if (length(best_idx) == 0 || is.na(cv_loss[best_idx])) {
+    warning("Cross-validation failed for all lambda values. Returning NA results.",
+            call. = FALSE)
+    result <- list(
+      best_lambda = NA_real_,
+      cv_loss = cv_loss,
+      lambda_grid = lambda_grid,
+      fold_losses = fold_losses
+    )
+    # Only add model if refit=TRUE (even though it's NULL)
+    if (refit) {
+      result$model <- NULL
+    }
+    return(result)
+  }
+
   best_lambda <- lambda_grid[best_idx]
 
   out <- list(
@@ -204,9 +306,22 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     if (verbose) {
       message(sprintf("Refitting on full data with lambda = %.6f\n", best_lambda))
     }
-    out$model <- fit_tree(X, y, loss_function = loss_function,
-                          regularization = best_lambda,
-                          worker_limit = worker_limit, verbose = verbose, ...)
+    # Use safe model_limit for refit as well
+    safe_limit_refit <- compute_safe_model_limit(best_lambda, n, ncol(X))
+
+    # Build refit_args, only including model_limit if it's not 0
+    refit_args <- list(X = X, y = y, loss_function = loss_function,
+                       regularization = best_lambda,
+                       worker_limit = worker_limit, verbose = verbose)
+
+    # Only add model_limit if it's not 0 (0 causes C++ issues)
+    if (safe_limit_refit > 0) {
+      refit_args$model_limit <- safe_limit_refit
+    }
+
+    # Merge with filtered dots
+    refit_args <- c(refit_args, dots)
+    out$model <- do.call(fit_tree, refit_args)
   }
 
   out
