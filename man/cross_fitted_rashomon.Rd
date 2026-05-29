@@ -12,6 +12,7 @@ cross_fitted_rashomon(
   regularization = 0.1,
   rashomon_bound_multiplier = 0.05,
   rashomon_bound_adder = 0,
+  rashomon_ignore_trivial_extensions = FALSE,
   max_leaves = NULL,
   single_tree = FALSE,
   auto_tune_intersecting = FALSE,
@@ -39,6 +40,12 @@ cross_fitted_rashomon(
 \item{rashomon_bound_multiplier}{Rashomon set size control (multiplicative). Default: 0.05}
 
 \item{rashomon_bound_adder}{Additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
+
+\item{rashomon_ignore_trivial_extensions}{Logical. If FALSE (default), keep all trees including trivial
+extensions (same partition, different split sequences). This is REQUIRED for cross-fitted intersection
+to work correctly. When folds learn the same partition via different split orders, setting TRUE would
+prune each fold's Rashomon set to 1 representative, causing intersection to fail even when folds agree
+on the optimal partition. \strong{Do not override this default unless you understand the implications.}}
 
 \item{max_leaves}{Optional integer. If set, only trees with \eqn{\#\text{leaves} \le} \code{max_leaves} are used (R-side sieve; theory-consistent complexity).}
 

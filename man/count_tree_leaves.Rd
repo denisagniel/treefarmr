@@ -34,6 +34,12 @@ Rashomon bound = optimum * (1 + rashomon_bound_multiplier). Ignored if \code{ras
 \item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0.
 If non-zero, Rashomon bound = optimum + rashomon_bound_adder and \code{rashomon_bound_multiplier} is not used.}
 
+\item{rashomon_ignore_trivial_extensions}{Logical or NULL. If TRUE, prune trees with identical
+partitions but different split sequences, keeping one representative per partition. If FALSE, keep all
+trivial extensions (same partition, different split order). If NULL (default), inferred from
+\code{single_tree}: TRUE when \code{single_tree=TRUE}, FALSE when \code{single_tree=FALSE}.
+\strong{For cross-fitted Rashomon workflows:} Must be FALSE to enable fold intersection.}
+
 \item{target_trees}{Integer: target number of trees when auto-tuning (default: 1).}
 
 \item{max_trees}{Integer: maximum acceptable number of trees when auto-tuning (default: 5).}

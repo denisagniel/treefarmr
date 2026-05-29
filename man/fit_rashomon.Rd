@@ -11,6 +11,7 @@ fit_rashomon(
   regularization = 0.1,
   rashomon_bound_multiplier = 0.05,
   rashomon_bound_adder = 0,
+  rashomon_ignore_trivial_extensions = FALSE,
   worker_limit = 1L,
   verbose = FALSE,
   store_training_data = NULL,
@@ -32,6 +33,12 @@ lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
 \item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.}
 
 \item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
+
+\item{rashomon_ignore_trivial_extensions}{Logical. If FALSE (default), keep all trees including trivial
+extensions (same partition, different split order). This is CRITICAL for cross-fitted Rashomon workflows,
+where folds may learn the same partition via different split sequences. Setting to TRUE prunes to one
+representative per partition, which breaks fold intersection. Only set to TRUE if you explicitly want
+partition-level uniqueness for single-fold analysis.}
 
 \item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
 

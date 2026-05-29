@@ -54,6 +54,8 @@ Select the regularization parameter lambda by K-fold cross-validation:
 for each candidate lambda in a grid, fit a single tree on training folds,
 compute held-out loss on the validation fold using the same loss as for
 fitting, and choose the lambda that minimizes average held-out loss.
+Automatically adjusts solver parameters for small lambda values to ensure
+computational feasibility.
 }
 \details{
 The DML/tree paper specifies that the regularization parameter lambda (penalty per leaf) should be chosen by cross-validation: for each nuisance, minimize held-out loss (the same loss L used for fitting) over a grid of lambda values. A theory-driven default is lambda proportional to (log n)/n (e.g. lambda = (log n)/n); the proportionality constant can be tuned by cross-validation.
@@ -63,6 +65,12 @@ Held-out loss is computed as follows:
   \item For \code{loss_function = "misclassification"}: mean(1 - correct) on the validation fold (misclassification rate).
   \item For \code{loss_function = "log_loss"}: mean cross-entropy on the validation fold; predicted class probabilities are clamped to avoid log(0).
 }
+
+\strong{Computational Considerations:} Small lambda values allow complex trees
+and may require larger \code{model_limit} for the solver to complete. This function
+automatically scales \code{model_limit} based on lambda magnitude relative to the
+theory-driven value \eqn{(\log n)/n}. Additionally, if a lambda value fails on 3 or
+more folds, remaining folds for that lambda are skipped to avoid wasted computation.
 }
 \examples{
 \dontrun{

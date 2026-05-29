@@ -30,7 +30,11 @@ same thresholds as training. Required when structure uses discretized
 feature names but X_new has original continuous features. Default: NULL.}
 }
 \value{
-OptimalTreesModel with refit leaf values
+List with class "refit_result" containing:
+  \item{model}{OptimalTreesModel with refit leaf values}
+  \item{n_per_leaf}{Named integer vector of observation counts per leaf.
+    Names are leaf paths (e.g., "0-1", "1-0-1", "root"), values are counts.
+    Used for weighted tree averaging.}
 }
 \description{
 Refit leaf values for a fixed tree structure using new training data.
@@ -54,7 +58,9 @@ model1 <- fit_tree(X1, y1)
 structure <- extract_tree_structure(model1)
 
 # Refit same structure on data 2
-model2 <- refit_tree_structure(structure, X2, y2, "log_loss")
+refit_result <- refit_tree_structure(structure, X2, y2, "log_loss")
+model2 <- refit_result$model
+leaf_counts <- refit_result$n_per_leaf
 
 # Make predictions
 preds <- predict(model2, X_test, type = "prob")
