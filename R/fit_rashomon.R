@@ -13,6 +13,11 @@
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
 #' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.
 #' @param rashomon_bound_adder Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
+#' @param rashomon_ignore_trivial_extensions Logical. If FALSE (default), keep all trees including trivial
+#'   extensions (same partition, different split order). This is CRITICAL for cross-fitted Rashomon workflows,
+#'   where folds may learn the same partition via different split sequences. Setting to TRUE prunes to one
+#'   representative per partition, which breaks fold intersection. Only set to TRUE if you explicitly want
+#'   partition-level uniqueness for single-fold analysis.
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
@@ -89,7 +94,9 @@
 #'
 #' @export
 fit_rashomon <- function(X, y, loss_function = "misclassification", regularization = 0.1,
-                        rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, worker_limit = 1L, verbose = FALSE,
+                        rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0,
+                        rashomon_ignore_trivial_extensions = FALSE,
+                        worker_limit = 1L, verbose = FALSE,
                         store_training_data = NULL, compute_probabilities = FALSE, ...) {
   
   # Call optimaltrees with single_tree = FALSE to compute rashomon set
@@ -100,6 +107,7 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
     regularization = regularization,
     rashomon_bound_multiplier = rashomon_bound_multiplier,
     rashomon_bound_adder = rashomon_bound_adder,
+    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
     worker_limit = worker_limit,
     verbose = verbose,
     store_training_data = store_training_data,

@@ -25,6 +25,11 @@
 #'   Rashomon bound = optimum * (1 + rashomon_bound_multiplier). Ignored if \code{rashomon_bound_adder} is non-zero.
 #' @param rashomon_bound_adder Numeric value for additive Rashomon bound. Default: 0.
 #'   If non-zero, Rashomon bound = optimum + rashomon_bound_adder and \code{rashomon_bound_multiplier} is not used.
+#' @param rashomon_ignore_trivial_extensions Logical or NULL. If TRUE, prune trees with identical
+#'   partitions but different split sequences, keeping one representative per partition. If FALSE, keep all
+#'   trivial extensions (same partition, different split order). If NULL (default), inferred from
+#'   \code{single_tree}: TRUE when \code{single_tree=TRUE}, FALSE when \code{single_tree=FALSE}.
+#'   \strong{For cross-fitted Rashomon workflows:} Must be FALSE to enable fold intersection.
 #' @param target_trees Integer: target number of trees when auto-tuning (default: 1).
 #' @param max_trees Integer: maximum acceptable number of trees when auto-tuning (default: 5).
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
@@ -448,6 +453,7 @@ optimaltrees <- function(X, y, loss_function = "misclassification", regularizati
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
 worker_limit = 1L, model_limit = 10000, verbose = FALSE, store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
+rashomon_ignore_trivial_extensions = NULL,
 discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
 cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE,
 huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
@@ -455,7 +461,12 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   if (is.null(store_training_data)) {
     store_training_data <- (loss_function == "log_loss" || loss_function == "squared_error")
   }
-  
+
+  # Infer rashomon_ignore_trivial_extensions from single_tree if NULL
+  if (is.null(rashomon_ignore_trivial_extensions)) {
+    rashomon_ignore_trivial_extensions <- single_tree
+  }
+
   # Input validation
   if (!is.data.frame(X) && !is.matrix(X)) {
     cli::cli_abort("{.arg X} must be a data.frame or matrix.")
@@ -596,6 +607,7 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     k_cluster = k_cluster,
     huber_delta = huber_delta,
     quantile_tau = quantile_tau,
+    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
     ...
   )
   

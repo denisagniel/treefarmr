@@ -11,6 +11,9 @@
 #'   Options: "misclassification" (default) or "log_loss".
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
+#' @param rashomon_ignore_trivial_extensions Logical. If TRUE (default), prune trees with identical
+#'   partitions but different split sequences, keeping one representative. This is appropriate when fitting
+#'   a single tree, as users typically want one interpretable model, not multiple equivalent representations.
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
 #'   \strong{Performance note:} Parallelization has significant overhead due to shared
 #'   queue contention. Typical speedups: 1.2-1.4x with 4 workers on medium-sized problems
@@ -74,6 +77,7 @@
 #'
 #' @export
 fit_tree <- function(X, y, loss_function = "misclassification", regularization = 0.1,
+                    rashomon_ignore_trivial_extensions = TRUE,
                     worker_limit = 1L, verbose = FALSE, store_training_data = NULL,
                     compute_probabilities = FALSE, ...) {
   # Issue #11: Validate X and y inputs
@@ -192,6 +196,7 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     y = y,
     loss_function = loss_function,
     regularization = regularization,
+    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
     worker_limit = worker_limit,
     verbose = verbose,
     store_training_data = store_training_data,
