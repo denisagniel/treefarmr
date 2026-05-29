@@ -39,6 +39,12 @@ test_that("Thread-safety stress test with worker_limit=4", {
         n_leaves = result$n_leaves
       )
     }
+
+    # Periodic cleanup every 10 iterations
+    if (i %% 10 == 0) {
+      rm(result)
+      gc(verbose = FALSE)
+    }
   }
 
   # All iterations should have consistent results (same optimal tree)

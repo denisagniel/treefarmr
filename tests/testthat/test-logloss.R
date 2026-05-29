@@ -115,7 +115,11 @@ test_that("log-loss with different regularization values", {
 
     row_sums <- rowSums(model@probabilities)
     expect_true(all(abs(row_sums - 1) < 1e-10))
+
+    # Explicit cleanup
+    rm(model)
   }
+  gc()  # Force collection after loop
 })
 
 test_that("log-loss regression test - consistent behavior", {

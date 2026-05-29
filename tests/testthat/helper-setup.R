@@ -197,6 +197,9 @@ teardown_test_environment <- function() {
       # Ignore cleanup errors
     })
   }
+
+  # Force garbage collection between test files
+  gc(verbose = FALSE)
 }
 
 # Testthat hooks for automatic setup/teardown

@@ -145,7 +145,11 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   fold_indices <- create_folds(y, K = K)
 
   if (is.null(lambda_grid)) {
-    lambda_grid <- (log(n) / n) * c(0.05, 0.1, 0.25, 0.5, 1, 2)
+    # Changed from c(0.05, 0.1, 0.25, 0.5, 1, 2) to c(1, 1.5, 2, 3, 5, 10)
+    # Previous grid started at (log n)/n * 0.05 which was too small and caused overfitting
+    # New grid starts at theory-based (log n)/n and searches larger values
+    # This prevents overfitting and eliminates persistent bias in cross-fitted estimation
+    lambda_grid <- (log(n) / n) * c(1, 1.5, 2, 3, 5, 10)
   }
   lambda_grid <- sort(unique(lambda_grid))
 
@@ -212,18 +216,16 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         safe_limit <- compute_safe_model_limit(lam, n, ncol(X))
 
         # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
-        # Build fit_args, only including model_limit if it's not 0 (unlimited)
+        # Call optimaltrees directly to avoid parameter passing issues with fit_tree
         fit_args <- list(X = X_train, y = y_train, loss_function = loss_function,
-                         regularization = lam, worker_limit = 1L, verbose = FALSE)
+                         regularization = lam, worker_limit = 1L, verbose = FALSE,
+                         single_tree = TRUE, model_limit = safe_limit)
 
-        # Only add model_limit if it's not 0 (0 means unlimited, which causes C++ issues)
-        if (safe_limit > 0) {
-          fit_args$model_limit <- safe_limit
-        }
+        # Merge with dots (for discretization params, etc.)
+        # Use modifyList so fit_args overrides dots
+        fit_args <- modifyList(dots, fit_args)
 
-        # Merge with filtered dots
-        fit_args <- c(fit_args, dots)
-        fit <- do.call(fit_tree, fit_args)
+        fit <- do.call(optimaltrees, fit_args)
 
         if (loss_function == "misclassification") {
           pred <- predict(fit, X_val, type = "class")
@@ -309,19 +311,16 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     # Use safe model_limit for refit as well
     safe_limit_refit <- compute_safe_model_limit(best_lambda, n, ncol(X))
 
-    # Build refit_args, only including model_limit if it's not 0
+    # Build refit_args - call optimaltrees directly to avoid parameter issues
     refit_args <- list(X = X, y = y, loss_function = loss_function,
                        regularization = best_lambda,
-                       worker_limit = worker_limit, verbose = verbose)
+                       worker_limit = worker_limit, verbose = verbose,
+                       single_tree = TRUE, model_limit = safe_limit_refit)
 
-    # Only add model_limit if it's not 0 (0 causes C++ issues)
-    if (safe_limit_refit > 0) {
-      refit_args$model_limit <- safe_limit_refit
-    }
+    # Merge with dots (for discretization params, etc.)
+    refit_args <- modifyList(dots, refit_args)
 
-    # Merge with filtered dots
-    refit_args <- c(refit_args, dots)
-    out$model <- do.call(fit_tree, refit_args)
+    out$model <- do.call(optimaltrees, refit_args)
   }
 
   out

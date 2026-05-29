@@ -106,8 +106,9 @@ cv_regularization_adaptive <- function(X, y,
 
   # Initialize grid if not provided
   if (is.null(lambda_grid_init)) {
-    # Use same default as cv_regularization
-    lambda_grid <- (log(n) / n) * c(0.05, 0.1, 0.25, 0.5, 1, 2)
+    # Use same default as cv_regularization (updated 2026-05-29)
+    # Start at theory-based (log n)/n to prevent overfitting
+    lambda_grid <- (log(n) / n) * c(1, 1.5, 2, 3, 5, 10)
   } else {
     lambda_grid <- sort(unique(lambda_grid_init))
   }
@@ -228,12 +229,16 @@ cv_regularization_adaptive <- function(X, y,
       new_lambdas <- strongest * (extension_factor ^ (1:n_extend))
 
       # Ensure new values are not too large
-      new_lambdas <- new_lambdas[new_lambdas < 1]  # Lambda > 1 doesn't make sense
+      # For DML/causal inference, we may need lambda > 1 (strong regularization)
+      # to prevent overfitting. Cap at 10 instead of 1.
+      # Lambda = 10 means ~800× (log n)/n for n=500, which is extremely strong
+      # but may be needed for very overfit-prone problems
+      new_lambdas <- new_lambdas[new_lambdas < 10]
 
       if (length(new_lambdas) == 0) {
         # Can't go stronger - stop here
         if (verbose) {
-          cli::cli_alert_warning("Cannot extend stronger (lambda too large). Stopping.")
+          cli::cli_alert_warning("Cannot extend stronger (lambda >= 10). Stopping.")
         }
 
         final_lambda <- cv_result$best_lambda

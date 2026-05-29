@@ -168,16 +168,52 @@
 #' pred_misclass <- predict_treefarms(model_misclass, X_new)
 #' pred_logloss <- predict_treefarms(model_logloss, X_new)
 #' }
+
+#' Count the number of leaves in a tree
 #'
-# Helper function to count tree leaves from JSON structure
+#' @description
+#' Counts the number of leaf nodes in a decision tree. Useful for assessing
+#' tree complexity and diagnosing potential overfitting.
+#'
+#' @param tree_node Tree structure (from model@tree_json or extracted tree)
+#'
+#' @return Integer number of leaf nodes
+#'
+#' @details
+#' A leaf node is identified by the presence of a prediction field.
+#' Internal nodes have true/false children and a split rule.
+#'
+#' @examples
+#' \dontrun{
+#' model <- fit_tree(X, y)
+#' n_leaves <- count_tree_leaves(model)
+#' cat("Tree has", n_leaves, "leaves\n")
+#' }
+#'
+#' @export
 count_tree_leaves <- function(tree_node) {
   if (is.null(tree_node)) return(0)
-  
+
+  # If tree_node is an S7 OptimalTreesModel, extract first tree and count
+  if (S7::S7_inherits(tree_node, OptimalTreesModel)) {
+    if (tree_node@n_trees == 0) return(0)
+    # Count leaves in first tree (or sum across all trees for Rashomon sets)
+    return(count_tree_leaves(tree_node@trees[[1]]))
+  }
+
+  # If tree_node is a list with tree_json field (old structure)
+  if (is.list(tree_node) && !is.null(tree_node$tree_json)) {
+    tree_node <- tree_node$tree_json
+  }
+
+  # Now tree_node should be the actual tree structure (list)
+  if (is.null(tree_node)) return(0)
+
   # If this node has a prediction, it's a leaf
   if (!is.null(tree_node$prediction)) {
     return(1)
   }
-  
+
   # If this node has children (true/false), recursively count them
   count <- 0
   if (!is.null(tree_node$true)) {
@@ -186,7 +222,7 @@ count_tree_leaves <- function(tree_node) {
   if (!is.null(tree_node$false)) {
     count <- count + count_tree_leaves(tree_node$false)
   }
-  
+
   return(count)
 }
 

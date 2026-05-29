@@ -7,6 +7,8 @@
 count_tree_leaves(tree_node)
 }
 \arguments{
+\item{tree_node}{Tree structure (from model@tree_json or extracted tree)}
+
 \item{X}{A data.frame or matrix of features. Can contain continuous or
 binary (0/1) features. Continuous features will be automatically discretized.}
 
@@ -122,10 +124,15 @@ A list containing:
   \item{n_trees}{Number of trees in the Rashomon set}
   \item{X_train}{Training features (only if store_training_data=TRUE)}
   \item{y_train}{Training labels (only if store_training_data=TRUE)}
+
+Integer number of leaf nodes
 }
 \description{
 Train TreeFARMS models with support for log-loss optimization and probability predictions.
 TreeFARMS finds optimal decision trees using either misclassification loss or log-loss (cross-entropy).
+
+Counts the number of leaf nodes in a decision tree. Useful for assessing
+tree complexity and diagnosing potential overfitting.
 }
 \details{
 TreeFARMS (Tree-based Fast and Accurate Rule Set Models) is an algorithm for
@@ -151,6 +158,9 @@ or the helper functions \code{get_probabilities()}, \code{get_predictions()}, or
 Training data (\code{X_train}, \code{y_train}) is not stored by default to save memory.
 Set \code{store_training_data=TRUE} if you need to access training data later (e.g., for
 computing accuracy or probabilities on training data).
+
+A leaf node is identified by the presence of a prediction field.
+Internal nodes have true/false children and a split rule.
 }
 \examples{
 \dontrun{
@@ -198,6 +208,13 @@ X_new <- data.frame(
 
 pred_misclass <- predict_treefarms(model_misclass, X_new)
 pred_logloss <- predict_treefarms(model_logloss, X_new)
+}
+Count the number of leaves in a tree
+
+\dontrun{
+model <- fit_tree(X, y)
+n_leaves <- count_tree_leaves(model)
+cat("Tree has", n_leaves, "leaves\n")
 }
 
 }
