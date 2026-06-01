@@ -947,6 +947,11 @@ create_model_object <- function(result_data, tree_json, config, result_list,
     status = result_list$status
   )
 
+  # Store all trees when multiple are available (Rashomon set)
+  if (!is.null(result_data$trees) && is.list(result_data$trees) && length(result_data$trees) > 1) {
+    model_obj$trees <- result_data$trees
+  }
+
   # Determine which tree to use for predictions
   tree_to_use <- if (!is.null(tree_json)) tree_json else result_data
 

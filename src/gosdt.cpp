@@ -403,7 +403,7 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
             // So we extract models first, then extract the Rashomon set
             fit_gosdt(optimizer, models);
         } else {
-            std::cout << "Finding Optimal Objective..." << std::endl;
+            if (Configuration::verbose) { std::cout << "Finding Optimal Objective..." << std::endl; }
 
             fit_gosdt(optimizer, models);
 
@@ -422,10 +422,26 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
                 rashomon_bound = optimal_objective + Configuration::rashomon_bound_adder;
             }
         }
-        // Extract Rashomon set - this sets rashomon_flag, so we can't call optimizer.models() after this
+        // Extract Rashomon set into ModelSets (compact DAG for file output)
         fit_rashomon(optimizer, rashomon_bound, results);
         process_rashomon_result(results, optimizer.get_state());
-        // Note: models were already extracted in fit_gosdt() above, so we use those for serialization
+
+        // NEW: Extract Rashomon set into Model objects for R serialization
+        // The results variable now contains the Rashomon ModelSets
+        // We pass both rashomon_bound and results to enumerate them into Models
+        if (Configuration::verbose) {
+            std::cout << "Rashomon ModelSets extracted: " << results.second.size() << " unique trees" << std::endl;
+        }
+        optimizer.extract_rashomon_models(models, rashomon_bound);
+
+        if (Configuration::verbose) {
+            std::cout << "Returning " << models.size() << " trees to R" << std::endl;
+        }
+
+        // Reset optimizer after Model extraction (moved from fit_rashomon())
+        if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
+            optimizer.reset_except_dataset();
+        }
     } else {
         fit_gosdt(optimizer, models);
 
@@ -615,10 +631,8 @@ void GOSDT::fit_rashomon(Optimizer & optimizer, float rashomon_bound, results_t 
         std::cout << "Memory usage after extraction: " << getCurrentRSS() / 1000000 << std::endl;
     }
 
-    // For log-loss / regression: Don't reset - delay cleanup
-    if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
-        optimizer.reset_except_dataset();
-    }
+    // DON'T reset here - we need the graph for Model extraction
+    // The reset will happen in GOSDT::fit() after extract_rashomon_models()
 }
 
 void GOSDT::process_rashomon_result(results_t &results, State & state) {

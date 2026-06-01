@@ -90,6 +90,11 @@ public:
     // @modifies results: stores all models in Rashomon set in results
     void rash_models(results_t & results);
 
+    // @modifies results: extracts individual Model objects from Rashomon set for R serialization
+    // @param rashomon_bound: objective threshold for Rashomon set membership
+    // @note: complements rash_models() which extracts compact ModelSet structures for file output
+    void extract_rashomon_models(std::unordered_set< Model > & results, float rashomon_bound);
+
     // Generates snapshot data for trace visualization
     void diagnostic_trace(int iteration, key_type const & focal_point);
     // Generates snapshot data for trace-tree visualization

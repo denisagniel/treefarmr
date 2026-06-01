@@ -7,6 +7,7 @@
 #include "optimizer/dispatch/dispatch.hpp"
 #include "optimizer/extraction/models.hpp"
 #include "optimizer/extraction/rash_models.hpp"
+#include "optimizer/extraction/extract_rashomon_models.hpp"
 #include "configuration.hpp"
 #include <cstdint>  // For uintptr_t
 #include <limits>

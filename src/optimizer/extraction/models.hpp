@@ -58,7 +58,10 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
 
     // std::cout << "Capture: " << task.capture_set().to_string() << std::endl;
 
-    if (task.base_objective() <= task.upperbound() + std::numeric_limits<float>::epsilon()) {
+    // Use scope for filtering when provided (Rashomon extraction), otherwise fall back to task.upperbound()
+    float effective_bound = (scope > 0) ? scope : task.upperbound();
+
+    if (task.base_objective() <= effective_bound + std::numeric_limits<float>::epsilon()) {
         // || (Configuration::rule_list && task.capture_set().count() != task.capture_set().size())) {
         // std::cout << "Stump" << std::endl;
         // std::shared_ptr<key_type> stump(new Tile(set));
@@ -74,7 +77,10 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
     if (bounds == this->state.graph.bounds.end()) { return; }
     for (bound_iterator iterator = bounds -> second.begin(); iterator != bounds -> second.end(); ++iterator) {
 
-        if (std::get<2>(* iterator) > task.upperbound() + std::numeric_limits<float>::epsilon()) { continue; }
+        // When scope > 0 (Rashomon), filter by lowerbound (index 1) like rash_models_inner
+        // When scope <= 0 (optimal), filter by upperbound (index 2) as before
+        float split_bound = (scope > 0) ? std::get<1>(* iterator) : std::get<2>(* iterator);
+        if (split_bound > effective_bound + std::numeric_limits<float>::epsilon()) { continue; }
         int feature = std::get<0>(* iterator);
         //std::cout << "Feature: " << feature << std::endl;
         std::unordered_set< std::shared_ptr<Model> > negatives;
@@ -120,7 +126,10 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
             continue;
         }
 
-        if (left_has_child) {    
+        // When using scope (Rashomon), skip if scope would go negative for either child
+        if (scope > 0 && (scope - right_lowerbound < 0 || scope - left_lowerbound < 0)) { continue; }
+
+        if (left_has_child) {
             models(left_key -> second, negatives, scope - right_lowerbound);
         }
 
@@ -128,7 +137,7 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
 
         if (right_has_child) {
             models(right_key -> second, positives, scope - left_lowerbound);
-        } 
+        }
 
         if (positives.size() == 0) { continue; }
         
@@ -146,6 +155,13 @@ void Optimizer::models_inner(key_type const & identifier, std::unordered_set< st
                     
                     std::shared_ptr<Model> negative(* negative_it);
                     std::shared_ptr<Model> positive(* positive_it);
+
+                    // When using scope (Rashomon), prune combinations exceeding bound
+                    if (scope > 0) {
+                        float combined = negative->loss() + negative->complexity() + positive->loss() + positive->complexity();
+                        if (combined > effective_bound + std::numeric_limits<float>::epsilon()) { continue; }
+                    }
+
                     std::shared_ptr<Model> model(new Model(feature, negative, positive, this->state, task.worker_id()));
                     model -> identify(identifier);
                     model -> translate_self(task.order());
