@@ -308,6 +308,22 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
                                ensemble = TRUE, fold_indices = NULL, ...) {
   type <- match.arg(type)
 
+  # Convert S7 CFRashomon to list so $ accessor works throughout
+  if (S7::S7_inherits(object, CFRashomon)) {
+    object <- list(
+      n_intersecting = object@n_intersecting,
+      intersecting_trees = object@intersecting_trees,
+      tree_risks = object@tree_risks,
+      K = object@K,
+      fold_indices = object@fold_indices,
+      rashomon_sizes = object@rashomon_sizes,
+      rashomon_bound_multiplier = object@rashomon_bound_multiplier,
+      loss_function = object@loss_function,
+      fold_refits = object@fold_refits
+    )
+    class(object) <- "cf_rashomon"
+  }
+
   if (object$n_intersecting == 0) {
     stop("No intersecting trees available for prediction")
   }
@@ -326,8 +342,13 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     newdata <- as.data.frame(newdata)
   }
 
-  # Issue #23: Use extracted discretization helper
-  newdata <- apply_model_discretization(newdata, object)
+  # Issue #23: Apply discretization if metadata available (skip for bare cf_rashomon from S7)
+  has_discret_info <- !is.null(object[["discretization"]]) ||
+                      !is.null(object[["X_train"]]) ||
+                      !is.null(object[["X_original_names"]])
+  if (has_discret_info) {
+    newdata <- apply_model_discretization(newdata, object)
+  }
 
   n_rows <- nrow(newdata)
   
