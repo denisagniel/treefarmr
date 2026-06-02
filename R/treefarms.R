@@ -12,10 +12,10 @@
 #'     \item \code{"misclassification"} (default) - 0/1 loss for classification
 #'     \item \code{"log_loss"} - Cross-entropy loss for probabilistic classification
 #'     \item \code{"squared_error"} - L2 loss for regression (alias: \code{"regression"})
-#'     \item \code{"absolute_error"} - L1 loss for robust regression (NEW)
-#'     \item \code{"huber"} - Robust hybrid L1/L2 loss (NEW, requires \code{huber_delta})
-#'     \item \code{"quantile"} - Quantile regression (NEW, requires \code{quantile_tau})
-#'     \item \code{"custom"} - User-defined loss function (NEW, requires \code{custom_loss})
+#'     \item \code{"absolute_error"} - L1 loss (not yet implemented in solver)
+#'     \item \code{"huber"} - Robust hybrid L1/L2 loss (not yet implemented in solver)
+#'     \item \code{"quantile"} - Quantile regression (not yet implemented in solver)
+#'     \item \code{"custom"} - User-defined loss function (not yet implemented in solver)
 #'   }
 #'   For regression losses, \code{y} may be continuous and prediction returns fitted values.
 #' @param regularization Numeric value controlling model complexity. Higher values
@@ -545,6 +545,12 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
                     "absolute_error", "huber", "quantile", "custom")
   if (!loss_function %in% valid_losses) {
     cli::cli_abort("{.arg loss_function} must be one of: {.val {valid_losses}}.")
+  }
+  if (loss_function %in% c("absolute_error", "huber", "quantile", "custom")) {
+    cli::cli_abort(
+      c("{.val {loss_function}} is not yet implemented in the solver.",
+        "i" = "Currently supported: {.val misclassification}, {.val log_loss}, {.val squared_error}.")
+    )
   }
   if (loss_function == "regression") {
     loss_function <- "squared_error"

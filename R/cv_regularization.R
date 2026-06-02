@@ -49,9 +49,11 @@ compute_safe_model_limit <- function(lambda, n, p_features) {
 #' Automatically adjusts solver parameters for small lambda values to ensure
 #' computational feasibility.
 #'
-#' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
-#' @param y A vector of binary class labels (0/1).
-#' @param loss_function Character string: \code{"misclassification"} or \code{"log_loss"} (same as \code{\link{fit_tree}}).
+#' @param X A data.frame or matrix of features.
+#' @param y A vector of outcomes. Binary (0/1) for classification; numeric for regression
+#'   (when \code{loss_function = "squared_error"}).
+#' @param loss_function Character string: \code{"misclassification"}, \code{"log_loss"}, or
+#'   \code{"squared_error"} (same as \code{\link{fit_tree}}).
 #' @param lambda_grid Optional numeric vector of lambda values. If \code{NULL}, uses a theory-driven default grid around (log n)/n (see Details).
 #' @param K Number of folds (e.g. 5 or 10).
 #' @param refit If \code{TRUE}, refit a single tree on the full data with the chosen lambda and return it so the user can call \code{predict()} on it.
@@ -75,6 +77,7 @@ compute_safe_model_limit <- function(lambda, n, p_features) {
 #' \itemize{
 #'   \item For \code{loss_function = "misclassification"}: mean(1 - correct) on the validation fold (misclassification rate).
 #'   \item For \code{loss_function = "log_loss"}: mean cross-entropy on the validation fold; predicted class probabilities are clamped to avoid log(0).
+#'   \item For \code{loss_function = "squared_error"}: mean squared error on the validation fold.
 #' }
 #'
 #' \strong{Computational Considerations:} Small lambda values allow complex trees
@@ -124,11 +127,15 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   if (length(y) != nrow(X)) {
     cli::cli_abort("Length of {.arg y} must match number of rows in {.arg X}.")
   }
-  if (!all(y %in% c(0, 1))) {
-    cli::cli_abort("{.arg y} must contain only binary values (0 and 1).")
+  if (!loss_function %in% c("misclassification", "log_loss", "squared_error")) {
+    cli::cli_abort("{.arg loss_function} must be 'misclassification', 'log_loss', or 'squared_error'.")
   }
-  if (!loss_function %in% c("misclassification", "log_loss")) {
-    cli::cli_abort("{.arg loss_function} must be either 'misclassification' or 'log_loss'.")
+  is_regression <- loss_function == "squared_error"
+  if (!is_regression && !all(y %in% c(0, 1))) {
+    cli::cli_abort("{.arg y} must contain only binary values (0 and 1) for classification.")
+  }
+  if (is_regression && !is.numeric(y)) {
+    cli::cli_abort("{.arg y} must be numeric for squared_error (regression).")
   }
   if (length(K) != 1 || !is.numeric(K) || K < 2) {
     cli::cli_abort("{.arg K} must be an integer >= 2.")
@@ -142,7 +149,13 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   if (!is.null(seed)) {
     set.seed(seed)
   }
-  fold_indices <- create_folds(y, K = K)
+  # For regression, use simple random folds; for classification, stratify by class
+  if (is_regression) {
+    fold_assignment <- sample(rep(seq_len(K), length.out = n))
+    fold_indices <- purrr::map(seq_len(K), ~ which(fold_assignment == .x))
+  } else {
+    fold_indices <- create_folds(y, K = K)
+  }
 
   if (is.null(lambda_grid)) {
     # Changed from c(0.05, 0.1, 0.25, 0.5, 1, 2) to c(1, 1.5, 2, 3, 5, 10)
@@ -230,6 +243,9 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         if (loss_function == "misclassification") {
           pred <- predict(fit, X_val, type = "class")
           loss <- mean(y_val != pred)
+        } else if (loss_function == "squared_error") {
+          pred <- predict(fit, X_val)
+          loss <- mean((y_val - pred)^2)
         } else {
           probs <- predict(fit, X_val, type = "prob")
           p <- probs[, 2L]

@@ -1,4 +1,5 @@
 # Test suite for cv_regularization()
+skip_slow_tests()
 
 library(testthat)
 # library(treefarmr) # REMOVED: legacy package name

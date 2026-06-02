@@ -130,7 +130,7 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
   }
 
   # Step 3: Reconstruct tree with new leaf values
-  tree_list <- reconstruct_tree_with_leaves(structure, leaf_preds)
+  tree_list <- reconstruct_tree_with_leaves(structure, leaf_preds, loss_function)
 
   # Step 4: Compute predictions and probabilities
   if (loss_function == "squared_error") {
@@ -304,9 +304,10 @@ compute_leaf_predictions <- function(y_new, leaf_assignments, loss_function) {
 #'
 #' @param structure TreeStructure object
 #' @param leaf_predictions Named numeric vector (names = leaf IDs, values = predictions)
+#' @param loss_function Character. Loss type ("squared_error", "log_loss", "misclassification").
 #' @return Nested list (tree_json format)
 #' @keywords internal
-reconstruct_tree_with_leaves <- function(structure, leaf_predictions) {
+reconstruct_tree_with_leaves <- function(structure, leaf_predictions, loss_function) {
   # Base case: single-leaf tree
   if (length(structure@splits) == 0) {
     if (!("root" %in% names(leaf_predictions))) {
@@ -324,16 +325,17 @@ reconstruct_tree_with_leaves <- function(structure, leaf_predictions) {
       )
     }
 
-    return(list(
-      prediction = pred_val,
-      probabilities = c(1 - pred_val, pred_val)
-    ))
+    node <- list(prediction = pred_val)
+    if (loss_function != "squared_error") {
+      node$probabilities <- c(1 - pred_val, pred_val)
+    }
+    return(node)
   }
 
   # Recursive case: rebuild from structure
   # Strategy: traverse structure, create tree nodes, assign predictions at leaves
   reconstruct_from_structure(structure@splits[[1]], structure@splits,
-                              leaf_predictions, integer(0))
+                              leaf_predictions, integer(0), loss_function)
 }
 
 #' Reconstruct Tree from Structure (Simplified)
@@ -342,9 +344,10 @@ reconstruct_tree_with_leaves <- function(structure, leaf_predictions) {
 #' @param all_splits List of all splits (for lookup)
 #' @param leaf_preds Named numeric vector
 #' @param path Current path from root
+#' @param loss_function Character. Loss type for determining whether to include probabilities.
 #' @return Nested list (tree node)
 #' @keywords internal
-reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, path) {
+reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, path, loss_function) {
   # Left child
   left_path <- c(path, 0L)
   left_path_str <- paste(left_path, collapse = "-")
@@ -367,14 +370,14 @@ reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, pa
       ), call. = FALSE)
     }
 
-    false_node <- list(
-      prediction = pred,
-      probabilities = c(1 - pred, pred)
-    )
+    false_node <- list(prediction = pred)
+    if (loss_function != "squared_error") {
+      false_node$probabilities <- c(1 - pred, pred)
+    }
   } else {
     # Left is a split - recurse
     left_split <- find_split_for_path(all_splits, left_path)
-    false_node <- reconstruct_from_structure(left_split, all_splits, leaf_preds, left_path)
+    false_node <- reconstruct_from_structure(left_split, all_splits, leaf_preds, left_path, loss_function)
   }
 
   # Right child
@@ -399,14 +402,14 @@ reconstruct_from_structure <- function(current_split, all_splits, leaf_preds, pa
       ), call. = FALSE)
     }
 
-    true_node <- list(
-      prediction = pred,
-      probabilities = c(1 - pred, pred)
-    )
+    true_node <- list(prediction = pred)
+    if (loss_function != "squared_error") {
+      true_node$probabilities <- c(1 - pred, pred)
+    }
   } else {
     # Right is a split - recurse
     right_split <- find_split_for_path(all_splits, right_path)
-    true_node <- reconstruct_from_structure(right_split, all_splits, leaf_preds, right_path)
+    true_node <- reconstruct_from_structure(right_split, all_splits, leaf_preds, right_path, loss_function)
   }
 
   # Build split node

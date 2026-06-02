@@ -1,4 +1,5 @@
 # Tests for Tree Structure Operations (M-Split)
+skip_slow_tests()
 
 test_that("extract_tree_structure works for simple tree", {
   skip_if_not_installed("optimaltrees")

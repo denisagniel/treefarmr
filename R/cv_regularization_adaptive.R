@@ -12,9 +12,11 @@
 #'   \item Repeats until interior point selected or max iterations reached
 #' }
 #'
-#' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
-#' @param y A vector of binary class labels (0/1).
-#' @param loss_function Character string: \code{"misclassification"} or \code{"log_loss"}.
+#' @param X A data.frame or matrix of features.
+#' @param y A vector of outcomes. Binary (0/1) for classification; numeric for regression
+#'   (when \code{loss_function = "squared_error"}).
+#' @param loss_function Character string: \code{"misclassification"}, \code{"log_loss"}, or
+#'   \code{"squared_error"} (same as \code{\link{fit_tree}}).
 #' @param lambda_grid_init Optional numeric vector of initial lambda values. If \code{NULL}, uses default grid.
 #' @param K Number of CV folds (e.g. 5 or 10).
 #' @param max_iterations Maximum number of grid extensions. Default: 10.

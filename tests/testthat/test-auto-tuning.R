@@ -1,6 +1,7 @@
 # Auto-Tuning Tests
 # Tests auto_tune_optimaltrees functionality
 # Slimmed: 2026-03-25 during Phase 3 consolidation
+skip_slow_tests()
 
 library(testthat)
 # Setup/teardown handled by testthat hooks in helper-setup.R

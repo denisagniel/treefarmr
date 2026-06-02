@@ -85,3 +85,19 @@ test_that("refit_structure_on_data works for regression", {
   })
   expect_true(is.list(refit))
 })
+
+test_that("refit_tree_structure does not create invalid probabilities for regression", {
+  dat <- regression_dataset(n = 40, p = 3, seed = 99)
+  model <- safe_optimaltrees(dat$X, dat$y,
+                         loss_function = "squared_error",
+                         regularization = 0.1,
+                         verbose = FALSE)
+  structure <- extract_tree_structure(model)
+  skip_if(is.null(structure), "Could not extract tree structure")
+
+  dat2 <- regression_dataset(n = 30, p = 3, seed = 123)
+  refit_result <- refit_tree_structure(structure, dat2$X, dat2$y, "squared_error")
+  expect_s3_class(refit_result, "refit_result")
+  expect_null(refit_result$model@probabilities)
+  expect_true(is.numeric(refit_result$model@predictions))
+})

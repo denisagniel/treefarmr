@@ -2,6 +2,7 @@
 # Consolidated from test-probabilities.R and test-probability-accuracy.R
 # Tests probability validation, consistency, and accuracy
 # Created: 2026-03-25 during Phase 3 consolidation
+skip_slow_tests()
 
 library(testthat)
 # Setup/teardown handled by testthat hooks in helper-setup.R

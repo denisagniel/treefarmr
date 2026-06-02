@@ -18,7 +18,7 @@
 #' @param regularization_start User's starting lambda value
 #' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)
 #' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 10
-#' @param verbose Print progress information. Default: TRUE
+#' @param verbose Print progress information. Default: FALSE
 #' @param ... Additional parameters passed to tree fitting
 #'
 #' @return List with:
@@ -42,7 +42,7 @@ auto_tune_regularization_for_intersection <- function(
   regularization_start,
   epsilon_n_fixed = NULL,
   max_attempts = 10,
-  verbose = TRUE,
+  verbose = FALSE,
   ...
 ) {
 

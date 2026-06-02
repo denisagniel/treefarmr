@@ -352,6 +352,19 @@ test_that("verbose output works without error", {
   })
 })
 
+test_that("cleanup_static_state works and allows subsequent fitting", {
+  model <- safe_optimaltrees(simple_dataset$X, simple_dataset$y,
+                         loss_function = "misclassification",
+                         regularization = 0.1,
+                         verbose = FALSE)
+  expect_no_error(cleanup_static_state())
+  model2 <- safe_optimaltrees(simple_dataset$X, simple_dataset$y,
+                          loss_function = "misclassification",
+                          regularization = 0.1,
+                          verbose = FALSE)
+  expect_valid_treefarms_model(model2)
+})
+
 # Note: Auto-tuning tests moved to test-auto-tuning.R
 # Note: Extensive discretization edge cases removed (trust the algorithm)
 # Note: Redundant parameter variation tests removed

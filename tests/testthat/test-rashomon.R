@@ -2,6 +2,7 @@
 # Consolidated from test-cross-fitted-rashomon.R, test-rashomon-utils.R, test-auto-tune-rashomon.R
 # Tests Rashomon sets, cross-fitting, and utility functions
 # Created: 2026-03-25 during Phase 3 consolidation
+skip_slow_tests()
 
 library(testthat)
 # Setup/teardown handled by testthat hooks in helper-setup.R

@@ -1,5 +1,15 @@
 # Helper functions and setup utilities for TreeFARMR testing
 
+# Skip slow tests unless RUN_SLOW_TESTS=true is set.
+# Usage: add skip_slow_tests() at the top of slow test files.
+# Run all tests with: RUN_SLOW_TESTS=true Rscript -e 'devtools::test()'
+skip_slow_tests <- function() {
+  testthat::skip_if_not(
+    identical(Sys.getenv("RUN_SLOW_TESTS"), "true"),
+    "Slow tests skipped. Set RUN_SLOW_TESTS=true to run."
+  )
+}
+
 # Helper function to control RcppParallel threading for tests
 set_test_threads <- function(n) {
   if (requireNamespace("RcppParallel", quietly = TRUE)) {

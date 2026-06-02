@@ -1,3 +1,5 @@
+skip_slow_tests()
+
 test_that("fit_rashomon finds multiple trees by default (FALSE)", {
   skip_on_cran()
 
