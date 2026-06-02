@@ -1,3 +1,39 @@
+#' Count post-discretization binary feature count
+#'
+#' Analytically estimates the number of binary columns that will exist after
+#' discretization, without running the full discretization. Each continuous
+#' feature expands to (n_bins - 1) binary indicators; binary features stay as 1.
+#'
+#' @param X data.frame of features (pre-discretization)
+#' @param dots Additional arguments captured from \code{...} (may include
+#'   \code{discretize_bins} and \code{discretize_thresholds})
+#' @param n Number of rows in X (used for adaptive bin calculation)
+#' @return Integer: estimated number of binary features after discretization
+#' @keywords internal
+count_post_discretization_features <- function(X, dots, n) {
+  n_bins_arg <- dots$discretize_bins %||% 2L
+  thresholds <- dots$discretize_thresholds
+
+  n_bins <- if (identical(n_bins_arg, "adaptive")) {
+    max(2L, ceiling(log(n) / 3))
+  } else {
+    as.integer(n_bins_arg)
+  }
+
+  total <- 0L
+  for (col_name in names(X)) {
+    x <- X[[col_name]]
+    if (all(x %in% c(0, 1, NA_real_))) {
+      total <- total + 1L
+    } else if (!is.null(thresholds[[col_name]])) {
+      total <- total + length(thresholds[[col_name]])
+    } else {
+      total <- total + (n_bins - 1L)
+    }
+  }
+  total
+}
+
 #' Compute safe model_limit for given lambda and n
 #'
 #' Theory prescribes lambda ~ log(n)/n, but small lambda requires
@@ -142,6 +178,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   }
   K <- as.integer(K)
   n <- nrow(X)
+  p_binary <- count_post_discretization_features(X, dots, n)
   if (is.logical(y)) {
     y <- as.numeric(y)
   }
@@ -226,7 +263,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         y_val <- y[val_idx]
 
         # Compute safe model_limit based on lambda magnitude
-        safe_limit <- compute_safe_model_limit(lam, n, ncol(X))
+        safe_limit <- compute_safe_model_limit(lam, n, p_binary)
 
         # Always use worker_limit=1 inside parallel execution to avoid nested parallelism
         # Call optimaltrees directly to avoid parameter passing issues with fit_tree
@@ -325,7 +362,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
       message(sprintf("Refitting on full data with lambda = %.6f\n", best_lambda))
     }
     # Use safe model_limit for refit as well
-    safe_limit_refit <- compute_safe_model_limit(best_lambda, n, ncol(X))
+    safe_limit_refit <- compute_safe_model_limit(best_lambda, n, p_binary)
 
     # Build refit_args - call optimaltrees directly to avoid parameter issues
     refit_args <- list(X = X, y = y, loss_function = loss_function,
