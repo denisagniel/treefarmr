@@ -8,7 +8,7 @@
 #' @keywords internal
 find_gosdt_executable <- function() {
   # Check package installation directory
-  pkg_dir <- system.file(package = "treefarmr")
+  pkg_dir <- system.file(package = "optimaltrees")
   if (nchar(pkg_dir) > 0) {
     # Try Unix/Linux/macOS executable
     exec_path <- file.path(pkg_dir, "bin", "gosdt")
@@ -226,7 +226,7 @@ treefarms_isolated <- function(X, y,
     # We need to access the helper functions from treefarms.R
     # Get the extract_tree_from_stdout function if available
     extract_tree_from_stdout <- tryCatch({
-      get("extract_tree_from_stdout", envir = asNamespace("treefarmr"))
+      get("extract_tree_from_stdout", envir = asNamespace("optimaltrees"))
     }, error = function(e) {
       function(stdout_lines) { NULL }
     })
@@ -307,7 +307,7 @@ treefarms_isolated <- function(X, y,
     if (compute_probabilities && has_tree) {
       # Use existing get_probabilities_from_tree function
       get_probabilities_from_tree <- get("get_probabilities_from_tree", 
-                                        envir = asNamespace("treefarmr"))
+                                        envir = asNamespace("optimaltrees"))
       probabilities <- get_probabilities_from_tree(tree_to_use, X)
       predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
       accuracy <- mean(predictions == y)

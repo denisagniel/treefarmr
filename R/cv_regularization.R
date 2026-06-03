@@ -296,7 +296,9 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
         lambda_idx <- grid$lambda_idx[i]
         fold_idx <- grid$fold_idx[i]
 
-        # Increment failure count for early stopping
+        # NOTE: <<- only effective in sequential mode; in parallel, each worker
+        # has its own copy so early-stopping won't trigger. This is acceptable —
+        # correctness is unaffected, only performance of failing lambdas.
         lambda_failure_count[lambda_idx] <<- lambda_failure_count[lambda_idx] + 1
 
         warning("CV task ", i, " (lambda index ", lambda_idx,

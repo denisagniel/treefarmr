@@ -175,8 +175,18 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     if (K > n) {
       cli::cli_abort("{.arg K} cannot be larger than the number of observations.")
     }
-    # Set seed for reproducibility
+    # Set seed for reproducibility (restore RNG state after)
     if (!is.null(seed)) {
+      old_seed <- if (exists(".Random.seed", envir = globalenv())) {
+        get(".Random.seed", envir = globalenv())
+      }
+      on.exit({
+        if (is.null(old_seed)) {
+          rm(".Random.seed", envir = globalenv())
+        } else {
+          assign(".Random.seed", old_seed, envir = globalenv())
+        }
+      }, add = TRUE)
       set.seed(seed)
     }
     # Create stratified folds AFTER setting seed
@@ -417,6 +427,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
 #' @keywords internal
 try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regularization,
                                                rashomon_bound_multiplier, rashomon_bound_adder = 0,
+                                               rashomon_ignore_trivial_extensions = FALSE,
                                                max_leaves = NULL, single_tree, fold_indices, verbose, parallel = TRUE, ...) {
   tryCatch({
     # Initialize storage
@@ -546,27 +557,29 @@ try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regulariz
 #' @keywords internal
 create_folds <- function(y, K) {
   n <- length(y)
-  
-  # Stratify by class
-  class_0_idx <- which(y == 0)
-  class_1_idx <- which(y == 1)
-  
-  # Randomly assign class 0 observations to folds
-  fold_0 <- sample(rep(1:K, length.out = length(class_0_idx)))
-  
-  # Randomly assign class 1 observations to folds
-  fold_1 <- sample(rep(1:K, length.out = length(class_1_idx)))
-  
-  # Create fold index vector
-  fold_assignment <- integer(n)
-  fold_assignment[class_0_idx] <- fold_0
-  fold_assignment[class_1_idx] <- fold_1
-  
+  is_binary <- all(y %in% c(0, 1))
+
+  if (is_binary) {
+    # Stratify by class for binary outcomes
+    class_0_idx <- which(y == 0)
+    class_1_idx <- which(y == 1)
+
+    fold_0 <- sample(rep(1:K, length.out = length(class_0_idx)))
+    fold_1 <- sample(rep(1:K, length.out = length(class_1_idx)))
+
+    fold_assignment <- integer(n)
+    fold_assignment[class_0_idx] <- fold_0
+    fold_assignment[class_1_idx] <- fold_1
+  } else {
+    # Simple random fold assignment for continuous outcomes
+    fold_assignment <- sample(rep(1:K, length.out = n))
+  }
+
   # Convert to list of indices
   fold_indices <- purrr::map(1:K, ~ {
     which(fold_assignment == .x)
   })
-  
+
   return(fold_indices)
 }
 

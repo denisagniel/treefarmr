@@ -10,8 +10,6 @@ get_rashomon_prop <- function(obj, prop) {
       tree_risks = obj@tree_risks,
       rashomon_bound_multiplier = obj@rashomon_bound_multiplier,
       intersecting_trees = obj@intersecting_trees,
-      tree_jsons = obj@tree_jsons,
-      intersecting_structures = obj@intersecting_structures,
       K = obj@K,
       fold_indices = obj@fold_indices,
       rashomon_sizes = obj@rashomon_sizes,

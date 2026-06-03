@@ -12,6 +12,7 @@ try_cross_fitted_rashomon_internal(
   regularization,
   rashomon_bound_multiplier,
   rashomon_bound_adder = 0,
+  rashomon_ignore_trivial_extensions = FALSE,
   max_leaves = NULL,
   single_tree,
   fold_indices,

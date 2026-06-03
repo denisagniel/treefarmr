@@ -308,6 +308,12 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
                                ensemble = TRUE, fold_indices = NULL, ...) {
   type <- match.arg(type)
 
+  # Validate input type first
+
+  if (!inherits(object, "cf_rashomon") && !S7::S7_inherits(object, CFRashomon)) {
+    stop("object must be a cf_rashomon")
+  }
+
   # Convert S7 CFRashomon to list so $ accessor works throughout
   if (S7::S7_inherits(object, CFRashomon)) {
     object <- list(
@@ -326,11 +332,6 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
 
   if (object$n_intersecting == 0) {
     stop("No intersecting trees available for prediction")
-  }
-
-  # Validate input
-  if (!inherits(object, "cf_rashomon")) {
-    stop("object must be a cf_rashomon")
   }
 
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {

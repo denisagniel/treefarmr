@@ -326,25 +326,30 @@ print.optimaltrees_model <- function(x, ...) {
 #'
 #' @export
 plot.optimaltrees_model <- function(x, tree_index = 1, ...) {
-  if (x$n_trees == 0) {
+  is_s7 <- S7::S7_inherits(x, OptimalTreesModel)
+  n_trees <- if (is_s7) x@n_trees else x$n_trees
+  model <- if (is_s7) x@model else x$model
+  X_train <- if (is_s7) x@X_train else x$X_train
+
+  if (n_trees == 0) {
     stop("No trees available for plotting")
   }
-  
-  if (!is.null(x$model$tree_json)) {
+
+  if (!is.null(model$tree_json)) {
     # Get feature names from column names if available
-    feature_names <- if (!is.null(colnames(x$X_train))) {
-      colnames(x$X_train)
+    feature_names <- if (!is.null(colnames(X_train))) {
+      colnames(X_train)
     } else {
-      paste0("V", seq_len(ncol(x$X_train)))
+      paste0("V", seq_len(ncol(X_train)))
     }
     
     # Handle both single tree and list of trees
-    trees <- if (is.list(x$model$tree_json) && !is.null(x$model$tree_json$type)) {
+    trees <- if (is.list(model$tree_json) && !is.null(model$tree_json$type)) {
       # Single tree
-      list(x$model$tree_json)
-    } else if (is.list(x$model$tree_json) && length(x$model$tree_json) > 0) {
+      list(model$tree_json)
+    } else if (is.list(model$tree_json) && length(model$tree_json) > 0) {
       # List of trees
-      x$model$tree_json
+      model$tree_json
     } else {
       NULL
     }
@@ -524,32 +529,6 @@ print.optimaltrees_logloss_model <- function(x, ...) {
 }
 
 
-#' Print method for cf_rashomon
-#'
-#' @param x A cf_rashomon object
-#' @param ... Additional arguments (unused)
-#'
-#' @export
-print.cf_rashomon <- function(x, ...) {
-  cat("Cross-Fitted Rashomon Set Analysis\n")
-  cat("==================================\n")
-  cat("Number of folds:", x$K, "\n")
-  cat("Loss function:", x$loss_function, "\n")
-  cat("Regularization:", x$regularization, "\n")
-  cat("\nRashomon set sizes per fold:\n")
-  for (i in seq_along(x$rashomon_sizes)) {
-    cat(sprintf("  Fold %d: %d trees\n", i, x$rashomon_sizes[i]))
-  }
-  cat("\nIntersecting trees:", x$n_intersecting, "\n")
-  
-  if (x$n_intersecting > 0) {
-    cat("\n✓ Found stable tree(s) appearing in all folds!\n")
-    cat("  Use predict() to make predictions with the stable model.\n")
-  } else {
-    cat("\n✗ No trees found in all folds.\n")
-    cat("  Consider adjusting regularization or rashomon_bound_multiplier.\n")
-  }
-}
 
 #' Summary method for optimaltrees_logloss_model
 #'
@@ -606,73 +585,6 @@ summary.optimaltrees_logloss_model <- function(object, ...) {
   }
 }
 
-#' Summary method for cf_rashomon
-#'
-#' @param object A cf_rashomon object
-#' @param ... Additional arguments (unused)
-#'
-#' @export
-summary.cf_rashomon <- function(object, ...) {
-  cat("Cross-Fitted Rashomon Set Summary\n")
-  cat("=================================\n\n")
-
-  # Handle both S7 and S3 objects
-  is_s7 <- S7::S7_inherits(object, CFRashomon)
-  K <- if (is_s7) object@K else object$K
-  loss_function <- if (is_s7) object@loss_function else object$loss_function
-  regularization <- if (is_s7) object@regularization else object$regularization
-  X_train <- if (is_s7) object@X_train else object$X_train
-  rashomon_sizes <- if (is_s7) object@rashomon_sizes else object$rashomon_sizes
-  n_intersecting <- if (is_s7) object@n_intersecting else object$n_intersecting
-
-  # Configuration
-  cat("Configuration:\n")
-  cat("  K-fold cross-fitting: K =", K, "\n")
-  cat("  Loss function:", loss_function, "\n")
-  cat("  Regularization:", regularization, "\n\n")
-
-  # Data information
-  cat("Data:\n")
-  n_samp <- nrow(X_train)
-  cat("  Samples:", n_samp, "\n")
-  cat("  Features:", ncol(X_train), "\n\n")
-
-  # Fold results
-  cat("Fold Results:\n")
-  for (i in seq_along(rashomon_sizes)) {
-    cat(sprintf("  Fold %d: %d trees\n", i, rashomon_sizes[i]))
-  }
-  cat("\n")
-
-  # Intersection results
-  cat("Intersection Results:\n")
-  cat("  Trees in all folds:", n_intersecting, "\n")
-
-  if (n_intersecting > 0) {
-    cat("  ✓ Stable trees found!\n")
-    cat("  Use predict() to make predictions with stable model.\n")
-  } else {
-    cat("  ✗ No stable trees found.\n")
-    cat("  Consider:\n")
-    cat("    - Increasing regularization\n")
-    cat("    - Adjusting rashomon_bound_multiplier\n")
-    cat("    - Using different K value\n")
-  }
-
-  # Return a list with summary information (for programmatic use)
-  result <- list(
-    model_type = "CFRashomon",
-    K = K,
-    loss_function = loss_function,
-    regularization = regularization,
-    n_intersecting = n_intersecting,
-    rashomon_sizes = rashomon_sizes,
-    n_samples = n_samp,
-    n_features = ncol(X_train)
-  )
-
-  invisible(result)
-}
 
 #' Predict method for optimaltrees_logloss_model
 #'
@@ -699,21 +611,24 @@ predict.optimaltrees_logloss_model <- function(object, newdata, type = c("class"
   if (is.matrix(newdata)) {
     newdata <- as.data.frame(newdata)
   }
-  
+
+  # Apply discretization if metadata available
+  newdata <- apply_model_discretization(newdata, object)
+
   # Validate features if training data is available
   if (!is.null(object$X_train)) {
     if (!identical(names(newdata), names(object$X_train))) {
       stop("Feature names in newdata must match training data")
     }
   }
-  
+
   # Check for binary features
   for (col in names(newdata)) {
     if (!all(newdata[[col]] %in% c(0, 1))) {
       stop(paste("Feature", col, "must contain only binary values (0 and 1)"))
     }
   }
-  
+
   # Extract probabilities from tree structure
   if (!is.null(tree_to_use)) {
     # Use the get_probabilities_from_tree function from treefarms.R

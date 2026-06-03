@@ -195,6 +195,12 @@ tree_to_partition_signature <- function(tree, n_features = NULL) {
     stop("n_features must be at least 1, got: ", n_features)
   }
 
+  if (n_features > 20) {
+    warning("n_features > 20: partition signature requires 2^n_features enumeration. ",
+            "Returning NULL to avoid exponential blowup.", call. = FALSE)
+    return(NULL)
+  }
+
   # For binary features, enumerate all 2^n possible input combinations
   # and determine which inputs are grouped together (same leaf)
   n_combos <- 2^n_features
@@ -574,6 +580,10 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
         partition_sig <- tree_to_partition_signature(jsonlite::fromJSON(t, simplifyVector = FALSE))
       } else {
         partition_sig <- tree_to_partition_signature(t)
+      }
+      if (is.null(partition_sig)) {
+        # Fallback to structural hash when partition signature unavailable (>20 features)
+        return(digest::digest(t, algo = "xxhash64"))
       }
       # Hash the sorted partition signature
       # Trees with same leaves but different split orders will have same hash
