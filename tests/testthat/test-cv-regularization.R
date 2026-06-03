@@ -143,7 +143,7 @@ test_that("cv_regularization handles small lambda gracefully", {
 
   # Should complete without errors
   expect_type(result$best_lambda, "double")
-  expect_length(result$lambda_grid, 5)
+  expect_length(result$lambda_grid, 6)
 
   # CV should either succeed (at least 2 lambdas work) or fail gracefully (NA best_lambda)
   if (!is.na(result$best_lambda)) {

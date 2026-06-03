@@ -197,38 +197,33 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     cat(sprintf("Fold sizes: %s\n\n", paste(fold_sizes, collapse = ", ")))
   }
   
-  # Auto-tuning: find smallest epsilon_n with non-empty intersection
+  # Auto-tuning: multi-tier search for non-empty intersection
+  # Tier 1: tune epsilon at current lambda
+  # Tier 2: search over lambda multipliers with fixed epsilon
+  # Tier 3: saturated trees (lambda -> 0)
+  # Tier 4: give up, fall through to regular cross-fitting
   if (auto_tune_intersecting) {
-    auto_result <- auto_tune_rashomon_intersection(
+    auto_result <- auto_tune_regularization_for_intersection(
       X = X, y = y, K = K, fold_indices = fold_indices,
       loss_function = loss_function,
-      regularization = regularization,
-      c_start = 1,
-      c_max = 100,
-      binary_tolerance = 0.1,
+      regularization_start = regularization,
       verbose = verbose,
       max_leaves = max_leaves,
-      single_tree = single_tree,
-      parallel = parallel,
       ...
     )
 
     if (auto_result$converged) {
-      # Success: use the found epsilon_n and selected tree
       return(auto_result$result)
     } else {
-      # Failure: return fold-specific trees with warning
+      # All tiers failed: substantial cross-fold heterogeneity
       warning(
-        "Auto-tuning failed to find intersecting Rashomon sets after ",
-        auto_result$attempts, " attempts (tried c up to 100). ",
+        "Auto-tuning failed to find intersecting Rashomon sets (tried epsilon tuning, ",
+        "lambda search, and saturated trees). ",
         "This indicates substantial cross-fold heterogeneity. ",
         "Returning fold-specific trees. ",
         "Consider using use_rashomon = FALSE for this dataset.",
         call. = FALSE
       )
-
-      # Still run regular cross-fitting but user should be aware intersection failed
-      # Fall through to regular execution below
       if (verbose) {
         cat("\nProceeding with regular cross-fitting (no intersection guarantee)...\n\n")
       }
