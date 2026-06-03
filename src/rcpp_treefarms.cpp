@@ -190,7 +190,10 @@ Rcpp::List treefarms_fit_and_stats_cpp(std::string data_csv, std::string configu
 
 // [[Rcpp::export]]
 bool treefarms_model_limit_exceeded_cpp() {
-    return GOSDT::model_limit_exceeded;
+    // Read-and-reset: prevents stale flag from a prior failed fit poisoning the next call
+    bool val = GOSDT::model_limit_exceeded;
+    GOSDT::model_limit_exceeded = false;
+    return val;
 }
 
 // [[Rcpp::export]]

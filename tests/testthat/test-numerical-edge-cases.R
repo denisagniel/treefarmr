@@ -82,6 +82,9 @@ test_that("Log-loss handles extreme probabilities", {
   # Log-loss should handle edge cases without producing NaN/Inf
   if (!inherits(result, "try-error")) {
     expect_true(result@n_trees >= 1)
+    expect_true(is.finite(result@accuracy))
+    expect_true(result@accuracy >= 0 && result@accuracy <= 1)
+    expect_equal(length(result@predictions), n)
   }
 })
 
@@ -107,6 +110,8 @@ test_that("Squared error with extreme targets", {
   if (!inherits(result, "try-error")) {
     expect_true(result@n_trees >= 1)
     expect_true(is.numeric(result@predictions))
+    expect_equal(length(result@predictions), n)
+    expect_true(all(is.finite(result@predictions)))
   }
 })
 
@@ -132,6 +137,9 @@ test_that("Dataset variance computation is numerically stable", {
   # Should compute variance accurately without catastrophic cancellation
   if (!inherits(result, "try-error")) {
     expect_true(result@n_trees >= 1)
+    # Predictions should be finite and within the target range (not distorted by large mean)
+    expect_true(all(is.finite(result@predictions)))
+    expect_equal(length(result@predictions), n)
   }
 })
 

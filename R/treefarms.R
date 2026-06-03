@@ -526,8 +526,11 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   if (length(y) != nrow(X)) {
     cli::cli_abort("Length of {.arg y} must match number of rows in {.arg X}.")
   }
-  
-  
+
+  if (!is.numeric(max_depth) || length(max_depth) != 1L || is.na(max_depth) || max_depth < 0) {
+    cli::cli_abort("{.arg max_depth} must be a non-negative integer (0 = unlimited).")
+  }
+
   # Determine if this is a regression task
   if (loss_function == "custom") {
     # For custom losses, check specification first
@@ -564,7 +567,6 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   }
 
   # Resolve loss-aware model_limit default
-
   if (is.null(model_limit)) {
     model_limit <- switch(loss_function,
       "log_loss" = 1000L,
@@ -732,7 +734,6 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
                                         discretization_metadata, X_original)
 
   # Warn if Rashomon enumeration was truncated
-
   if (!single_tree && treefarms_model_limit_exceeded_cpp()) {
     cli::cli_warn(c(
       "Rashomon set enumeration was truncated at {.val {model_limit}} models.",
