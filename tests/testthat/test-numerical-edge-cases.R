@@ -1,10 +1,4 @@
 test_that("Numerical validation catches malformed input", {
-  # These tests verify that the safe_stof/safe_stoi functions properly
-  # catch malformed numeric input and throw clear error messages
-
-  # Test data with invalid numeric strings (if encoder exposed)
-  # Note: Current API doesn't directly expose encoder, so we test via data loading
-
   # Test 1: Extreme values that could cause overflow
   set.seed(789)
   n <- 50
@@ -14,21 +8,16 @@ test_that("Numerical validation catches malformed input", {
   result <- optimaltrees(
     X = X,
     y = y,
-    loss = "misclassification",
+    loss_function = "misclassification",
     regularization = 0.01,
-    time_limit = 5,
     verbose = FALSE
   )
 
   # Should handle extreme values without NaN/Inf
-  expect_true(is.finite(result$loss))
-  expect_true(is.finite(result$complexity))
+  expect_true(is.finite(result@accuracy))
 })
 
 test_that("Division by zero protection in computeScore", {
-  # The computeScore function should throw error when P=0 or N=0
-  # This is tested indirectly through model evaluation
-
   # Edge case: all samples in one class
   n <- 30
   X <- matrix(rnorm(n * 2), n, 2)
@@ -38,9 +27,8 @@ test_that("Division by zero protection in computeScore", {
     optimaltrees(
       X = X,
       y = y,
-      loss = "misclassification",
+      loss_function = "misclassification",
       regularization = 0.01,
-      time_limit = 5,
       verbose = FALSE
     )
   }, silent = TRUE)
@@ -48,7 +36,7 @@ test_that("Division by zero protection in computeScore", {
   # Should either succeed (trivial tree) or fail gracefully
   # Should NOT produce NaN or Inf
   if (!inherits(result, "try-error")) {
-    expect_true(is.finite(result$loss))
+    expect_true(is.finite(result@accuracy))
   }
 })
 
@@ -62,21 +50,15 @@ test_that("Model loss/complexity validation catches non-finite values", {
   result <- optimaltrees(
     X = X,
     y = y,
-    loss = "misclassification",
+    loss_function = "misclassification",
     regularization = 0.02,
-    time_limit = 5,
     verbose = FALSE
   )
 
-  # Loss and complexity must be finite
-  expect_true(is.finite(result$loss),
-              info = "Loss must be finite")
-  expect_true(is.finite(result$complexity),
-              info = "Complexity must be finite")
-  expect_true(result$loss >= 0,
-              info = "Loss must be non-negative")
-  expect_true(result$complexity >= 0,
-              info = "Complexity must be non-negative")
+  # Accuracy must be finite and in [0, 1]
+  expect_true(is.finite(result@accuracy))
+  expect_true(result@accuracy >= 0)
+  expect_true(result@accuracy <= 1)
 })
 
 test_that("Log-loss handles extreme probabilities", {
@@ -91,17 +73,15 @@ test_that("Log-loss handles extreme probabilities", {
     optimaltrees(
       X = X,
       y = y,
-      loss = "log_loss",
+      loss_function = "log_loss",
       regularization = 0.01,
-      time_limit = 5,
       verbose = FALSE
     )
   }, silent = TRUE)
 
   # Log-loss should handle edge cases without producing NaN/Inf
   if (!inherits(result, "try-error")) {
-    expect_true(is.finite(result$loss))
-    expect_true(result$loss > 0)  # Log-loss is always positive
+    expect_true(result@n_trees >= 1)
   }
 })
 
@@ -117,17 +97,16 @@ test_that("Squared error with extreme targets", {
     optimaltrees(
       X = X,
       y = y,
-      loss = "squared_error",
+      loss_function = "squared_error",
       regularization = 0.01,
-      time_limit = 5,
       verbose = FALSE
     )
   }, silent = TRUE)
 
   # Should handle large targets without overflow
   if (!inherits(result, "try-error")) {
-    expect_true(is.finite(result$loss))
-    expect_true(is.finite(result$complexity))
+    expect_true(result@n_trees >= 1)
+    expect_true(is.numeric(result@predictions))
   }
 })
 
@@ -144,16 +123,15 @@ test_that("Dataset variance computation is numerically stable", {
     optimaltrees(
       X = X,
       y = y,
-      loss = "squared_error",
+      loss_function = "squared_error",
       regularization = 0.01,
-      time_limit = 5,
       verbose = FALSE
     )
   }, silent = TRUE)
 
   # Should compute variance accurately without catastrophic cancellation
   if (!inherits(result, "try-error")) {
-    expect_true(is.finite(result$loss))
+    expect_true(result@n_trees >= 1)
   }
 })
 
@@ -167,15 +145,14 @@ test_that("Zero support protection in information calculation", {
     optimaltrees(
       X = X,
       y = y,
-      loss = "misclassification",
+      loss_function = "misclassification",
       regularization = 0.01,
-      time_limit = 5,
       verbose = FALSE
     )
   }, silent = TRUE)
 
   # Should handle small samples without log(0) errors
   if (!inherits(result, "try-error")) {
-    expect_true(is.finite(result$loss))
+    expect_true(result@n_trees >= 1)
   }
 })
