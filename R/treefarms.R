@@ -593,14 +593,37 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
       fixed_value <- 0.05
     }
     
-    return(auto_tune_optimaltrees(X, y, loss_function = loss_function,
+    tune_result <- auto_tune_optimaltrees(X, y, loss_function = loss_function,
                                   target_trees = target_trees, max_trees = max_trees,
                                   fixed_param = fixed_param, fixed_value = fixed_value,
                                   verbose = verbose,
                                   discretize_method = discretize_method,
                                   discretize_bins = discretize_bins,
                                   discretize_thresholds = discretize_thresholds,
-                                  ...))
+                                  ...)
+    # auto_tune returns a list with $model; unwrap to return S7 model directly
+    model <- if (is.list(tune_result) && !S7::S7_inherits(tune_result) && !is.null(tune_result$model)) {
+      tune_result$model
+    } else {
+      tune_result
+    }
+    # Auto-tune fits with compute_probabilities=FALSE for speed; compute now if requested
+    if (compute_probabilities && S7::S7_inherits(model) && is.null(model@probabilities)) {
+      if (length(model@trees) > 0) {
+        # Discretize X to match tree feature names
+        disc_result <- discretize_features(
+          X = if (is.matrix(X)) as.data.frame(X) else X,
+          method = discretize_method,
+          n_bins = discretize_bins,
+          thresholds = discretize_thresholds
+        )
+        probs <- get_probabilities_from_tree(model@trees[[1]], disc_result$X_binary)
+        model@probabilities <- probs
+        model@predictions <- ifelse(probs[, 2] >= 0.5, 1L, 0L)
+        model@accuracy <- mean(model@predictions == y)
+      }
+    }
+    return(model)
   }
   
   # Convert to data.frame if matrix
