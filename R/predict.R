@@ -438,7 +438,14 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
       return(rowMeans(pred_matrix))
     }
   } else {
-    model <- object$fold_models[[1]]
-    return(predict(model, newdata, type = type, ...))
+    # Single intersecting tree (or ensemble=FALSE): use intersecting_trees[[1]]
+    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
+    tree_json <- object$intersecting_trees[[1]]
+    probs <- get_probabilities_from_tree(tree_json, newdata)
+    if (type == "class") {
+      return(ifelse(probs[, 2] >= .CLASSIFICATION_THRESHOLD, 1, 0))
+    } else {
+      return(probs[, 2])
+    }
   }
 }
