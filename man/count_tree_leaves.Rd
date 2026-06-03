@@ -19,10 +19,10 @@ binary (0/1) features. Continuous features will be automatically discretized.}
   \item \code{"misclassification"} (default) - 0/1 loss for classification
   \item \code{"log_loss"} - Cross-entropy loss for probabilistic classification
   \item \code{"squared_error"} - L2 loss for regression (alias: \code{"regression"})
-  \item \code{"absolute_error"} - L1 loss for robust regression (NEW)
-  \item \code{"huber"} - Robust hybrid L1/L2 loss (NEW, requires \code{huber_delta})
-  \item \code{"quantile"} - Quantile regression (NEW, requires \code{quantile_tau})
-  \item \code{"custom"} - User-defined loss function (NEW, requires \code{custom_loss})
+  \item \code{"absolute_error"} - L1 loss (not yet implemented in solver)
+  \item \code{"huber"} - Robust hybrid L1/L2 loss (not yet implemented in solver)
+  \item \code{"quantile"} - Quantile regression (not yet implemented in solver)
+  \item \code{"custom"} - User-defined loss function (not yet implemented in solver)
 }
 For regression losses, \code{y} may be continuous and prediction returns fitted values.}
 
@@ -47,6 +47,14 @@ trivial extensions (same partition, different split order). If NULL (default), i
 \item{max_trees}{Integer: maximum acceptable number of trees when auto-tuning (default: 5).}
 
 \item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
+
+\item{model_limit}{Integer or NULL. Maximum number of models extracted during
+Rashomon set enumeration. If NULL (default), resolved based on loss function:
+10000 for misclassification, 1000 for log_loss and squared_error.}
+
+\item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
+of trees in the Rashomon set, which is the most effective control for
+preventing combinatorial explosion with many features. Default: 0 (no limit).}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 

@@ -95,6 +95,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// treefarms_model_limit_exceeded_cpp
+bool treefarms_model_limit_exceeded_cpp();
+RcppExport SEXP _optimaltrees_treefarms_model_limit_exceeded_cpp() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(treefarms_model_limit_exceeded_cpp());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cleanup_static_state
 void cleanup_static_state();
 RcppExport SEXP _optimaltrees_cleanup_static_state() {
@@ -114,6 +124,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_optimaltrees_treefarms_status_cpp", (DL_FUNC) &_optimaltrees_treefarms_status_cpp, 0},
     {"_optimaltrees_treefarms_fit_with_config_cpp", (DL_FUNC) &_optimaltrees_treefarms_fit_with_config_cpp, 2},
     {"_optimaltrees_treefarms_fit_and_stats_cpp", (DL_FUNC) &_optimaltrees_treefarms_fit_and_stats_cpp, 2},
+    {"_optimaltrees_treefarms_model_limit_exceeded_cpp", (DL_FUNC) &_optimaltrees_treefarms_model_limit_exceeded_cpp, 0},
     {"_optimaltrees_cleanup_static_state", (DL_FUNC) &_optimaltrees_cleanup_static_state, 0},
     {NULL, NULL, 0}
 };

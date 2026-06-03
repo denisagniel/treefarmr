@@ -4,12 +4,14 @@
 \alias{reconstruct_tree_with_leaves}
 \title{Reconstruct Tree with New Leaf Values}
 \usage{
-reconstruct_tree_with_leaves(structure, leaf_predictions)
+reconstruct_tree_with_leaves(structure, leaf_predictions, loss_function)
 }
 \arguments{
 \item{structure}{TreeStructure object}
 
 \item{leaf_predictions}{Named numeric vector (names = leaf IDs, values = predictions)}
+
+\item{loss_function}{Character. Loss type ("squared_error", "log_loss", "misclassification").}
 }
 \value{
 Nested list (tree_json format)

@@ -33,6 +33,12 @@
 #' @param target_trees Integer: target number of trees when auto-tuning (default: 1).
 #' @param max_trees Integer: maximum acceptable number of trees when auto-tuning (default: 5).
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
+#' @param model_limit Integer or NULL. Maximum number of models extracted during
+#'   Rashomon set enumeration. If NULL (default), resolved based on loss function:
+#'   10000 for misclassification, 1000 for log_loss and squared_error.
+#' @param max_depth Integer. Maximum tree depth (0 = unlimited). Limits the depth
+#'   of trees in the Rashomon set, which is the most effective control for
+#'   preventing combinatorial explosion with many features. Default: 0 (no limit).
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
 #'   Default: FALSE. Set to TRUE only if you need to access training data later.
@@ -487,7 +493,8 @@ get_fitted_from_tree <- function(tree_json, X) {
 #' @export
 optimaltrees <- function(X, y, loss_function = "misclassification", regularization = 0.1,
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
-worker_limit = 1L, model_limit = 10000, verbose = FALSE, store_training_data = NULL,
+worker_limit = 1L, model_limit = NULL, max_depth = 0L, verbose = FALSE,
+store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
 rashomon_ignore_trivial_extensions = NULL,
 discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
@@ -554,6 +561,16 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   }
   if (loss_function == "regression") {
     loss_function <- "squared_error"
+  }
+
+  # Resolve loss-aware model_limit default
+
+  if (is.null(model_limit)) {
+    model_limit <- switch(loss_function,
+      "log_loss" = 1000L,
+      "squared_error" = 1000L,
+      10000L
+    )
   }
 
   # Validate loss-specific parameters
@@ -667,6 +684,7 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     verbose = verbose,
     worker_limit = as.integer(worker_limit),
     model_limit = as.integer(model_limit),
+    depth_budget = as.integer(max_depth),
     look_ahead = cart_lookahead,  # Map to C++ look_ahead (OSRT one-step lookahead)
     # cart_lookahead_depth is currently unused - reserved for future enhancements
     k_cluster = k_cluster,
@@ -712,6 +730,16 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
 
   fit_result <- .treefarms_fit_with_csv(csv_string, config, X, y, single_tree, store_training_data, compute_probabilities,
                                         discretization_metadata, X_original)
+
+  # Warn if Rashomon enumeration was truncated
+
+  if (!single_tree && treefarms_model_limit_exceeded_cpp()) {
+    cli::cli_warn(c(
+      "Rashomon set enumeration was truncated at {.val {model_limit}} models.",
+      "i" = "Increase {.arg model_limit} or set {.arg max_depth} to limit tree complexity."
+    ))
+  }
+
   return(fit_result)
 }
 

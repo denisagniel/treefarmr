@@ -13,6 +13,8 @@ fit_rashomon(
   rashomon_bound_adder = 0,
   rashomon_ignore_trivial_extensions = FALSE,
   worker_limit = 1L,
+  model_limit = NULL,
+  max_depth = 0L,
   verbose = FALSE,
   store_training_data = NULL,
   compute_probabilities = FALSE,
@@ -22,10 +24,12 @@ fit_rashomon(
 \arguments{
 \item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{A vector of outcomes. Binary (0/1) for classification, or continuous for
+regression (when `loss_function = "squared_error"`).}
 
 \item{loss_function}{Character string specifying the loss function to use.
-Options: "misclassification" (default) or "log_loss".}
+Options: "misclassification" (default), "log_loss", or "squared_error".
+Use "squared_error" for regression with continuous outcomes.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
@@ -41,6 +45,13 @@ representative per partition, which breaks fold intersection. Only set to TRUE i
 partition-level uniqueness for single-fold analysis.}
 
 \item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
+
+\item{model_limit}{Integer or NULL. Maximum number of models extracted during
+Rashomon set enumeration. If NULL (default), resolved based on loss function:
+10000 for misclassification, 1000 for log_loss and squared_error.}
+
+\item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
+of trees in the Rashomon set. Default: 0 (no limit).}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 

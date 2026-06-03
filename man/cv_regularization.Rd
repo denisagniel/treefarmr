@@ -19,11 +19,13 @@ cv_regularization(
 )
 }
 \arguments{
-\item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
+\item{X}{A data.frame or matrix of features.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{A vector of outcomes. Binary (0/1) for classification; numeric for regression
+(when \code{loss_function = "squared_error"}).}
 
-\item{loss_function}{Character string: \code{"misclassification"} or \code{"log_loss"} (same as \code{\link{fit_tree}}).}
+\item{loss_function}{Character string: \code{"misclassification"}, \code{"log_loss"}, or
+\code{"squared_error"} (same as \code{\link{fit_tree}}).}
 
 \item{lambda_grid}{Optional numeric vector of lambda values. If \code{NULL}, uses a theory-driven default grid around (log n)/n (see Details).}
 
@@ -64,6 +66,7 @@ Held-out loss is computed as follows:
 \itemize{
   \item For \code{loss_function = "misclassification"}: mean(1 - correct) on the validation fold (misclassification rate).
   \item For \code{loss_function = "log_loss"}: mean cross-entropy on the validation fold; predicted class probabilities are clamped to avoid log(0).
+  \item For \code{loss_function = "squared_error"}: mean squared error on the validation fold.
 }
 
 \strong{Computational Considerations:} Small lambda values allow complex trees

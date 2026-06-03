@@ -21,6 +21,11 @@
 #'   representative per partition, which breaks fold intersection. Only set to TRUE if you explicitly want
 #'   partition-level uniqueness for single-fold analysis.
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
+#' @param model_limit Integer or NULL. Maximum number of models extracted during
+#'   Rashomon set enumeration. If NULL (default), resolved based on loss function:
+#'   10000 for misclassification, 1000 for log_loss and squared_error.
+#' @param max_depth Integer. Maximum tree depth (0 = unlimited). Limits the depth
+#'   of trees in the Rashomon set. Default: 0 (no limit).
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
 #'   Default: FALSE. Set to TRUE only if you need to access training data later.
@@ -98,9 +103,10 @@
 fit_rashomon <- function(X, y, loss_function = "misclassification", regularization = 0.1,
                         rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0,
                         rashomon_ignore_trivial_extensions = FALSE,
-                        worker_limit = 1L, verbose = FALSE,
+                        worker_limit = 1L, model_limit = NULL, max_depth = 0L,
+                        verbose = FALSE,
                         store_training_data = NULL, compute_probabilities = FALSE, ...) {
-  
+
   # Call optimaltrees with single_tree = FALSE to compute rashomon set
   result <- optimaltrees(
     X = X,
@@ -111,6 +117,8 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
     rashomon_bound_adder = rashomon_bound_adder,
     rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
     worker_limit = worker_limit,
+    model_limit = model_limit,
+    max_depth = max_depth,
     verbose = verbose,
     store_training_data = store_training_data,
     compute_probabilities = compute_probabilities,

@@ -44,6 +44,7 @@ float GOSDT::time = 0.0;
 unsigned int GOSDT::size = 0;
 unsigned int GOSDT::iterations = 0;
 unsigned int GOSDT::status = 0;
+bool GOSDT::model_limit_exceeded = false;
 
 // REMOVED: __attribute__((constructor)) functions cause installation hangs
 // static void __attribute__((constructor)) after_gosdt_static_init() {
@@ -325,9 +326,12 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
 
     if(Configuration::verbose) { std::cout << "Initializing Optimization Framework" << std::endl; }
     
+    // Reset model_limit_exceeded flag before each fit
+    GOSDT::model_limit_exceeded = false;
+
     gosdt_atomic_log("Creating Optimizer object");
     Optimizer optimizer;
-    
+
     // CRITICAL: Check alignment of optimizer object
     void* optr = &optimizer;
     size_t alignment = alignof(Optimizer);
@@ -454,6 +458,9 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
             std::cout << "Found Optimal Objective: " << optimal_objective << std::endl;
         }
     }
+
+    // Capture model_limit_exceeded from optimizer
+    GOSDT::model_limit_exceeded = optimizer.get_model_limit_exceeded();
 }
 
 void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & models) {

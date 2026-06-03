@@ -132,11 +132,16 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
   header <- paste(names(data_df), collapse = ",")
   body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
   csv_string <- paste(c(header, body), collapse = "\n")
+  # Extract max_depth/depth_budget from ... if provided
+  dots <- list(...)
+  depth_budget <- dots$max_depth %||% dots$depth_budget %||% 0L
+
   base_config <- list(
     loss_function = loss_function,
     verbose = FALSE,
     worker_limit = 1L,
-    rashomon = TRUE
+    rashomon = TRUE,
+    depth_budget = as.integer(depth_budget)
   )
 
   fit_with_csv <- get(".treefarms_fit_with_csv", envir = asNamespace("optimaltrees"))

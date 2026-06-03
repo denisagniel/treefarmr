@@ -189,6 +189,11 @@ Rcpp::List treefarms_fit_and_stats_cpp(std::string data_csv, std::string configu
 }
 
 // [[Rcpp::export]]
+bool treefarms_model_limit_exceeded_cpp() {
+    return GOSDT::model_limit_exceeded;
+}
+
+// [[Rcpp::export]]
 void cleanup_static_state() {
     // No longer needed - State is now instance-based, not static
     // Each Optimizer instance manages its own State, which is cleaned up automatically

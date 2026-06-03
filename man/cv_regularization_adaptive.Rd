@@ -22,11 +22,13 @@ cv_regularization_adaptive(
 )
 }
 \arguments{
-\item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
+\item{X}{A data.frame or matrix of features.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{A vector of outcomes. Binary (0/1) for classification; numeric for regression
+(when \code{loss_function = "squared_error"}).}
 
-\item{loss_function}{Character string: \code{"misclassification"} or \code{"log_loss"}.}
+\item{loss_function}{Character string: \code{"misclassification"}, \code{"log_loss"}, or
+\code{"squared_error"} (same as \code{\link{fit_tree}}).}
 
 \item{lambda_grid_init}{Optional numeric vector of initial lambda values. If \code{NULL}, uses default grid.}
 

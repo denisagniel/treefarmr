@@ -33,6 +33,10 @@ treefarms_fit_and_stats_cpp <- function(data_csv, configuration) {
     .Call(`_optimaltrees_treefarms_fit_and_stats_cpp`, data_csv, configuration)
 }
 
+treefarms_model_limit_exceeded_cpp <- function() {
+    .Call(`_optimaltrees_treefarms_model_limit_exceeded_cpp`)
+}
+
 cleanup_static_state <- function() {
     invisible(.Call(`_optimaltrees_cleanup_static_state`))
 }

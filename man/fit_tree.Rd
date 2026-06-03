@@ -20,10 +20,12 @@ fit_tree(
 \arguments{
 \item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{A vector of outcomes. Binary (0/1) for classification, or continuous for
+regression (when `loss_function = "squared_error"`).}
 
 \item{loss_function}{Character string specifying the loss function to use.
-Options: "misclassification" (default) or "log_loss".}
+Options: "misclassification" (default), "log_loss", or "squared_error".
+Use "squared_error" for regression with continuous outcomes.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}

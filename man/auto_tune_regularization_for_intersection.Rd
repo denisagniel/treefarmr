@@ -13,7 +13,7 @@ auto_tune_regularization_for_intersection(
   regularization_start,
   epsilon_n_fixed = NULL,
   max_attempts = 10,
-  verbose = TRUE,
+  verbose = FALSE,
   ...
 )
 }
@@ -34,7 +34,7 @@ auto_tune_regularization_for_intersection(
 
 \item{max_attempts}{Maximum lambda candidates to try in Tier 2. Default: 10}
 
-\item{verbose}{Print progress information. Default: TRUE}
+\item{verbose}{Print progress information. Default: FALSE}
 
 \item{...}{Additional parameters passed to tree fitting}
 }

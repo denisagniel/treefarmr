@@ -4,7 +4,13 @@
 \alias{reconstruct_from_structure}
 \title{Reconstruct Tree from Structure (Simplified)}
 \usage{
-reconstruct_from_structure(current_split, all_splits, leaf_preds, path)
+reconstruct_from_structure(
+  current_split,
+  all_splits,
+  leaf_preds,
+  path,
+  loss_function
+)
 }
 \arguments{
 \item{current_split}{Current split information}
@@ -14,6 +20,8 @@ reconstruct_from_structure(current_split, all_splits, leaf_preds, path)
 \item{leaf_preds}{Named numeric vector}
 
 \item{path}{Current path from root}
+
+\item{loss_function}{Character. Loss type for determining whether to include probabilities.}
 }
 \value{
 Nested list (tree node)

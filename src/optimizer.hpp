@@ -111,6 +111,7 @@ public:
     // Getter for state - needed by GOSDT for serialization
     State& get_state() { return state; }
     const State& get_state() const { return state; }
+    bool get_model_limit_exceeded() const { return model_limit_exceeded; }
 private:
 
     // Timing State
