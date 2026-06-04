@@ -164,7 +164,7 @@ test_that("compare_trees works", {
   }
 })
 
-test_that("get_tree_rules works", {
+test_that("get_rashomon_trees returns valid tree structures", {
   model <- safe_optimaltrees(pattern_dataset$X, pattern_dataset$y,
                          loss_function = "misclassification",
                          regularization = 0.01,
@@ -172,11 +172,13 @@ test_that("get_tree_rules works", {
                          verbose = FALSE)
 
   trees <- get_rashomon_trees(model)
+  expect_true(is.list(trees))
+  expect_true(length(trees) >= 1)
 
-  if (length(trees) > 0) {
-    # get_tree_rules may not work with all tree formats
-    skip_if(TRUE, "get_tree_rules requires specific tree format")
-  }
+  # Each tree should have decision tree structure
+  tree <- trees[[1]]
+  expect_true(is.list(tree))
+  expect_true("feature" %in% names(tree) || "prediction" %in% names(tree))
 })
 
 test_that("refit_structure_on_data works", {
@@ -250,30 +252,31 @@ test_that("predict works with cf_rashomon objects", {
 
   skip_if(result@n_intersecting == 0, "No intersecting trees found")
 
-  # Predict on training data (may not be fully implemented yet)
-  # Skip if prediction not available
-  skip("Prediction with cf_rashomon may not be fully implemented")
+  preds <- predict(result, pattern_dataset$X, type = "class")
+  expect_true(is.numeric(preds))
+  expect_equal(length(preds), nrow(pattern_dataset$X))
+  expect_true(all(preds %in% c(0, 1)))
 })
 
 # ============================================================================
 # Auto-Tuning with Rashomon
 # ============================================================================
 
-test_that("auto-tuning finds Rashomon intersections", {
-  skip("Auto-tuning convergence is data-dependent")
+test_that("auto-tuning runs without error", {
+  # Don't assert convergence (data-dependent), only that it runs and returns valid structure
+  expect_no_error({
+    result <- cross_fitted_rashomon(
+      pattern_dataset$X, pattern_dataset$y,
+      K = 3,
+      loss_function = "misclassification",
+      regularization = 0.01,
+      auto_tune_intersecting = TRUE,
+      verbose = FALSE
+    )
+  })
 
-  # This test may fail with small test datasets
-  result <- auto_tune_rashomon(
-    X = pattern_dataset$X,
-    y = pattern_dataset$y,
-    K = 3,
-    loss_function = "misclassification",
-    target_intersection = 1,
-    verbose = FALSE
-  )
-
-  expect_true(is.list(result))
-  expect_true("n_intersecting" %in% names(result))
+  expect_true(S7::S7_inherits(result, CFRashomon))
+  expect_true(result@n_intersecting >= 0)
 })
 
 # ============================================================================
