@@ -585,68 +585,102 @@ create_folds <- function(y, K) {
 
 #' Print Method for cf_rashomon Objects
 #'
-#' @param x A cf_rashomon object
+#' @param x A cf_rashomon object (S7 CFRashomon or S3 list)
 #' @param ... Additional arguments (unused)
 #'
 #' @export
 print.cf_rashomon <- function(x, ...) {
+  is_s7 <- S7::S7_inherits(x, CFRashomon)
+  K <- if (is_s7) x@K else x$K
+  loss_function <- if (is_s7) x@loss_function else x$loss_function
+  regularization <- if (is_s7) x@regularization else x$regularization
+  rashomon_sizes <- if (is_s7) x@rashomon_sizes else x$rashomon_sizes
+  n_intersecting <- if (is_s7) x@n_intersecting else x$n_intersecting
+
   cat("Cross-Fitted Rashomon Set Analysis\n")
   cat("==================================\n")
-  cat(sprintf("Number of folds: %d\n", x$K))
-  cat(sprintf("Loss function: %s\n", x$loss_function))
-  cat(sprintf("Regularization: %.3f\n\n", x$regularization))
-  
+  cat(sprintf("Number of folds: %d\n", K))
+  cat(sprintf("Loss function: %s\n", loss_function))
+  cat(sprintf("Regularization: %.3f\n\n", regularization))
+
   cat("Rashomon set sizes per fold:\n")
-  for (k in 1:x$K) {
-    cat(sprintf("  Fold %d: %d trees\n", k, x$rashomon_sizes[k]))
+  for (k in seq_along(rashomon_sizes)) {
+    cat(sprintf("  Fold %d: %d trees\n", k, rashomon_sizes[k]))
   }
-  
-  cat(sprintf("\nIntersecting trees: %d\n", x$n_intersecting))
-  
-  if (x$n_intersecting > 0) {
-    cat("\n✓ Found stable tree(s) appearing in all folds!\n")
+
+  cat(sprintf("\nIntersecting trees: %d\n", n_intersecting))
+
+  if (n_intersecting > 0) {
+    cat("\n\u2713 Found stable tree(s) appearing in all folds!\n")
     cat("  Use predict() to make predictions with the stable model.\n")
   } else {
-    cat("\n✗ No trees appear in all folds.\n")
+    cat("\n\u2717 No trees appear in all folds.\n")
     cat("  Consider:\n")
     cat("  - Increasing regularization\n")
     cat("  - Adjusting rashomon_bound_multiplier\n")
     cat("  - Using fewer folds (smaller K)\n")
   }
+  invisible(x)
 }
 
 #' Summary Method for cf_rashomon Objects
 #'
-#' @param object A cf_rashomon object
+#' @param object A cf_rashomon object (S7 CFRashomon or S3 list)
 #' @param ... Additional arguments (unused)
 #'
 #' @export
 summary.cf_rashomon <- function(object, ...) {
-  print.cf_rashomon(object)
-  
-  cat("\nDetailed Summary:\n")
-  cat("================\n")
-  
-  cat(sprintf("Training data: %d observations, %d features\n", 
-              nrow(object$X_train), ncol(object$X_train)))
-  
-  cat(sprintf("Class distribution: %s\n", 
-              paste(table(object$y_train), collapse = " / ")))
-  
-  if (object$n_intersecting > 0) {
-    cat("\nStable Tree Rules:\n")
-    cat("==================\n")
-    for (i in 1:min(object$n_intersecting, 3)) {
-      cat(sprintf("\nTree %d:\n", i))
-      rules <- get_tree_rules(object$intersecting_trees[[i]], 
-                             colnames(object$X_train))
-      cat(rules)
-    }
-    
-    if (object$n_intersecting > 3) {
-      cat(sprintf("\n... and %d more tree(s)\n", object$n_intersecting - 3))
-    }
+  is_s7 <- S7::S7_inherits(object, CFRashomon)
+  K <- if (is_s7) object@K else object$K
+  loss_function <- if (is_s7) object@loss_function else object$loss_function
+  regularization <- if (is_s7) object@regularization else object$regularization
+  X_train <- if (is_s7) object@X_train else object$X_train
+  rashomon_sizes <- if (is_s7) object@rashomon_sizes else object$rashomon_sizes
+  n_intersecting <- if (is_s7) object@n_intersecting else object$n_intersecting
+
+  cat("Cross-Fitted Rashomon Set Summary\n")
+  cat("=================================\n\n")
+
+  cat("Configuration:\n")
+  cat("  K-fold cross-fitting: K =", K, "\n")
+  cat("  Loss function:", loss_function, "\n")
+  cat("  Regularization:", regularization, "\n\n")
+
+  cat("Data:\n")
+  cat("  Samples:", nrow(X_train), "\n")
+  cat("  Features:", ncol(X_train), "\n\n")
+
+  cat("Fold Results:\n")
+  for (i in seq_along(rashomon_sizes)) {
+    cat(sprintf("  Fold %d: %d trees\n", i, rashomon_sizes[i]))
   }
+  cat("\n")
+
+  cat("Intersection Results:\n")
+  cat("  Trees in all folds:", n_intersecting, "\n")
+
+  if (n_intersecting > 0) {
+    cat("  \u2713 Stable trees found!\n")
+    cat("  Use predict() to make predictions with stable model.\n")
+  } else {
+    cat("  \u2717 No stable trees found.\n")
+    cat("  Consider:\n")
+    cat("    - Increasing regularization\n")
+    cat("    - Adjusting rashomon_bound_multiplier\n")
+    cat("    - Using different K value\n")
+  }
+
+  result <- list(
+    model_type = "CFRashomon",
+    K = K,
+    loss_function = loss_function,
+    regularization = regularization,
+    n_intersecting = n_intersecting,
+    rashomon_sizes = rashomon_sizes,
+    n_samples = nrow(X_train),
+    n_features = ncol(X_train)
+  )
+  invisible(result)
 }
 
 

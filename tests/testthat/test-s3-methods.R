@@ -48,9 +48,6 @@ test_that("print.treefarms_model works", {
 })
 
 test_that("print.cf_rashomon works", {
-  # Skip - production code bug: print.CFRashomon uses $ instead of @ for S7 properties
-  skip("Production code bug: print method uses $ instead of @ for S7 properties")
-
   cf_model <- cross_fitted_rashomon(pattern_data$X, pattern_data$y,
                                    K = 3,
                                    loss_function = "misclassification",
@@ -99,9 +96,6 @@ test_that("summary.treefarms_model works", {
 })
 
 test_that("summary.cf_rashomon works", {
-  # Skip - production code bug: summary.CFRashomon uses $ instead of @ for S7 properties
-  skip("Production code bug: summary method uses $ instead of @ for S7 properties")
-
   cf_model <- cross_fitted_rashomon(pattern_data$X, pattern_data$y,
                                    K = 3,
                                    loss_function = "misclassification",
@@ -184,8 +178,6 @@ test_that("predict.treefarms_model input validation", {
 # ============================================================================
 
 test_that("predict.cf_rashomon works", {
-  # Skip - production code bug: predict.CFRashomon uses $ instead of @ for S7 properties
-  skip("Production code bug: predict method uses $ instead of @ for S7 properties")
 
   cf_model <- cross_fitted_rashomon(pattern_data$X, pattern_data$y,
                                    K = 3,
@@ -207,14 +199,13 @@ test_that("predict.cf_rashomon works", {
   expect_equal(length(pred_class), nrow(X_new))
   expect_true(all(pred_class %in% c(0, 1)))
 
-  # Probability predictions
+  # Probability predictions (cf_rashomon returns P(Y=1) vector, not matrix)
   expect_no_error({
     pred_prob <- predict(cf_model, X_new, type = "prob")
   })
 
-  expect_true(is.matrix(pred_prob))
-  expect_equal(nrow(pred_prob), nrow(X_new))
-  expect_equal(ncol(pred_prob), 2)
+  expect_true(is.numeric(pred_prob))
+  expect_equal(length(pred_prob), nrow(X_new))
   expect_true(all(pred_prob >= 0))
   expect_true(all(pred_prob <= 1))
 
