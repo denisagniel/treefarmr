@@ -14,9 +14,12 @@ X <- data.frame(
 y <- as.numeric((X$x1 == 1 & X$x2 == 1))
 
 test_that("cv_regularization runs without error and returns expected structure", {
+  # Suppress "package built under R version" warnings from first-time package loading
   expect_no_error({
-    cv <- cv_regularization(X, y, loss_function = "misclassification",
-                           K = 3, lambda_grid = c(0.05, 0.1, 0.2), refit = FALSE)
+    suppressWarnings(
+      cv <- cv_regularization(X, y, loss_function = "misclassification",
+                             K = 3, lambda_grid = c(0.05, 0.1, 0.2), refit = FALSE)
+    )
   })
   expect_true(is.list(cv))
   expect_true("best_lambda" %in% names(cv))

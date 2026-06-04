@@ -4,7 +4,7 @@
 #' Package initialization hooks for optimaltrees package
 #'
 #' @import Rcpp
-#' @import jsonlite
+#' @importFrom jsonlite fromJSON toJSON
 #' @useDynLib optimaltrees, .registration = TRUE
 NULL
 

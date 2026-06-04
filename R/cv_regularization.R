@@ -312,7 +312,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
   # Execute: parallel or sequential
   if (use_parallel) {
     results <- furrr::future_map2(seq_len(nrow(grid)), task_seeds, fit_one_combo,
-                                  .options = furrr::furrr_options(seed = FALSE))
+                                  .options = furrr::furrr_options(seed = TRUE))
   } else {
     results <- Map(fit_one_combo, seq_len(nrow(grid)), task_seeds)
   }

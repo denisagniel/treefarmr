@@ -288,12 +288,15 @@ test_that("cross_fitted_rashomon handles small datasets", {
   small_X <- pattern_dataset$X[1:20, ]
   small_y <- pattern_dataset$y[1:20]
 
+  # Small datasets may not find trees in all folds — warnings are expected
   expect_no_error({
-    result <- cross_fitted_rashomon(small_X, small_y,
-                                   K = 2,
-                                   loss_function = "misclassification",
-                                   regularization = 0.1,
-                                   verbose = FALSE)
+    suppressWarnings(
+      result <- cross_fitted_rashomon(small_X, small_y,
+                                     K = 2,
+                                     loss_function = "misclassification",
+                                     regularization = 0.1,
+                                     verbose = FALSE)
+    )
   })
 
   expect_equal(result@K, 2)
