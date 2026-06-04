@@ -85,7 +85,7 @@ treefarms_isolated <- function(X, y,
             "To build the executable, reinstall the package or run:\n",
             "  cd src && make -f Makevars all")
     # Fall back to direct call
-    return(treefarms(X = X, y = y, 
+    return(optimaltrees(X = X, y = y,
                      loss_function = loss_function,
                      regularization = regularization,
                      rashomon_bound_multiplier = rashomon_bound_multiplier,
@@ -233,16 +233,10 @@ treefarms_isolated <- function(X, y,
     
     # Parse the JSON result
     if (is.null(json_output) || json_output == "" || trimws(json_output) == "{}") {
-      if (verbose) {
-        cat("DEBUG: json_output is null or empty\n")
-      }
       result_data <- NULL
     } else {
       tryCatch({
         result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
-        if (verbose) {
-          cat("DEBUG: result_data parsed successfully\n")
-        }
       }, error = function(e) {
         warning("Failed to parse JSON result. Error: ", e$message)
         result_data <- NULL

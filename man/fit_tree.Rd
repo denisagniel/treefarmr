@@ -69,7 +69,7 @@ for TreeFARMS models. The function guarantees that exactly one tree is
 returned (no rashomon set computation).
 }
 \details{
-This function is a convenience wrapper around `treefarms()` with `single_tree = TRUE`.
+This function is a convenience wrapper around `optimaltrees()` with `single_tree = TRUE`.
 It guarantees that exactly one tree is returned, making it ideal for:
 - Standard prediction tasks
 - When you need a single, interpretable model

@@ -17,7 +17,7 @@ Get the count of trees in a model's Rashomon set.
 }
 \examples{
 \dontrun{
-model <- treefarms(X, y, regularization = 0.1)
+model <- optimaltrees(X, y, regularization = 0.1)
 n_trees <- count_trees(model)
 }
 

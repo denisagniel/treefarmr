@@ -81,7 +81,7 @@ This function is useful for exploratory analysis when you want to explore
 multiple models that are nearly as good as the optimal tree.
 }
 \details{
-This function is a convenience wrapper around `treefarms()` with `single_tree = FALSE`.
+This function is a convenience wrapper around `optimaltrees()` with `single_tree = FALSE`.
 It computes a full rashomon set, which includes:
 - The optimal tree
 - All trees within the rashomon bound (nearly optimal trees)

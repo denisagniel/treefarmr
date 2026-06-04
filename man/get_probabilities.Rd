@@ -28,13 +28,13 @@ Predict using a trained TreeFARMS model
 \examples{
 \dontrun{
 # Train a model
-model <- treefarms(X, y, loss_function = "log_loss")
+model <- optimaltrees(X, y, loss_function = "log_loss")
 
 # Get binary predictions
-pred_class <- predict_treefarms(model, X_new, type = "class")
+pred_class <- predict(model, X_new, type = "class")
 
 # Get probability predictions
-pred_prob <- predict_treefarms(model, X_new, type = "prob")
+pred_prob <- predict(model, X_new, type = "prob")
 }
 
 Get probabilities from a treefarms model (with lazy evaluation)

@@ -27,18 +27,18 @@ Tree structures are converted to JSON for serialization.
 \details{
 This function saves TreeFARMS models to disk, converting tree structures
 to JSON format for serialization.
-The saved model can be loaded later using \code{load_treefarms()}.
+The saved model can be loaded later using \code{load_optimaltrees()}.
 }
 \examples{
 \dontrun{
 # Train a model
-model <- treefarms(X, y, loss_function = "log_loss")
+model <- optimaltrees(X, y, loss_function = "log_loss")
 
 # Save the model
-save_treefarms(model, "my_model.rds")
+save_optimaltrees(model, "my_model.rds")
 
 # Load it later
-loaded_model <- load_treefarms("my_model.rds")
+loaded_model <- load_optimaltrees("my_model.rds")
 }
 
 }

@@ -26,7 +26,7 @@ information for making predictions is restored.
 \examples{
 \dontrun{
 # Load a saved model
-model <- load_treefarms("my_model.rds")
+model <- load_optimaltrees("my_model.rds")
 
 # Use the model for predictions
 predictions <- predict(model, newdata)

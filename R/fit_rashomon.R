@@ -45,7 +45,7 @@
 #'   \item{y_train}{Training labels (only if store_training_data=TRUE)}
 #'
 #' @details
-#' This function is a convenience wrapper around `treefarms()` with `single_tree = FALSE`.
+#' This function is a convenience wrapper around `optimaltrees()` with `single_tree = FALSE`.
 #' It computes a full rashomon set, which includes:
 #' - The optimal tree
 #' - All trees within the rashomon bound (nearly optimal trees)

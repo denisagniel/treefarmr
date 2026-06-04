@@ -34,7 +34,7 @@ count_leaves_tree <- function(tree) {
 #'
 #' @examples
 #' \dontrun{
-#' model <- treefarms(X, y, regularization = 0.1)
+#' model <- optimaltrees(X, y, regularization = 0.1)
 #' trees <- get_rashomon_trees(model)
 #' trees_small <- get_rashomon_trees(model, max_leaves = 5)
 #' }
@@ -739,7 +739,7 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
 #'
 #' @examples
 #' \dontrun{
-#' model <- treefarms(X, y, regularization = 0.1)
+#' model <- optimaltrees(X, y, regularization = 0.1)
 #' n_trees <- count_trees(model)
 #' }
 #'

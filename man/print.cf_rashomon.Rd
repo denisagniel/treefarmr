@@ -7,7 +7,7 @@
 \method{print}{cf_rashomon}(x, ...)
 }
 \arguments{
-\item{x}{A cf_rashomon object}
+\item{x}{A cf_rashomon object (S7 CFRashomon or S3 list)}
 
 \item{...}{Additional arguments (unused)}
 }

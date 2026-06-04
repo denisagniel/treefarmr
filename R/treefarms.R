@@ -143,13 +143,13 @@
 #'                 (X$feature_1 == 0 & X$feature_2 == 0))
 #' 
 #' # Train with misclassification loss
-#' model_misclass <- treefarms(X, y, loss_function = "misclassification")
+#' model_misclass <- optimaltrees(X, y, loss_function = "misclassification")
 #' 
 #' # Train with log-loss (memory-efficient: no probabilities computed immediately)
-#' model_logloss <- treefarms(X, y, loss_function = "log_loss")
+#' model_logloss <- optimaltrees(X, y, loss_function = "log_loss")
 #' 
 #' # Train with log-loss and compute probabilities immediately
-#' model_logloss_full <- treefarms(X, y, loss_function = "log_loss", 
+#' model_logloss_full <- optimaltrees(X, y, loss_function = "log_loss",
 #'                                 compute_probabilities = TRUE)
 #' 
 #' # Compare probability predictions
@@ -171,8 +171,8 @@
 #'   feature_3 = c(0, 1, 1)
 #' )
 #' 
-#' pred_misclass <- predict_treefarms(model_misclass, X_new)
-#' pred_logloss <- predict_treefarms(model_logloss, X_new)
+#' pred_misclass <- predict(model_misclass, X_new)
+#' pred_logloss <- predict(model_logloss, X_new)
 #' }
 
 #' Count the number of leaves in a tree
@@ -1410,7 +1410,7 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
 
 #' Predict using a trained TreeFARMS model
 #'
-#' @param object A trained TreeFARMS model object returned by \code{treefarms()}.
+#' @param object A trained TreeFARMS model object returned by \code{optimaltrees()}.
 #' @param newdata A data.frame or matrix of new features to predict on.
 #' @param type Character string specifying the type of prediction.
 #'   Options: "class" (binary predictions) or "prob" (probabilities). Default: "class".
@@ -1422,13 +1422,13 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
 #' @examples
 #' \dontrun{
 #' # Train a model
-#' model <- treefarms(X, y, loss_function = "log_loss")
-#' 
+#' model <- optimaltrees(X, y, loss_function = "log_loss")
+#'
 #' # Get binary predictions
-#' pred_class <- predict_treefarms(model, X_new, type = "class")
-#' 
+#' pred_class <- predict(model, X_new, type = "class")
+#'
 #' # Get probability predictions
-#' pred_prob <- predict_treefarms(model, X_new, type = "prob")
+#' pred_prob <- predict(model, X_new, type = "prob")
 #' }
 #'
 #' Get probabilities from a treefarms model (with lazy evaluation)
@@ -1706,50 +1706,6 @@ summary.optimaltrees_model <- function(object, ...) {
   invisible(result)
 }
 
-# Example usage function
-#' @export
-example_optimaltrees <- function() {
-  cat("TreeFARMS R Wrapper Example (Rcpp)\n")
-  cat("==================================\n\n")
-  
-  # Create sample data
-  set.seed(42)
-  n <- 100
-  X <- data.frame(
-    feature_1 = sample(0:1, n, replace = TRUE),
-    feature_2 = sample(0:1, n, replace = TRUE)
-  )
-  
-  # Create target with pattern
-  y <- as.numeric(X$feature_1 == X$feature_2)
-  
-  cat("Sample data created:\n")
-  cat("- Features:", ncol(X), "\n")
-  cat("- Samples:", n, "\n")
-  cat("- Class distribution:", table(y), "\n\n")
-  
-  cat("Training models...\n")
-  
-  # Train with misclassification loss
-  model_misclass <- treefarms(X, y, loss_function = "misclassification", regularization = 0.1)
-  
-  # Train with log-loss
-  model_logloss <- treefarms(X, y, loss_function = "log_loss", regularization = 0.1)
-  
-  cat("\nResults:\n")
-  cat("--------\n")
-  print(model_misclass)
-  cat("\n")
-  print(model_logloss)
-  
-  cat("\nProbability comparison (first 5 samples):\n")
-  cat("Misclassification model:\n")
-  print(head(model_misclass$probabilities, 5))
-  cat("\nLog-loss model:\n")
-  print(head(model_logloss$probabilities, 5))
-  
-  return(list(misclass = model_misclass, logloss = model_logloss))
-}
 
 # Override $ operator for optimaltrees_model to support lazy evaluation
 # Use [[ to access list elements to avoid recursion

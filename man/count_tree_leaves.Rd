@@ -186,13 +186,13 @@ y <- as.numeric((X$feature_1 == 1 & X$feature_2 == 1) |
                 (X$feature_1 == 0 & X$feature_2 == 0))
 
 # Train with misclassification loss
-model_misclass <- treefarms(X, y, loss_function = "misclassification")
+model_misclass <- optimaltrees(X, y, loss_function = "misclassification")
 
 # Train with log-loss (memory-efficient: no probabilities computed immediately)
-model_logloss <- treefarms(X, y, loss_function = "log_loss")
+model_logloss <- optimaltrees(X, y, loss_function = "log_loss")
 
 # Train with log-loss and compute probabilities immediately
-model_logloss_full <- treefarms(X, y, loss_function = "log_loss", 
+model_logloss_full <- optimaltrees(X, y, loss_function = "log_loss",
                                 compute_probabilities = TRUE)
 
 # Compare probability predictions
@@ -214,8 +214,8 @@ X_new <- data.frame(
   feature_3 = c(0, 1, 1)
 )
 
-pred_misclass <- predict_treefarms(model_misclass, X_new)
-pred_logloss <- predict_treefarms(model_logloss, X_new)
+pred_misclass <- predict(model_misclass, X_new)
+pred_logloss <- predict(model_logloss, X_new)
 }
 Count the number of leaves in a tree
 

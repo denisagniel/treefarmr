@@ -22,7 +22,7 @@ theory-consistent complexity; see \file{docs/Implementation-requirements-Rashomo
 }
 \examples{
 \dontrun{
-model <- treefarms(X, y, regularization = 0.1)
+model <- optimaltrees(X, y, regularization = 0.1)
 trees <- get_rashomon_trees(model)
 trees_small <- get_rashomon_trees(model, max_leaves = 5)
 }
