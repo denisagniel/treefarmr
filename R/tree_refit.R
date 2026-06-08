@@ -173,7 +173,7 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
   # Step 7: Return model + leaf counts (for weighted averaging)
   structure(list(
     model = model,
-    n_per_leaf = as.integer(n_per_leaf)
+    n_per_leaf = setNames(as.integer(n_per_leaf), names(n_per_leaf))
   ), class = c("refit_result", "list"))
 }
 

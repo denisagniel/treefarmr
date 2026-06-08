@@ -91,6 +91,7 @@ cv_regularization_adaptive <- function(X, y,
                                        worker_limit = 1,
                                        parallel = TRUE,
                                        seed = NULL,
+                                       max_lambda = Inf,
                                        ...) {
 
   # Input validation
@@ -230,12 +231,10 @@ cv_regularization_adaptive <- function(X, y,
       strongest <- lambda_grid[n_lambda]
       new_lambdas <- strongest * (extension_factor ^ (1:n_extend))
 
-      # Ensure new values are not too large
-      # For DML/causal inference, we may need lambda > 1 (strong regularization)
-      # to prevent overfitting. Cap at 10 instead of 1.
-      # Lambda = 10 means ~800× (log n)/n for n=500, which is extremely strong
-      # but may be needed for very overfit-prone problems
-      new_lambdas <- new_lambdas[new_lambdas < 10]
+      # Ensure new values are not too large.
+      # Hard cap at 10 (absolute); callers can set a tighter max_lambda
+      # (e.g. 15 * (log n)/n) to prevent stump-producing lambda values.
+      new_lambdas <- new_lambdas[new_lambdas < min(10, max_lambda)]
 
       if (length(new_lambdas) == 0) {
         # Can't go stronger - stop here
