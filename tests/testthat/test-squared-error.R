@@ -96,9 +96,10 @@ test_that("refit_tree_structure does not create invalid probabilities for regres
   skip_if(is.null(structure), "Could not extract tree structure")
 
   dat2 <- regression_dataset(n = 30, p = 3, seed = 123)
-  # Small refit data may leave some leaves empty — warning is expected
+  # Small refit data may leave some leaves empty — allow partial coverage explicitly
   refit_result <- suppressWarnings(
-    refit_tree_structure(structure, dat2$X, dat2$y, "squared_error")
+    refit_tree_structure(structure, dat2$X, dat2$y, "squared_error",
+                         allow_partial_leaves = TRUE)
   )
   expect_s3_class(refit_result, "refit_result")
   expect_null(refit_result$model@probabilities)

@@ -13,6 +13,10 @@
 #'   from the original model. If provided, X_new will be discretized using the
 #'   same thresholds as training. Required when structure uses discretized
 #'   feature names but X_new has original continuous features. Default: NULL.
+#' @param allow_partial_leaves Logical. If FALSE (default), stop with an error when
+#'   the new data has no observations in one or more leaves of the structure. If TRUE,
+#'   fill missing leaves with the overall mean of \code{y_new} and emit a warning.
+#'   This should only be set to TRUE when partial coverage is expected and acceptable.
 #'
 #' @return List with class "refit_result" containing:
 #'   \item{model}{OptimalTreesModel with refit leaf values}
@@ -49,7 +53,8 @@
 #' @export
 refit_tree_structure <- function(structure, X_new, y_new, loss_function,
                                   store_training_data = FALSE,
-                                  discretization_metadata = NULL) {
+                                  discretization_metadata = NULL,
+                                  allow_partial_leaves = FALSE) {
   # Validate inputs
   if (!S7::S7_inherits(structure, TreeStructure)) {
     stop("structure must be a TreeStructure object", call. = FALSE)
@@ -113,17 +118,24 @@ refit_tree_structure <- function(structure, X_new, y_new, loss_function,
   missing_leaves <- setdiff(all_leaf_paths, names(leaf_preds))
 
   if (length(missing_leaves) > 0) {
-    # Use overall mean as default for empty leaves
+    if (!allow_partial_leaves) {
+      stop(sprintf(
+        "refit_tree_structure: %d leaf(ves) received no training observations: %s\nThe new data does not cover all leaves of this structure. This indicates a covariate distribution mismatch between training and new data.\nTo allow partial coverage (filling missing leaves with the overall mean), set allow_partial_leaves = TRUE.",
+        length(missing_leaves),
+        paste(missing_leaves, collapse = ", ")
+      ), call. = FALSE)
+    }
+
+    # Use overall mean as default for empty leaves (only when allow_partial_leaves = TRUE)
     default_pred <- mean(y_new)
 
     warning(sprintf(
-      "refit_tree_structure: %d leaf(ves) received no training observations: %s\nUsing overall mean (%.4f) for these leaves. This can happen when the new data has a different covariate distribution than the original training data.",
+      "refit_tree_structure: %d leaf(ves) received no training observations: %s\nUsing overall mean (%.4f) for these leaves.",
       length(missing_leaves),
       paste(missing_leaves, collapse = ", "),
       default_pred
     ), call. = FALSE)
 
-    # Add default predictions for missing leaves
     for (leaf_path in missing_leaves) {
       leaf_preds[[leaf_path]] <- default_pred
     }

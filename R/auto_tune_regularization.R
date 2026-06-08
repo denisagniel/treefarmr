@@ -18,6 +18,10 @@
 #' @param regularization_start User's starting lambda value
 #' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)
 #' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 10
+#' @param lambda_min Minimum lambda floor applied in Tier 2 search. Any candidate
+#'   lambda below this value is clamped to \code{lambda_min}. Default: 0 (no floor).
+#'   Set to a positive value (e.g. \code{log(n)/n * 0.5}) to prevent near-zero lambda
+#'   from producing stump-only intersections that satisfy the criterion trivially.
 #' @param verbose Print progress information. Default: FALSE
 #' @param ... Additional parameters passed to tree fitting
 #'
@@ -42,6 +46,7 @@ auto_tune_regularization_for_intersection <- function(
   regularization_start,
   epsilon_n_fixed = NULL,
   max_attempts = 10,
+  lambda_min = 0,
   verbose = FALSE,
   ...
 ) {
@@ -110,22 +115,25 @@ auto_tune_regularization_for_intersection <- function(
     cat("Searching for regularization strength that yields stable partition...\n\n")
   }
 
-  # Define search path: prefer simpler trees (stronger regularization first)
-  # Then try weaker regularization
+  # Search from weakest to strongest regularization.
+  # For DML nuisance estimation we want the most complex intersecting tree
+  # (minimal underfitting bias). Take the FIRST intersection found, which
+  # corresponds to the weakest lambda (most complex tree). Stumps are a last
+  # resort: they always intersect but produce constant predictions and bias.
   lambda_multipliers <- c(
-    20, 10, 5, 2,           # Stronger (simpler trees)
-    1,                       # Original (already tried, but include for completeness)
-    0.5, 0.2, 0.1, 0.05, 0.01  # Weaker (more complex trees)
+    0.01, 0.05, 0.1, 0.2, 0.5,  # Weaker (more complex trees) - try first
+    1,                            # Original
+    2, 5, 10, 20                  # Stronger (simpler trees) - last resort
   )
 
   lambda_multipliers <- lambda_multipliers[1:min(max_attempts, length(lambda_multipliers))]
 
   best_result <- NULL
   best_lambda <- NULL
-  best_n_leaves <- Inf
+  best_n_leaves <- NA
 
   for (mult in lambda_multipliers) {
-    lambda_try <- regularization_start * mult
+    lambda_try <- max(lambda_min, regularization_start * mult)
 
     if (verbose) {
       cat(sprintf("  Trying lambda = %.6f (%.2fx original)... ", lambda_try, mult))
@@ -145,8 +153,9 @@ auto_tune_regularization_for_intersection <- function(
     )
 
     if (!is.null(cf_result) && cf_result@n_intersecting > 0) {
-      # Found intersection!
-      # Estimate complexity (leaf count)
+      # Found intersection — take it immediately.
+      # Searching weakest-first means the first success is the most complex
+      # intersecting tree, minimising underfitting bias in nuisance models.
       n_leaves <- tryCatch({
         if (length(cf_result@intersecting_trees) > 0) {
           count_leaves_tree(cf_result@intersecting_trees[[1]])
@@ -163,12 +172,10 @@ auto_tune_regularization_for_intersection <- function(
         }
       }
 
-      # Keep if simpler than previous best (prefer fewer leaves)
-      if (is.na(best_n_leaves) || is.na(n_leaves) || n_leaves < best_n_leaves) {
-        best_result <- cf_result
-        best_lambda <- lambda_try
-        best_n_leaves <- n_leaves
-      }
+      best_result <- cf_result
+      best_lambda <- lambda_try
+      best_n_leaves <- n_leaves
+      break  # First success = most complex intersecting tree
     } else {
       if (verbose) {
         cat("✗ Empty\n")
