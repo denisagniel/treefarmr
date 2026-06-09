@@ -97,6 +97,7 @@ compute_safe_model_limit <- function(lambda, n, p_features) {
 #' @param worker_limit Integer: number of parallel workers for \code{fit_tree}. Default: 1.
 #' @param parallel Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.
 #' @param seed Optional integer. If provided, \code{set.seed(seed)} is called before creating folds for reproducibility.
+#' @param fold_indices Optional list of pre-computed fold index vectors (length K). If provided, skips fold creation and \code{seed} is used only for per-task reproducibility. Default: \code{NULL}.
 #' @param ... Additional arguments passed to \code{\link{fit_tree}}.
 #'
 #' @return A list containing:
@@ -145,7 +146,7 @@ compute_safe_model_limit <- function(lambda, n, p_features) {
 cv_regularization <- function(X, y, loss_function = "misclassification",
                              lambda_grid = NULL, K = 5L, refit = TRUE,
                              verbose = FALSE, worker_limit = 1L, parallel = TRUE,
-                             seed = NULL, ...) {
+                             seed = NULL, fold_indices = NULL, ...) {
   # Capture additional arguments, filtering out model_limit (we set it adaptively)
   dots <- list(...)
   dots$model_limit <- NULL
@@ -183,15 +184,17 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
     y <- as.numeric(y)
   }
 
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-  # For regression, use simple random folds; for classification, stratify by class
-  if (is_regression) {
-    fold_assignment <- sample(rep(seq_len(K), length.out = n))
-    fold_indices <- purrr::map(seq_len(K), ~ which(fold_assignment == .x))
-  } else {
-    fold_indices <- create_folds(y, K = K)
+  if (is.null(fold_indices)) {
+    if (!is.null(seed)) {
+      set.seed(seed)
+    }
+    # For regression, use simple random folds; for classification, stratify by class
+    if (is_regression) {
+      fold_assignment <- sample(rep(seq_len(K), length.out = n))
+      fold_indices <- purrr::map(seq_len(K), ~ which(fold_assignment == .x))
+    } else {
+      fold_indices <- create_folds(y, K = K)
+    }
   }
 
   if (is.null(lambda_grid)) {

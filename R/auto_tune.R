@@ -234,14 +234,9 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
 #' Exponential Search + Binary Refinement for Auto-Tuning
 #'
 #' @description
-#' Implements bidirectional exponential search followed by binary refinement.
-#' Similar to auto_tune_rashomon_intersection() but adapted for single-model fitting.
-#'
-#' Algorithm:
-#' 1. Start at midpoint of search_range
-#' 2. If midpoint succeeds (trees in target range): search downward (minimize parameter)
-#' 3. If midpoint fails (trees outside range): search upward or downward as needed
-#' 4. Binary refinement after exponential phase brackets target
+#' Wraps \code{bidirectional_exp_binary_search()} for single-model tree-count fitting.
+#' Searches for a parameter value (regularization or rashomon_bound_multiplier) that
+#' yields a tree count in [target_trees, max_trees].
 #'
 #' @keywords internal
 .auto_tune_exponential_binary <- function(csv_string, base_config, fit_with_csv,
@@ -251,7 +246,7 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
                                          search_range, max_iterations,
                                          verbose = FALSE) {
 
-  # Helper function to fit model with specific parameter value
+  # Build model for a specific parameter value
   try_fit <- function(param_value) {
     if (fixed_param == "regularization") {
       regularization <- fixed_value
@@ -275,254 +270,102 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
         model = model,
         regularization = regularization,
         rashomon_bound_multiplier = rashomon_bound_multiplier,
-        n_trees = model@n_trees,  # S7 object: use @ not $
+        n_trees = model@n_trees,
         converged = FALSE
       )
     }, error = function(e) {
-      if (verbose) {
-        message(sprintf("  Error fitting: %s", e$message))
-      }
+      if (verbose) message(sprintf("  Error fitting: %s", e$message))
       NULL
     })
   }
 
-  iterations <- 0
-  best_result <- NULL
-  best_distance <- Inf  # Distance from target
+  # Track the best result (closest to target) via closure for best-effort fallback
+  best_result   <- NULL
+  best_distance <- Inf
 
-  # Phase 1: Exponential Search
-  # Start at midpoint of search range
+  probe_fn <- function(val) {
+    result <- try_fit(val)
+    if (!is.null(result)) {
+      n_trees <- result$n_trees
+      dist <- if (n_trees >= target_trees && n_trees <= max_trees) 0L else
+        min(abs(n_trees - target_trees), abs(n_trees - max_trees))
+      if (dist < best_distance) {
+        best_result   <<- result
+        best_distance <<- dist
+      }
+    }
+    result
+  }
+
+  # "lower" = too few trees → search downward (smaller param = more permissive = more trees)
+  # "higher" = too many trees → search upward (larger param = more restrictive = fewer trees)
+  classify_fn <- function(result) {
+    n_trees <- result$n_trees
+    if (n_trees >= target_trees && n_trees <= max_trees) "success"
+    else if (n_trees < target_trees) "lower"
+    else "higher"
+  }
+
   param_start <- mean(search_range)
 
   if (verbose) {
-    message(sprintf("\n--- Phase 1: Exponential Search (starting at %.4f) ---", param_start))
+    message(sprintf("\n--- Exponential + Binary Search (starting at %.4f) ---", param_start))
   }
 
-  iterations <- iterations + 1
-  if (verbose) {
-    message(sprintf("Iteration %d: param = %.4f", iterations, param_start))
-  }
-
-  result_start <- try_fit(param_start)
-
-  if (is.null(result_start)) {
-    # Starting point failed, just return NULL
+  # Starting point NULL-check: the generic utility returns NULL result + converged=FALSE
+  # if the first probe itself returns NULL. Handle this before calling.
+  result_start_check <- try_fit(param_start)
+  if (is.null(result_start_check)) {
     return(NULL)
   }
-
-  n_trees_start <- result_start$n_trees
-  if (verbose) {
-    message(sprintf("  -> %d trees", n_trees_start))
+  # Update best tracking with start result
+  n_trees_start <- result_start_check$n_trees
+  dist_start <- if (n_trees_start >= target_trees && n_trees_start <= max_trees) 0L else
+    min(abs(n_trees_start - target_trees), abs(n_trees_start - max_trees))
+  if (dist_start < best_distance) {
+    best_result   <- result_start_check
+    best_distance <- dist_start
   }
 
-  # Update best result
-  distance <- min(abs(n_trees_start - target_trees), abs(n_trees_start - max_trees))
-  if (n_trees_start >= target_trees && n_trees_start <= max_trees) {
-    distance <- 0
-  }
-  if (distance < best_distance) {
-    best_result <- result_start
-    best_distance <- distance
-  }
-
-  # Check if we hit target immediately
-  if (n_trees_start >= target_trees && n_trees_start <= max_trees) {
-    if (verbose) {
-      message("  -> SUCCESS at starting point!")
+  # Re-wrap probe_fn so it passes the already-computed start result on first call
+  first_call_done <- FALSE
+  probe_fn_wrapped <- function(val) {
+    if (!first_call_done && isTRUE(all.equal(val, param_start))) {
+      first_call_done <<- TRUE
+      return(result_start_check)
     }
-    result_start$iterations <- iterations
-    result_start$converged <- TRUE
-    return(result_start)
+    probe_fn(val)
   }
 
-  # Determine search direction based on starting point
-  param_low <- search_range[1]
-  param_high <- search_range[2]
-  param_current <- param_start
+  search <- bidirectional_exp_binary_search(
+    probe_fn    = probe_fn_wrapped,
+    classify_fn = classify_fn,
+    start       = param_start,
+    val_min     = search_range[1],
+    val_max     = search_range[2],
+    binary_tolerance = 0.001,
+    max_attempts = max_iterations,
+    verbose     = verbose
+  )
 
-  if (n_trees_start < target_trees) {
-    # Too few trees - need more permissive parameter (search lower)
-    if (verbose) {
-      message("  -> Too few trees, searching downward (more permissive)")
-    }
-    param_high <- param_start
-    param_current <- param_start / 2
-
-    while (param_current >= param_low && iterations < max_iterations) {
-      iterations <- iterations + 1
-      if (verbose) {
-        message(sprintf("Iteration %d: param = %.4f", iterations, param_current))
-      }
-
-      result <- try_fit(param_current)
-      if (is.null(result)) {
-        param_current <- param_current / 2
-        next
-      }
-
-      n_trees <- result$n_trees
-      if (verbose) {
-        message(sprintf("  -> %d trees", n_trees))
-      }
-
-      # Update best result
-      distance <- min(abs(n_trees - target_trees), abs(n_trees - max_trees))
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        distance <- 0
-      }
-      if (distance < best_distance) {
-        best_result <- result
-        best_distance <- distance
-      }
-
-      # Check if we hit target
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        if (verbose) {
-          message("  -> SUCCESS!")
-        }
-        result$iterations <- iterations
-        result$converged <- TRUE
-        return(result)
-      }
-
-      # If still too few trees, continue downward
-      if (n_trees < target_trees) {
-        param_high <- param_current
-        param_current <- param_current / 2
-      } else {
-        # Too many trees now, we've bracketed it
-        param_low <- param_current
-        break
-      }
-    }
-
-  } else {
-    # Too many trees - need more restrictive parameter (search higher)
-    if (verbose) {
-      message("  -> Too many trees, searching upward (more restrictive)")
-    }
-    param_low <- param_start
-    param_current <- param_start * 2
-
-    while (param_current <= param_high && iterations < max_iterations) {
-      iterations <- iterations + 1
-      if (verbose) {
-        message(sprintf("Iteration %d: param = %.4f", iterations, param_current))
-      }
-
-      result <- try_fit(param_current)
-      if (is.null(result)) {
-        param_current <- param_current * 2
-        next
-      }
-
-      n_trees <- result$n_trees
-      if (verbose) {
-        message(sprintf("  -> %d trees", n_trees))
-      }
-
-      # Update best result
-      distance <- min(abs(n_trees - target_trees), abs(n_trees - max_trees))
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        distance <- 0
-      }
-      if (distance < best_distance) {
-        best_result <- result
-        best_distance <- distance
-      }
-
-      # Check if we hit target
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        if (verbose) {
-          message("  -> SUCCESS!")
-        }
-        result$iterations <- iterations
-        result$converged <- TRUE
-        return(result)
-      }
-
-      # If still too many trees, continue upward
-      if (n_trees > max_trees) {
-        param_low <- param_current
-        param_current <- param_current * 2
-      } else {
-        # Too few trees now, we've bracketed it
-        param_high <- param_current
-        break
-      }
-    }
+  # Return the search result if converged to a "success" zone
+  if (search$converged && !is.null(search$result)) {
+    result <- search$result
+    result$iterations <- search$attempts
+    result$converged  <- TRUE
+    return(result)
   }
 
-  # Phase 2: Binary Refinement
-  if ((param_high - param_low) > 0.01 && iterations < max_iterations) {
-    if (verbose) {
-      message(sprintf("\n--- Phase 2: Binary Refinement [%.4f, %.4f] ---", param_low, param_high))
-    }
-
-    while ((param_high - param_low) > 0.001 && iterations < max_iterations) {
-      iterations <- iterations + 1
-      param_mid <- (param_low + param_high) / 2
-
-      if (verbose) {
-        message(sprintf("Binary iteration %d: param = %.4f", iterations, param_mid))
-      }
-
-      result <- try_fit(param_mid)
-      if (is.null(result)) {
-        # If fit fails, narrow the range slightly
-        param_high <- param_mid
-        next
-      }
-
-      n_trees <- result$n_trees
-      if (verbose) {
-        message(sprintf("  -> %d trees", n_trees))
-      }
-
-      # Update best result
-      distance <- min(abs(n_trees - target_trees), abs(n_trees - max_trees))
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        distance <- 0
-      }
-      if (distance < best_distance) {
-        best_result <- result
-        best_distance <- distance
-      }
-
-      # Check if we hit target
-      if (n_trees >= target_trees && n_trees <= max_trees) {
-        if (verbose) {
-          message("  -> SUCCESS!")
-        }
-        result$iterations <- iterations
-        result$converged <- TRUE
-        return(result)
-      }
-
-      # Adjust search range
-      if (n_trees < target_trees) {
-        # Need more trees - go lower (more permissive)
-        param_high <- param_mid
-      } else {
-        # Too many trees - go higher (more restrictive)
-        param_low <- param_mid
-      }
-    }
-
-    if (verbose) {
-      message(sprintf("Binary refinement converged at param ~ %.4f", param_mid))
-    }
-  }
-
-  # Return best result found (may not have converged to target)
+  # Best-effort fallback: return closest result found (may not be in zone)
   if (!is.null(best_result)) {
-    best_result$iterations <- iterations
-    best_result$converged <- (best_distance == 0)
+    best_result$iterations <- search$attempts
+    best_result$converged  <- (best_distance == 0)
     if (verbose && !best_result$converged) {
       message(sprintf("\nNo exact match found. Best result: %d trees", best_result$n_trees))
     }
+    return(best_result)
   }
 
-  return(best_result)
+  NULL
 }
 

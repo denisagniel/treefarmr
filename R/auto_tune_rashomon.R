@@ -26,7 +26,7 @@
 #' @param c_max Maximum constant for upward search (default: 100)
 #' @param binary_tolerance Tolerance for binary refinement (default: 0.1)
 #' @param verbose Logical, print diagnostic info
-#' @param ... Additional arguments passed to try_cross_fitted_rashomon_internal()
+#' @param ... Additional arguments passed to fit_rashomon_folds()
 #'
 #' @return List with:
 #'   - epsilon_n: Selected epsilon_n value
@@ -37,6 +37,7 @@
 #'
 #' @keywords internal
 auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
+                                           X_binary = NULL,
                                            loss_function, regularization,
                                            c_start = 1,
                                            c_min = 0.01,
@@ -44,8 +45,6 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
                                            binary_tolerance = 0.1,
                                            verbose = TRUE,
                                            ...) {
-  # Use package-level get_rashomon_prop helper from rashomon_utils.R
-
   n <- nrow(X)
   sqrt_log_n_over_n <- sqrt(log(n) / n)
 
@@ -54,254 +53,73 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
     cat(sprintf("n = %d, sqrt(log(n)/n) = %.4f\n", n, sqrt_log_n_over_n))
   }
 
-  # Helper function to try a specific c value
-  try_epsilon <- function(c_val) {
+  probe_fn <- function(c_val) {
     epsilon_n <- c_val * sqrt_log_n_over_n
-    tryCatch({
-      try_cross_fitted_rashomon_internal(
-        X = X, y = y, K = K, fold_indices = fold_indices,
+    tryCatch(
+      fit_rashomon_folds(
+        X_binary = X_binary, y = y, K = K, fold_indices = fold_indices,
+        fold_seeds = rep(NA_integer_, K),
         loss_function = loss_function,
         regularization = regularization,
         rashomon_bound_multiplier = epsilon_n,
         rashomon_bound_adder = 0,
-        single_tree = FALSE,  # Required parameter: Tier 1 always fits Rashomon sets
+        rashomon_ignore_trivial_extensions = FALSE,
+        single_tree = FALSE,
+        n = n,
         verbose = FALSE,
         ...
-      )
-    }, error = function(e) {
-      if (verbose) {
-        cat(sprintf("  Error: %s\n", conditionMessage(e)))
-      }
-      NULL
-    })
+      ),
+      error = function(e) NULL
+    )
   }
 
-  attempts <- 0
-
-  # Phase 1A: Try starting point
-  if (verbose) {
-    cat("\n--- Phase 1: Initial Test at c = ", c_start, " ---\n", sep = "")
+  classify_fn <- function(result) {
+    n_int <- get_rashomon_prop(result, "n_intersecting")
+    if (!is.null(n_int) && n_int > 0) "lower" else "higher"
   }
 
-  epsilon_start <- c_start * sqrt_log_n_over_n
-  attempts <- attempts + 1
+  search <- bidirectional_exp_binary_search(
+    probe_fn = probe_fn, classify_fn = classify_fn,
+    start = c_start, val_min = c_min, val_max = c_max,
+    binary_tolerance = binary_tolerance,
+    verbose = verbose
+  )
 
-  if (verbose) {
-    cat(sprintf("Attempt %d: c = %.2f, epsilon_n = %.4f\n",
-               attempts, c_start, epsilon_start))
-  }
-
-  result_start <- try_epsilon(c_start)
-
-  # Determine search direction
-  n_int_start <- get_rashomon_prop(result_start, "n_intersecting")
-  if (!is.null(result_start) && !is.null(n_int_start) && n_int_start > 0) {
-    # SUCCESS at c_start → search DOWNWARD for smaller epsilon_n
+  if (!search$converged) {
     if (verbose) {
-      cat(sprintf("  SUCCESS: %d tree(s) found\n", n_int_start))
-      cat("\n--- Phase 1B: Downward Exponential Search (minimizing epsilon_n) ---\n")
+      cat(sprintf("\nUpward search failed (tried up to c = %.1f)\n", c_max))
+      cat("Recommendation: Use fold-specific trees (use_rashomon = FALSE)\n")
     }
-
-    c_current <- c_start / 2
-    c_last_success <- c_start
-    c_first_fail <- NULL
-    result_success <- result_start
-
-    while (c_current >= c_min) {
-      epsilon_n <- c_current * sqrt_log_n_over_n
-      attempts <- attempts + 1
-
-      if (verbose) {
-        cat(sprintf("Attempt %d: c = %.2f, epsilon_n = %.4f\n",
-                   attempts, c_current, epsilon_n))
-      }
-
-      result <- try_epsilon(c_current)
-
-      if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
-        # Still works! Try even smaller
-        c_last_success <- c_current
-        result_success <- result
-        if (verbose) {
-          cat(sprintf("  SUCCESS: %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
-        }
-        c_current <- c_current / 2  # Halve for next attempt
-      } else {
-        # Failed - c_last_success is our answer
-        c_first_fail <- c_current
-        if (verbose) {
-          cat("  Empty intersection, stopping downward search\n")
-        }
-        break
-      }
-    }
-
-    # Binary refinement for downward search
-    if (!is.null(c_first_fail) && (c_last_success - c_first_fail) > binary_tolerance) {
-      if (verbose) {
-        cat(sprintf("\n--- Phase 2: Binary Refinement [%.2f, %.2f] ---\n",
-                   c_first_fail, c_last_success))
-      }
-
-      c_low <- c_first_fail    # Failed (empty)
-      c_high <- c_last_success # Succeeded (non-empty)
-
-      while ((c_high - c_low) > binary_tolerance) {
-        c_mid <- (c_low + c_high) / 2
-        epsilon_n <- c_mid * sqrt_log_n_over_n
-        attempts <- attempts + 1
-
-        if (verbose) {
-          cat(sprintf("Binary attempt %d: c = %.2f, epsilon_n = %.4f\n",
-                     attempts, c_mid, epsilon_n))
-        }
-
-        result <- try_epsilon(c_mid)
-
-        if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
-          # Success: this is a candidate, try smaller
-          c_high <- c_mid
-          result_success <- result
-          if (verbose) {
-            cat(sprintf("  %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
-          }
-        } else {
-          # Failure: need larger
-          c_low <- c_mid
-          if (verbose) {
-            cat("  Empty, trying larger\n")
-          }
-        }
-      }
-
-      if (verbose) {
-        cat(sprintf("Binary refinement converged: c ~ %.2f\n", c_high))
-      }
-    } else if (verbose && is.null(c_first_fail)) {
-      cat(sprintf("\nReached minimum c = %.2f (no refinement needed)\n", c_min))
-    }
-
-  } else {
-    # FAILURE at c_start → search UPWARD for larger epsilon_n
-    if (verbose) {
-      cat("  Empty intersection\n")
-      cat("\n--- Phase 1B: Upward Exponential Search (finding intersection) ---\n")
-    }
-
-    c_current <- c_start * 2
-    c_last_fail <- c_start
-    result_success <- NULL
-
-    while (c_current <= c_max) {
-      epsilon_n <- c_current * sqrt_log_n_over_n
-      attempts <- attempts + 1
-
-      if (verbose) {
-        cat(sprintf("Attempt %d: c = %.2f, epsilon_n = %.4f\n",
-                   attempts, c_current, epsilon_n))
-      }
-
-      result <- try_epsilon(c_current)
-
-      if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
-        # Found intersection!
-        result_success <- result
-        if (verbose) {
-          cat(sprintf("  SUCCESS: %d tree(s) found\n", get_rashomon_prop(result, "n_intersecting")))
-        }
-        break
-      } else {
-        if (verbose) {
-          cat("  Empty intersection\n")
-        }
-        c_last_fail <- c_current
-        c_current <- c_current * 2  # Double for next attempt
-      }
-    }
-
-    # Check if upward search succeeded
-    if (is.null(result_success)) {
-      if (verbose) {
-        cat(sprintf("\nUpward search failed (tried up to c = %.1f)\n", c_max))
-        cat("Recommendation: Use fold-specific trees (use_rashomon = FALSE)\n")
-      }
-      return(list(
-        epsilon_n = c_max * sqrt_log_n_over_n,
-        n_intersecting = 0L,
-        converged = FALSE,
-        attempts = attempts,
-        result = NULL
-      ))
-    }
-
-    # Binary refinement for upward search
-    if ((c_current - c_last_fail) > binary_tolerance) {
-      if (verbose) {
-        cat(sprintf("\n--- Phase 2: Binary Refinement [%.2f, %.2f] ---\n",
-                   c_last_fail, c_current))
-      }
-
-      c_low <- c_last_fail  # Failed (empty)
-      c_high <- c_current   # Succeeded (non-empty)
-
-      while ((c_high - c_low) > binary_tolerance) {
-        c_mid <- (c_low + c_high) / 2
-        epsilon_n <- c_mid * sqrt_log_n_over_n
-        attempts <- attempts + 1
-
-        if (verbose) {
-          cat(sprintf("Binary attempt %d: c = %.2f, epsilon_n = %.4f\n",
-                     attempts, c_mid, epsilon_n))
-        }
-
-        result <- try_epsilon(c_mid)
-
-        if (!is.null(result) && get_rashomon_prop(result, "n_intersecting") > 0) {
-          # Success: try smaller
-          c_high <- c_mid
-          result_success <- result
-          if (verbose) {
-            cat(sprintf("  %d tree(s), trying smaller\n", get_rashomon_prop(result, "n_intersecting")))
-          }
-        } else {
-          # Failure: try larger
-          c_low <- c_mid
-          if (verbose) {
-            cat("  Empty, trying larger\n")
-          }
-        }
-      }
-
-      if (verbose) {
-        cat(sprintf("Binary refinement converged: c ~ %.2f\n", c_high))
-      }
-    }
+    return(list(
+      epsilon_n = c_max * sqrt_log_n_over_n,
+      n_intersecting = 0L,
+      converged = FALSE,
+      attempts = search$attempts,
+      result = NULL
+    ))
   }
 
   # Phase 3: Select best tree from intersection
   if (verbose) {
     cat(sprintf("\n--- Phase 3: Tree Selection (%d candidates) ---\n",
-               get_rashomon_prop(result_success, "n_intersecting")))
+                get_rashomon_prop(search$result, "n_intersecting")))
   }
-
-  # Select tree with lowest penalized risk from intersection
-  result_success <- select_best_tree_from_intersection(result_success, verbose)
-
-  final_epsilon <- get_rashomon_prop(result_success, "rashomon_bound_multiplier")
+  result_success <- select_best_tree_from_intersection(search$result, verbose)
+  final_epsilon  <- get_rashomon_prop(result_success, "rashomon_bound_multiplier")
 
   if (verbose) {
     cat(sprintf("\nAuto-tuning complete: epsilon_n = %.4f (c ~ %.2f)\n",
-               final_epsilon, final_epsilon / sqrt_log_n_over_n))
-    cat(sprintf("Total attempts: %d\n", attempts))
+                final_epsilon, final_epsilon / sqrt_log_n_over_n))
+    cat(sprintf("Total attempts: %d\n", search$attempts))
   }
 
-  return(list(
+  list(
     epsilon_n = final_epsilon,
     n_intersecting = get_rashomon_prop(result_success, "n_intersecting"),
     converged = TRUE,
-    attempts = attempts,
+    attempts = search$attempts,
     result = result_success
-  ))
+  )
 }
 
 #' Select Best Tree from Rashomon Intersection

@@ -106,6 +106,7 @@ cv_regularization_adaptive <- function(X, y,
   }
 
   n <- nrow(X)
+  K <- as.integer(K)
 
   # Initialize grid if not provided
   if (is.null(lambda_grid_init)) {
@@ -119,6 +120,22 @@ cv_regularization_adaptive <- function(X, y,
   if (length(lambda_grid) < 3) {
     cli::cli_abort("Initial {.arg lambda_grid} must have at least 3 values for adaptive extension.")
   }
+
+  # Pre-compute fold indices once — all iterations use the same folds.
+  # This ensures lambdas evaluated in different iterations are comparable.
+  is_regression <- loss_function == "squared_error"
+  if (!is.null(seed)) set.seed(seed)
+  fold_indices_fixed <- if (is_regression) {
+    fold_assignment <- sample(rep(seq_len(K), length.out = n))
+    purrr::map(seq_len(K), ~ which(fold_assignment == .x))
+  } else {
+    create_folds(y, K = K)
+  }
+
+  # Lambda cache: R environment as hash map.
+  # Key: sprintf("%.15g", lambda); Value: numeric vector of length K (fold losses).
+  lambda_cache <- new.env(hash = TRUE, parent = emptyenv())
+  cache_key <- function(lam) sprintf("%.15g", lam)
 
   # Storage for iteration history
   history <- list()
@@ -138,19 +155,46 @@ cv_regularization_adaptive <- function(X, y,
       cli::cli_alert("Testing {length(lambda_grid)} lambda values...")
     }
 
-    # Run CV on current grid
-    cv_result <- cv_regularization(
-      X = X,
-      y = y,
-      loss_function = loss_function,
+    # Evaluate only lambdas not yet in the cache
+    new_lambdas <- lambda_grid[
+      !vapply(lambda_grid,
+              function(l) exists(cache_key(l), envir = lambda_cache, inherits = FALSE),
+              logical(1))
+    ]
+
+    if (length(new_lambdas) > 0) {
+      cv_new <- cv_regularization(
+        X = X, y = y, loss_function = loss_function,
+        lambda_grid = new_lambdas, K = K, refit = FALSE,
+        verbose = FALSE, worker_limit = worker_limit,
+        parallel = parallel,
+        fold_indices = fold_indices_fixed,
+        seed = NULL,  # fold assignment already done
+        ...
+      )
+      # Store each new lambda's fold losses in cache
+      for (i in seq_along(new_lambdas)) {
+        assign(cache_key(new_lambdas[i]), cv_new$fold_losses[i, ], envir = lambda_cache)
+      }
+    }
+
+    # Assemble full fold_losses matrix from cache
+    fold_losses_full <- matrix(NA_real_, nrow = length(lambda_grid), ncol = K)
+    for (i in seq_along(lambda_grid)) {
+      key <- cache_key(lambda_grid[i])
+      if (exists(key, envir = lambda_cache, inherits = FALSE)) {
+        fold_losses_full[i, ] <- get(key, envir = lambda_cache, inherits = FALSE)
+      }
+    }
+    cv_loss <- rowMeans(fold_losses_full, na.rm = TRUE)
+    best_lambda <- lambda_grid[which.min(cv_loss)]
+
+    # Reconstruct cv_result structure
+    cv_result <- list(
       lambda_grid = lambda_grid,
-      K = K,
-      refit = FALSE,  # Don't refit yet - we may extend grid
-      verbose = FALSE,  # We handle verbosity here
-      worker_limit = worker_limit,
-      parallel = parallel,
-      seed = if (!is.null(seed)) seed + iter else NULL,  # Different seed per iteration
-      ...
+      cv_loss = cv_loss,
+      best_lambda = best_lambda,
+      fold_losses = fold_losses_full
     )
 
     # Store iteration results
@@ -286,7 +330,7 @@ cv_regularization_adaptive <- function(X, y,
     )
 
     if (verbose) {
-      n_leaves <- count_leaves_tree(final_model@trees[[1]])
+      n_leaves <- count_leaves_node(final_model@trees[[1]])
       cli::cli_alert_success("Final model: {n_leaves} leaves")
     }
   }
