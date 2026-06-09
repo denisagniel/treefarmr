@@ -64,6 +64,7 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
         regularization = regularization,
         rashomon_bound_multiplier = epsilon_n,
         rashomon_bound_adder = 0,
+        single_tree = FALSE,  # Required parameter: Tier 1 always fits Rashomon sets
         verbose = FALSE,
         ...
       )

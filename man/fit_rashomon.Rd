@@ -48,7 +48,7 @@ partition-level uniqueness for single-fold analysis.}
 
 \item{model_limit}{Integer or NULL. Maximum number of models extracted during
 Rashomon set enumeration. If NULL (default), resolved based on loss function:
-10000 for misclassification, 1000 for log_loss and squared_error.}
+200000 for all loss functions (sufficient for max_depth=4 with binary features).}
 
 \item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
 of trees in the Rashomon set. Default: 0 (no limit).}

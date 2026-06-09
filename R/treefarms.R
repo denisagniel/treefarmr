@@ -35,7 +35,7 @@
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
 #' @param model_limit Integer or NULL. Maximum number of models extracted during
 #'   Rashomon set enumeration. If NULL (default), resolved based on loss function:
-#'   10000 for misclassification, 1000 for log_loss and squared_error.
+#'   200000 for all loss functions (sufficient for max_depth=4 with binary features).
 #' @param max_depth Integer. Maximum tree depth (0 = unlimited). Limits the depth
 #'   of trees in the Rashomon set, which is the most effective control for
 #'   preventing combinatorial explosion with many features. Default: 0 (no limit).
@@ -566,12 +566,15 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     loss_function <- "squared_error"
   }
 
-  # Resolve loss-aware model_limit default
+  # Resolve loss-aware model_limit default.
+  # 200000 is sufficient for max_depth=4 with 10-20 binary features at theory-scale lambda.
+  # (10000 was too low: with discretized binary features, GOSDT can enumerate far more
+  # structures than when working directly from continuous covariates.)
   if (is.null(model_limit)) {
     model_limit <- switch(loss_function,
-      "log_loss" = 1000L,
-      "squared_error" = 1000L,
-      10000L
+      "log_loss" = 200000L,
+      "squared_error" = 200000L,
+      200000L
     )
   }
 

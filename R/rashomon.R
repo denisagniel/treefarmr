@@ -645,25 +645,24 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
   tree_jsons <- purrr::map_chr(intersecting_trees, tree_to_json)
 
   # Store penalized risk for each intersecting tree (for tree selection)
-  # Extract risk information from tree metadata if available
+  # Trees from GOSDT carry model_objective = empirical_loss + lambda * n_leaves.
+  # Fall back to model_objective when explicit penalized_risk field is absent.
   tree_risks <- purrr::map(seq_along(intersecting_trees), ~ {
     tree <- intersecting_trees[[.x]]
-    # Try to extract risk information from tree structure
-    # optimaltrees may store this in various locations depending on tree type
     empirical_risk <- NULL
     complexity <- NULL
     penalized_risk <- NULL
 
-    # Attempt extraction (defensive - may not always be present)
     if (is.list(tree)) {
       empirical_risk <- tree$empirical_risk
-      complexity <- tree$complexity
-      penalized_risk <- tree$penalized_risk
+      complexity     <- tree$complexity
+      # Primary: use penalized_risk if available; fall back to model_objective
+      penalized_risk <- tree$penalized_risk %||% tree$model_objective
     }
 
     list(
       empirical_risk = empirical_risk,
-      complexity = complexity,
+      complexity     = complexity,
       penalized_risk = penalized_risk
     )
   })
@@ -672,18 +671,12 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     cat(sprintf("\n✓ Found %d unique partition(s) appearing in all %d folds\n", length(intersecting_trees), K))
   }
 
-  # Select tree with minimum penalized risk
-  # Check if any tree has non-null penalized risk
+  # Select tree with minimum penalized risk (best model by penalized objective)
   has_risk_info <- purrr::map_lgl(tree_risks, ~ !is.null(.x$penalized_risk))
 
   if (any(has_risk_info)) {
-    # Extract penalized risks (use Inf for missing values so they won't be selected)
     risks <- purrr::map_dbl(tree_risks, ~ {
-      if (!is.null(.x$penalized_risk)) {
-        return(.x$penalized_risk)
-      } else {
-        return(Inf)
-      }
+      if (!is.null(.x$penalized_risk)) .x$penalized_risk else Inf
     })
 
     best_idx <- which.min(risks)
@@ -691,8 +684,8 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     if (verbose) {
       valid_risks <- risks[is.finite(risks)]
       if (length(valid_risks) > 0) {
-        cat(sprintf("  Penalized risks: %s\n",
-                   paste(sprintf("%.4f", valid_risks), collapse = ", ")))
+        cat(sprintf("  Penalized risks (model_objective): min=%.4f, max=%.4f\n",
+                   min(valid_risks), max(valid_risks)))
         cat(sprintf("  Selected tree %d with minimum penalized risk (R_pen = %.4f)\n",
                    best_idx, risks[best_idx]))
       }

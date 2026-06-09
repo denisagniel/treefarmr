@@ -6,6 +6,7 @@
 #' @import Rcpp
 #' @importFrom jsonlite fromJSON toJSON
 #' @useDynLib optimaltrees, .registration = TRUE
+#' @name optimaltrees-package-imports
 NULL
 
 #' Package onLoad hook

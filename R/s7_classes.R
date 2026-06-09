@@ -8,6 +8,7 @@
 #' S3 structure that allowed invalid objects and made debugging difficult.
 #'
 #' @import S7
+#' @name optimaltrees-s7-imports
 NULL
 
 # =============================================================================
@@ -197,6 +198,7 @@ new_optimal_trees_model <- function(loss_function,
 #' - X_train: Training features
 #' - y_train: Training outcomes
 #' - converged: Logical, TRUE if intersection found (auto-tuning)
+#' - disc_metadata: Global discretization metadata (NULL for pure-binary data)
 #' @export
 CFRashomon <- S7::new_class(
   name = "CFRashomon",
@@ -229,7 +231,12 @@ CFRashomon <- S7::new_class(
     y_train = S7::new_property(S7::class_numeric | S7::class_integer),
 
     # Convergence status (for auto-tuning)
-    converged = S7::new_property(S7::class_logical, default = TRUE)
+    converged = S7::new_property(S7::class_logical, default = TRUE),
+
+    # Global discretization metadata (for consistent feature space across folds)
+    # Stored when cross_fitted_rashomon() processes continuous features.
+    # Used by predict.cf_rashomon() to apply the same thresholds to newdata.
+    disc_metadata = S7::new_property(S7::class_any, default = NULL)
   ),
 
   validator = function(self) {

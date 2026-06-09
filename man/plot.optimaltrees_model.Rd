@@ -2,7 +2,7 @@
 % Please edit documentation in R/s3_methods.R
 \name{plot.optimaltrees_model}
 \alias{plot.optimaltrees_model}
-\title{Print method for optimaltrees_model}
+\title{Plot method for optimaltrees_model}
 \usage{
 \method{plot}{optimaltrees_model}(x, tree_index = 1, ...)
 }
@@ -14,5 +14,5 @@
 \item{...}{Additional arguments (unused)}
 }
 \description{
-Print method for optimaltrees_model
+Plot method for optimaltrees_model
 }

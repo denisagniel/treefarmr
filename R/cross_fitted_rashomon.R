@@ -122,6 +122,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
                                   verbose = TRUE,
                                   parallel = TRUE,
                                   fold_indices = NULL,
+                                  discretize_method = "quantiles",
+                                  discretize_bins = "adaptive",
                                   ...) {
   
   # Input validation
@@ -207,6 +209,36 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     cat(sprintf("Fold sizes: %s\n\n", paste(fold_sizes, collapse = ", ")))
   }
   
+  # Pre-compute global discretization from ALL data (needed by both auto-tune and main paths).
+  # This ensures every fold uses the same binary feature space (same thresholds),
+  # which is required for Rashomon set intersection to work with continuous
+  # covariates. Without this, each fold computes fold-specific quantile thresholds,
+  # making trees structurally incomparable across folds (only the stump would ever
+  # intersect, causing constant nuisance predictions and naive-estimator bias).
+  X_df <- if (is.matrix(X)) as.data.frame(X) else X
+  n_bins_global <- if (is.character(discretize_bins) && discretize_bins == "adaptive") {
+    max(2L, ceiling(log(n) / 3L))
+  } else {
+    as.integer(discretize_bins)
+  }
+  global_disc <- discretize_features(
+    X_df,
+    method = discretize_method,
+    n_bins = n_bins_global
+  )
+  X_binary <- global_disc$X_binary  # used for fold_refits (need binary X for refit_structure_on_data)
+  disc_metadata <- global_disc$metadata
+
+  # Extract per-feature thresholds to pass to treefarms so each fold uses them
+  # instead of computing from fold-specific training data.
+  global_thresh_list <- Filter(
+    Negate(is.null),
+    lapply(disc_metadata$features, function(f) {
+      if (!is.null(f$thresholds) && length(f$thresholds) > 0) f$thresholds else NULL
+    })
+  )
+  if (length(global_thresh_list) == 0) global_thresh_list <- NULL
+
   # Auto-tuning: multi-tier search for non-empty intersection
   # Tier 1: tune epsilon at current lambda
   # Tier 2: search over lambda multipliers with fixed epsilon
@@ -219,11 +251,32 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       regularization_start = regularization,
       verbose = verbose,
       max_leaves = max_leaves,
+      discretize_thresholds = global_thresh_list,
       ...
     )
 
     if (auto_result$converged) {
-      return(auto_result$result)
+      # Patch fold_refits to use X_binary (the auto-tune internal path used original X,
+      # so feature indices in intersecting tree structures — which refer to binary columns —
+      # must be evaluated on the discretized X_binary, not the original continuous X).
+      result_obj <- auto_result$result
+      if (result_obj@n_intersecting > 0) {
+        n_k <- nrow(X)
+        fi   <- result_obj@fold_indices
+        fold_refits_patched <- vector("list", K)
+        for (k in seq_len(K)) {
+          train_idx <- setdiff(seq_len(n_k), fi[[k]])
+          X_k       <- X_binary[train_idx, , drop = FALSE]
+          y_k       <- y[train_idx]
+          fold_refits_patched[[k]] <- purrr::map(result_obj@intersecting_trees, ~ {
+            refit_structure_on_data(.x, X_k, y_k)
+          })
+        }
+        result_obj@fold_refits   <- fold_refits_patched
+        result_obj@X_train       <- X_binary
+        result_obj@disc_metadata <- disc_metadata
+      }
+      return(result_obj)
     } else {
       # All tiers failed: substantial cross-fold heterogeneity
       warning(
@@ -275,22 +328,28 @@ cross_fitted_rashomon <- function(X, y, K = 5,
         test_idx <- fold_indices[[k]]
         train_idx <- setdiff(1:n, test_idx)
 
+        # Original continuous X per fold (correct for cross-fitting).
+        # Global thresholds are injected via discretize_thresholds so all folds
+        # use the same binary feature representation.
         X_train <- X[train_idx, , drop = FALSE]
         y_train <- y[train_idx]
 
         # Train model using appropriate function based on single_tree parameter
         if (single_tree) {
-          # Fit single optimal tree
+          # Fit single optimal tree with globally-consistent discretization
           model <- optimaltrees::fit_tree(
             X = X_train,
             y = y_train,
             loss_function = loss_function,
             regularization = regularization,
             verbose = FALSE,
+            discretize_method = discretize_method,
+            discretize_bins = discretize_bins,
+            discretize_thresholds = global_thresh_list,
             ...
           )
         } else {
-          # Fit Rashomon set
+          # Fit Rashomon set with globally-consistent discretization
           model <- optimaltrees::fit_rashomon(
             X = X_train,
             y = y_train,
@@ -300,6 +359,9 @@ cross_fitted_rashomon <- function(X, y, K = 5,
             rashomon_bound_adder = rashomon_bound_adder,
             rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
             verbose = FALSE,
+            discretize_method = discretize_method,
+            discretize_bins = discretize_bins,
+            discretize_thresholds = global_thresh_list,
             ...
           )
         }
@@ -361,11 +423,13 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   intersection_result <- find_tree_intersection(rashomon_sets, verbose = verbose)
   
   # Per-fold refits of intersecting structures for DML (eta^(-k))
+  # Use X_binary (globally discretized) so feature indices in the tree structure
+  # correctly align with the binary columns used at fit time.
   fold_refits <- vector("list", K)
   if (intersection_result$n_intersecting > 0) {
     for (k in 1:K) {
       train_idx <- setdiff(1:n, fold_indices[[k]])
-      X_k <- X[train_idx, , drop = FALSE]
+      X_k <- X_binary[train_idx, , drop = FALSE]
       y_k <- y[train_idx]
       fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
         refit_structure_on_data(.x, X_k, y_k)
@@ -394,9 +458,10 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     fold_refits = fold_refits,
     fold_id_per_row = as.integer(fold_id_per_row),
     fold_indices = fold_indices,
-    X_train = X,
+    X_train = X_binary,
     y_train = y,
-    converged = TRUE
+    converged = TRUE,
+    disc_metadata = disc_metadata
   )
 
   return(result)

@@ -10,7 +10,8 @@ refit_tree_structure(
   y_new,
   loss_function,
   store_training_data = FALSE,
-  discretization_metadata = NULL
+  discretization_metadata = NULL,
+  allow_partial_leaves = FALSE
 )
 }
 \arguments{
@@ -28,6 +29,11 @@ refit_tree_structure(
 from the original model. If provided, X_new will be discretized using the
 same thresholds as training. Required when structure uses discretized
 feature names but X_new has original continuous features. Default: NULL.}
+
+\item{allow_partial_leaves}{Logical. If FALSE (default), stop with an error when
+the new data has no observations in one or more leaves of the structure. If TRUE,
+fill missing leaves with the overall mean of \code{y_new} and emit a warning.
+This should only be set to TRUE when partial coverage is expected and acceptable.}
 }
 \value{
 List with class "refit_result" containing:

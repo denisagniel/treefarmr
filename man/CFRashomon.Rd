@@ -20,7 +20,8 @@ CFRashomon(
   fold_indices = list(),
   X_train = NULL,
   y_train = integer(0),
-  converged = TRUE
+  converged = TRUE,
+  disc_metadata = NULL
 )
 }
 \description{
@@ -46,4 +47,5 @@ Properties:
 - X_train: Training features
 - y_train: Training outcomes
 - converged: Logical, TRUE if intersection found (auto-tuning)
+- disc_metadata: Global discretization metadata (NULL for pure-binary data)
 }

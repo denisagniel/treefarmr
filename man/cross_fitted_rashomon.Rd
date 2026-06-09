@@ -23,6 +23,8 @@ cross_fitted_rashomon(
   verbose = TRUE,
   parallel = TRUE,
   fold_indices = NULL,
+  discretize_method = "quantiles",
+  discretize_bins = "adaptive",
   ...
 )
 }

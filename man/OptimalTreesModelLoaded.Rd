@@ -232,7 +232,7 @@ OptimalTreesModelLoaded(
      }
  }, class = c("S7_class", "S7_object")))(),
   loaded_from = "",
-  loaded_at = structure(1780589822.9237, class = c("POSIXct", "POSIXt"))
+  loaded_at = structure(1781009635.87628, class = c("POSIXct", "POSIXt"))
 )
 }
 \description{

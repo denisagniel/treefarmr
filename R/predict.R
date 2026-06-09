@@ -325,7 +325,8 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
       rashomon_sizes = object@rashomon_sizes,
       rashomon_bound_multiplier = object@rashomon_bound_multiplier,
       loss_function = object@loss_function,
-      fold_refits = object@fold_refits
+      fold_refits = object@fold_refits,
+      disc_metadata = object@disc_metadata
     )
     class(object) <- "cf_rashomon"
   }
@@ -343,12 +344,20 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     newdata <- as.data.frame(newdata)
   }
 
-  # Issue #23: Apply discretization if metadata available (skip for bare cf_rashomon from S7)
-  has_discret_info <- !is.null(object[["discretization"]]) ||
-                      !is.null(object[["X_train"]]) ||
-                      !is.null(object[["X_original_names"]])
-  if (has_discret_info) {
-    newdata <- apply_model_discretization(newdata, object)
+  # Apply discretization to newdata so it uses the same feature space as training.
+  # disc_metadata is set by cross_fitted_rashomon() when continuous covariates are
+  # present; it stores the global thresholds used for all folds. For pure-binary
+  # data, disc_metadata$all_binary == TRUE and apply_discretization() is a no-op.
+  if (!is.null(object[["disc_metadata"]])) {
+    newdata <- apply_discretization(as.data.frame(newdata), object$disc_metadata)
+  } else {
+    # Legacy path: S3 objects built outside cross_fitted_rashomon (e.g. tests)
+    has_discret_info <- !is.null(object[["discretization"]]) ||
+                        !is.null(object[["X_train"]]) ||
+                        !is.null(object[["X_original_names"]])
+    if (has_discret_info) {
+      newdata <- apply_model_discretization(newdata, object)
+    }
   }
 
   n_rows <- nrow(newdata)

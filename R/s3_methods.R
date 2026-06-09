@@ -220,13 +220,6 @@ extract_tree_from_stdout <- function(stdout_lines) {
   }
 }
 
-#' Print method for optimaltrees_model
-#'
-#' @param x A optimaltrees_model object
-#' @param ... Additional arguments (unused)
-#'
-#' @export
-
 #' Plot method for optimaltrees_model
 #'
 #' @param x A optimaltrees_model object

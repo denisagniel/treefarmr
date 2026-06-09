@@ -19,9 +19,11 @@
 #' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)
 #' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 10
 #' @param lambda_min Minimum lambda floor applied in Tier 2 search. Any candidate
-#'   lambda below this value is clamped to \code{lambda_min}. Default: 0 (no floor).
-#'   Set to a positive value (e.g. \code{log(n)/n * 0.5}) to prevent near-zero lambda
-#'   from producing stump-only intersections that satisfy the criterion trivially.
+#'   lambda below this value is clamped to \code{lambda_min}. Default: \code{NULL},
+#'   which computes \code{0.5 * log(n) / n} automatically (half the theoretical
+#'   minimum meaningful regularization). This prevents near-zero lambda from producing
+#'   stump-only intersections that satisfy the criterion trivially. Set to \code{0}
+#'   to disable the floor.
 #' @param verbose Print progress information. Default: FALSE
 #' @param ... Additional parameters passed to tree fitting
 #'
@@ -46,12 +48,20 @@ auto_tune_regularization_for_intersection <- function(
   regularization_start,
   epsilon_n_fixed = NULL,
   max_attempts = 10,
-  lambda_min = 0,
+  lambda_min = NULL,
   verbose = FALSE,
   ...
 ) {
 
   n <- nrow(X)
+
+  # Apply theory-motivated floor if not provided:
+  # Never try lambda below 0.5 * log(n)/n — that regime produces stumps
+  # (every partition is within Rashomon bound of the global mean) and trivially
+  # satisfies the intersection criterion without learning any structure.
+  if (is.null(lambda_min)) {
+    lambda_min <- 0.5 * log(n) / n
+  }
 
   # Set fixed epsilon if not provided
   if (is.null(epsilon_n_fixed)) {

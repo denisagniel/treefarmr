@@ -18,6 +18,7 @@ cv_regularization_adaptive(
   worker_limit = 1,
   parallel = TRUE,
   seed = NULL,
+  max_lambda = Inf,
   ...
 )
 }
