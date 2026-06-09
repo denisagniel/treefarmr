@@ -136,14 +136,22 @@ auto_tune_regularization_for_intersection <- function(
     2, 5, 10, 20                  # Stronger (simpler trees) - last resort
   )
 
-  lambda_multipliers <- lambda_multipliers[1:min(max_attempts, length(lambda_multipliers))]
+  # Build deduplicated candidate list: apply lambda_min floor, then drop exact
+  # duplicates. Without deduplication, multiple low multipliers can all clamp
+  # to the same lambda_min value, wasting max_attempts slots on identical calls.
+  lambda_candidates <- unique(vapply(
+    lambda_multipliers,
+    function(m) max(lambda_min, regularization_start * m),
+    numeric(1)
+  ))
+  lambda_candidates <- lambda_candidates[seq_len(min(max_attempts, length(lambda_candidates)))]
 
   best_result <- NULL
   best_lambda <- NULL
   best_n_leaves <- NA
 
-  for (mult in lambda_multipliers) {
-    lambda_try <- max(lambda_min, regularization_start * mult)
+  for (lambda_try in lambda_candidates) {
+    mult <- lambda_try / regularization_start
 
     if (verbose) {
       cat(sprintf("  Trying lambda = %.6f (%.2fx original)... ", lambda_try, mult))
