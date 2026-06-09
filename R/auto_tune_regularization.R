@@ -17,7 +17,7 @@
 #' @param loss_function Loss function: "log_loss" or "squared_error"
 #' @param regularization_start User's starting lambda value
 #' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)
-#' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 4
+#' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 6
 #' @param lambda_min Minimum lambda floor applied in Tier 2 search. Any candidate
 #'   lambda below this value is clamped to \code{lambda_min}. Default: \code{NULL},
 #'   which computes \code{0.5 * log(n) / n} automatically (half the theoretical
@@ -47,7 +47,7 @@ auto_tune_regularization_for_intersection <- function(
   loss_function,
   regularization_start,
   epsilon_n_fixed = NULL,
-  max_attempts = 4,
+  max_attempts = 6,
   lambda_min = NULL,
   verbose = FALSE,
   ...
