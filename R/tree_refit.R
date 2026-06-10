@@ -251,12 +251,17 @@ traverse_to_leaf <- function(structure, x_row, feature_names) {
     }
 
     # Get feature value (0-indexed feature to 1-indexed column)
-    feature_col <- feature_names[current_split$feature + 1]
+    # Fall back to integer indexing when feature_names is NULL (store_training_data = FALSE)
+    feature_col <- if (!is.null(feature_names)) {
+      feature_names[current_split$feature + 1]
+    } else {
+      current_split$feature + 1L
+    }
     feature_val <- as.numeric(x_row[[feature_col]])
 
     # Evaluate split condition
     if (current_split$relation == "==") {
-      goes_right <- (abs(feature_val - current_split$reference) < 1e-10)
+      goes_right <- (feature_val == current_split$reference)
     } else if (current_split$relation == "<=") {
       goes_right <- (feature_val <= current_split$reference)
     } else if (current_split$relation == ">") {

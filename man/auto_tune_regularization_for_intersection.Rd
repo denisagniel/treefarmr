@@ -5,6 +5,7 @@
 \title{Auto-tune Regularization for Non-Empty Rashomon Intersection}
 \usage{
 auto_tune_regularization_for_intersection(
+  X_binary = NULL,
   X,
   y,
   K,
@@ -12,7 +13,7 @@ auto_tune_regularization_for_intersection(
   loss_function,
   regularization_start,
   epsilon_n_fixed = NULL,
-  max_attempts = 10,
+  max_attempts = 6,
   lambda_min = NULL,
   verbose = FALSE,
   ...
@@ -33,7 +34,7 @@ auto_tune_regularization_for_intersection(
 
 \item{epsilon_n_fixed}{Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)}
 
-\item{max_attempts}{Maximum lambda candidates to try in Tier 2. Default: 10}
+\item{max_attempts}{Maximum lambda candidates to try in Tier 2. Default: 6}
 
 \item{lambda_min}{Minimum lambda floor applied in Tier 2 search. Any candidate
 lambda below this value is clamped to \code{lambda_min}. Default: \code{NULL},

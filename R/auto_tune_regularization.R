@@ -43,7 +43,7 @@
 #'
 #' @export
 auto_tune_regularization_for_intersection <- function(
-  X, y, K, fold_indices,
+  X_binary = NULL, X, y, K, fold_indices,
   loss_function,
   regularization_start,
   epsilon_n_fixed = NULL,
@@ -88,6 +88,7 @@ auto_tune_regularization_for_intersection <- function(
 
   result_t1 <- auto_tune_rashomon_intersection(
     X = X, y = y, K = K, fold_indices = fold_indices,
+    X_binary = X_binary,
     loss_function = loss_function,
     regularization = regularization_start,
     c_start = 1,
@@ -158,16 +159,23 @@ auto_tune_regularization_for_intersection <- function(
     }
 
     # Try this lambda with fixed epsilon
-    cf_result <- try_cross_fitted_rashomon_internal(
-      X = X, y = y, K = K,
-      loss_function = loss_function,
-      regularization = lambda_try,
-      rashomon_bound_multiplier = epsilon_n_fixed,
-      fold_indices = fold_indices,
-      verbose = FALSE,
-      single_tree = FALSE,
-      parallel = TRUE,
-      ...
+    cf_result <- tryCatch(
+      fit_rashomon_folds(
+        X_binary = X_binary, y = y, K = K,
+        fold_indices = fold_indices,
+        fold_seeds = rep(NA_integer_, K),
+        loss_function = loss_function,
+        regularization = lambda_try,
+        rashomon_bound_multiplier = epsilon_n_fixed,
+        rashomon_bound_adder = 0,
+        rashomon_ignore_trivial_extensions = FALSE,
+        single_tree = FALSE,
+        n = nrow(X),
+        verbose = FALSE,
+        parallel = TRUE,
+        ...
+      ),
+      error = function(e) NULL
     )
 
     if (!is.null(cf_result) && cf_result@n_intersecting > 0) {
@@ -176,7 +184,7 @@ auto_tune_regularization_for_intersection <- function(
       # intersecting tree, minimising underfitting bias in nuisance models.
       n_leaves <- tryCatch({
         if (length(cf_result@intersecting_trees) > 0) {
-          count_leaves_tree(cf_result@intersecting_trees[[1]])
+          count_leaves_node(cf_result@intersecting_trees[[1]])
         } else {
           NA
         }
@@ -236,22 +244,29 @@ auto_tune_regularization_for_intersection <- function(
 
   lambda_saturated <- 0.001 * log(n) / n
 
-  cf_saturated <- try_cross_fitted_rashomon_internal(
-    X = X, y = y, K = K,
-    loss_function = loss_function,
-    regularization = lambda_saturated,
-    rashomon_bound_multiplier = epsilon_n_fixed,
-    fold_indices = fold_indices,
-    verbose = FALSE,
-    single_tree = FALSE,
-    parallel = TRUE,
-    ...
+  cf_saturated <- tryCatch(
+    fit_rashomon_folds(
+      X_binary = X_binary, y = y, K = K,
+      fold_indices = fold_indices,
+      fold_seeds = rep(NA_integer_, K),
+      loss_function = loss_function,
+      regularization = lambda_saturated,
+      rashomon_bound_multiplier = epsilon_n_fixed,
+      rashomon_bound_adder = 0,
+      rashomon_ignore_trivial_extensions = FALSE,
+      single_tree = FALSE,
+      n = nrow(X),
+      verbose = FALSE,
+      parallel = TRUE,
+      ...
+    ),
+    error = function(e) NULL
   )
 
   if (!is.null(cf_saturated) && cf_saturated@n_intersecting > 0) {
     n_leaves <- tryCatch({
       if (length(cf_saturated@intersecting_trees) > 0) {
-        count_leaves_tree(cf_saturated@intersecting_trees[[1]])
+        count_leaves_node(cf_saturated@intersecting_trees[[1]])
       } else {
         NA
       }

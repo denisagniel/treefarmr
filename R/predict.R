@@ -86,7 +86,6 @@ apply_model_discretization <- function(newdata, object) {
         stop("newdata must have the same features as training data: ",
              paste(expected_original, collapse = ", "))
       }
-      apply_discretization <- get("apply_discretization", envir = asNamespace("optimaltrees"))
       newdata <- apply_discretization(newdata, discret)
     }
   } else {
@@ -195,12 +194,10 @@ predict_from_tree <- function(tree_to_use, newdata, loss_function, type = "class
 
   # Regression: return fitted values (leaf means)
   if (identical(loss_function, "squared_error")) {
-    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("optimaltrees"))
     return(get_fitted_from_tree(tree_to_use, newdata))
   }
 
   # Classification: extract probabilities
-  get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
   probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
 
   if (type == "class") {
@@ -364,7 +361,6 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   # Regression: return fitted values (vector)
   if (identical(object$loss_function, "squared_error")) {
-    get_fitted_from_tree <- get("get_fitted_from_tree", envir = asNamespace("optimaltrees"))
     if (!is.null(fold_indices)) {
       if (length(fold_indices) != n_rows) {
         stop("fold_indices must have length nrow(newdata)")
@@ -402,7 +398,6 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
       stop("object has no fold_refits; refit is required for fold-specific prediction")
     }
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     probs <- matrix(NA_real_, nrow = n_rows, ncol = 2)
     for (k in 1:object$K) {
       idx_k <- which(fold_indices == k)
@@ -424,7 +419,6 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
   
   # Backward compatible: no fold_indices
   if (ensemble && object$n_intersecting > 1) {
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     predictions_list <- list()
     for (i in seq_len(object$n_intersecting)) {
       # Use i-th intersecting tree (not same model repeatedly)
@@ -449,7 +443,6 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     }
   } else {
     # Single intersecting tree (or ensemble=FALSE): use intersecting_trees[[1]]
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     tree_json <- object$intersecting_trees[[1]]
     probs <- get_probabilities_from_tree(tree_json, newdata)
     if (type == "class") {

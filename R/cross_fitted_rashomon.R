@@ -49,9 +49,6 @@
 #'   ensuring asymptotically valid inference. The adaptive selection is data-dependent
 #'   but still valid because all candidates satisfy the rate condition.
 #'
-#' @param tune_param Character. (Deprecated - ignored when using new auto-tuning algorithm)
-#' @param max_tune_iterations Integer. (Deprecated - ignored when using new auto-tuning algorithm)
-#' @param tune_search_range Numeric vector. (Deprecated - ignored when using new auto-tuning algorithm)
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param verbose Print progress information. Default: TRUE
 #' @param parallel Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.
@@ -115,9 +112,6 @@ cross_fitted_rashomon <- function(X, y, K = 5,
                                   max_leaves = NULL,
                                   single_tree = FALSE,
                                   auto_tune_intersecting = FALSE,
-                                  tune_param = "regularization",
-                                  max_tune_iterations = 20,
-                                  tune_search_range = NULL,
                                   seed = NULL,
                                   verbose = TRUE,
                                   parallel = TRUE,
@@ -169,7 +163,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     if (any(is.na(fold_indices)) || any(fold_indices < 1L) || any(fold_indices > K)) {
       cli::cli_abort("{.arg fold_indices} must contain integers in 1..K only.")
     }
-    fold_indices <- purrr::map(1:K, ~ which(fold_indices == .x))
+    fold_indices <- purrr::map(seq_len(K), ~ which(fold_indices == .x))
   } else {
     if (K < 2) {
       cli::cli_abort("{.arg K} must be at least 2.")
@@ -246,7 +240,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   # Tier 4: give up, fall through to regular cross-fitting
   if (auto_tune_intersecting) {
     auto_result <- auto_tune_regularization_for_intersection(
-      X = X, y = y, K = K, fold_indices = fold_indices,
+      X_binary = X_binary, X = X, y = y, K = K, fold_indices = fold_indices,
       loss_function = loss_function,
       regularization_start = regularization,
       verbose = verbose,
@@ -256,26 +250,8 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     )
 
     if (auto_result$converged) {
-      # Patch fold_refits to use X_binary (the auto-tune internal path used original X,
-      # so feature indices in intersecting tree structures — which refer to binary columns —
-      # must be evaluated on the discretized X_binary, not the original continuous X).
       result_obj <- auto_result$result
-      if (result_obj@n_intersecting > 0) {
-        n_k <- nrow(X)
-        fi   <- result_obj@fold_indices
-        fold_refits_patched <- vector("list", K)
-        for (k in seq_len(K)) {
-          train_idx <- setdiff(seq_len(n_k), fi[[k]])
-          X_k       <- X_binary[train_idx, , drop = FALSE]
-          y_k       <- y[train_idx]
-          fold_refits_patched[[k]] <- purrr::map(result_obj@intersecting_trees, ~ {
-            refit_structure_on_data(.x, X_k, y_k)
-          })
-        }
-        result_obj@fold_refits   <- fold_refits_patched
-        result_obj@X_train       <- X_binary
-        result_obj@disc_metadata <- disc_metadata
-      }
+      result_obj@disc_metadata <- disc_metadata
       return(result_obj)
     } else {
       # All tiers failed: substantial cross-fold heterogeneity
@@ -293,14 +269,69 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     }
   }
   
+  # Generate deterministic per-fold seeds (if user provided a seed)
+  fold_seeds <- if (!is.null(seed)) {
+    seed + seq_len(K)
+  } else {
+    rep(NA_integer_, K)
+  }
+
+  fit_rashomon_folds(
+    X_binary = X_binary, y = y, K = K,
+    fold_indices = fold_indices, fold_seeds = fold_seeds,
+    regularization = regularization,
+    rashomon_bound_multiplier = rashomon_bound_multiplier,
+    rashomon_bound_adder = rashomon_bound_adder,
+    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
+    loss_function = loss_function,
+    max_leaves = max_leaves, single_tree = single_tree, n = n,
+    verbose = verbose, parallel = parallel,
+    disc_metadata = disc_metadata,
+    ...
+  )
+}
+
+#' Shared Fold-Fitting Helper for Cross-Fitted Rashomon
+#'
+#' @description
+#' Fits K folds, finds the Rashomon intersection, computes per-fold refits
+#' using the pre-discretized binary X, and returns a CFRashomon object.
+#' Used by both the main cross-fitting path and the auto-tuning path.
+#'
+#' @param X_binary Pre-discretized binary feature matrix (rows = observations,
+#'   cols = binary features). Used for both fold fitting and per-fold refits,
+#'   ensuring tree feature indices align with the binary column space.
+#' @param y Outcome vector
+#' @param K Number of folds
+#' @param fold_indices List of length K with test indices per fold
+#' @param fold_seeds Integer vector of length K with per-fold seeds (NA = no seeding)
+#' @param regularization Regularization parameter
+#' @param rashomon_bound_multiplier Rashomon bound multiplier
+#' @param rashomon_bound_adder Rashomon bound adder
+#' @param rashomon_ignore_trivial_extensions Logical
+#' @param loss_function Loss function
+#' @param max_leaves Optional max leaves sieve (default NULL)
+#' @param single_tree Whether to fit single tree per fold (default FALSE)
+#' @param n Number of observations
+#' @param verbose Print progress (default FALSE)
+#' @param parallel Use parallel processing (default TRUE)
+#' @param disc_metadata Discretization metadata to store on result (default NULL)
+#' @param ... Additional parameters passed to tree fitting
+#'
+#' @return CFRashomon object
+#' @keywords internal
+fit_rashomon_folds <- function(X_binary, y, K, fold_indices, fold_seeds,
+                               regularization, rashomon_bound_multiplier,
+                               rashomon_bound_adder, rashomon_ignore_trivial_extensions,
+                               loss_function, max_leaves = NULL, single_tree = FALSE, n,
+                               verbose = FALSE, parallel = TRUE, disc_metadata = NULL, ...) {
   # Initialize storage
   fold_models <- vector("list", K)
   rashomon_sets <- vector("list", K)
   rashomon_sizes <- integer(K)
 
   # Determine if we can use parallel processing
-  use_parallel <- parallel && .has_furrr &&
-                  .has_future
+  use_parallel <- parallel && .has_furrr && .has_future
 
   # Progress bar setup
   if (verbose && .has_cli) {
@@ -311,13 +342,6 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     )
   }
 
-  # Generate deterministic per-fold seeds (if user provided a seed)
-  fold_seeds <- if (!is.null(seed)) {
-    seed + seq_len(K)  # Deterministic per-fold seeds
-  } else {
-    rep(NA_integer_, K)  # No seeding if user didn't set seed
-  }
-
   # Function to fit one fold with seed support and error handling
   fit_one_fold <- function(k, fold_seed) {
     tryCatch(
@@ -326,30 +350,23 @@ cross_fitted_rashomon <- function(X, y, K = 5,
 
         # Get training data (all folds except k)
         test_idx <- fold_indices[[k]]
-        train_idx <- setdiff(1:n, test_idx)
+        train_idx <- setdiff(seq_len(n), test_idx)
 
-        # Original continuous X per fold (correct for cross-fitting).
-        # Global thresholds are injected via discretize_thresholds so all folds
-        # use the same binary feature representation.
-        X_train <- X[train_idx, , drop = FALSE]
+        # X_binary is already globally discretized — use it directly so all folds
+        # share the same binary feature space (required for Rashomon intersection).
+        X_train <- X_binary[train_idx, , drop = FALSE]
         y_train <- y[train_idx]
 
-        # Train model using appropriate function based on single_tree parameter
         if (single_tree) {
-          # Fit single optimal tree with globally-consistent discretization
           model <- optimaltrees::fit_tree(
             X = X_train,
             y = y_train,
             loss_function = loss_function,
             regularization = regularization,
             verbose = FALSE,
-            discretize_method = discretize_method,
-            discretize_bins = discretize_bins,
-            discretize_thresholds = global_thresh_list,
             ...
           )
         } else {
-          # Fit Rashomon set with globally-consistent discretization
           model <- optimaltrees::fit_rashomon(
             X = X_train,
             y = y_train,
@@ -359,26 +376,21 @@ cross_fitted_rashomon <- function(X, y, K = 5,
             rashomon_bound_adder = rashomon_bound_adder,
             rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
             verbose = FALSE,
-            discretize_method = discretize_method,
-            discretize_bins = discretize_bins,
-            discretize_thresholds = global_thresh_list,
             ...
           )
         }
 
-        # Extract Rashomon set (optionally filtered by max_leaves)
         trees <- optimaltrees::get_rashomon_trees(model, max_leaves = max_leaves)
-
-        # Warning if no trees generated
         if (length(trees) == 0) {
-          warning(sprintf("Fold %d: No trees in Rashomon set. Consider adjusting regularization or max_leaves.", k))
+          warning(sprintf(
+            "Fold %d: No trees in Rashomon set. Consider adjusting regularization or max_leaves.", k
+          ))
         }
 
         list(model = model, trees = trees, size = length(trees))
       },
       error = function(e) {
         warning("Fold ", k, " failed: ", e$message, call. = FALSE)
-        # Return empty result so CV can continue
         list(model = NULL, trees = list(), size = 0L)
       }
     )
@@ -386,13 +398,13 @@ cross_fitted_rashomon <- function(X, y, K = 5,
 
   # Execute: parallel or sequential
   if (use_parallel) {
-    fold_results <- furrr::future_map2(1:K, fold_seeds, fit_one_fold,
+    fold_results <- furrr::future_map2(seq_len(K), fold_seeds, fit_one_fold,
                                        .options = furrr::furrr_options(seed = FALSE))
   } else {
-    fold_results <- Map(fit_one_fold, 1:K, fold_seeds)
+    fold_results <- Map(fit_one_fold, seq_len(K), fold_seeds)
   }
 
-  # Update progress bar in main thread after collecting results
+  # Update progress bar after collecting results
   if (verbose && .has_cli) {
     for (i in seq_along(fold_results)) {
       cli::cli_progress_update()
@@ -401,34 +413,26 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   }
 
   # Extract results
-  for (k in 1:K) {
+  for (k in seq_len(K)) {
     fold_models[[k]] <- fold_results[[k]]$model
     rashomon_sets[[k]] <- fold_results[[k]]$trees
     rashomon_sizes[k] <- fold_results[[k]]$size
-
     if (verbose) {
       cat(sprintf("Fold %d: Rashomon set size = %d trees\n", k, rashomon_sizes[k]))
     }
   }
-  
-  if (verbose) {
-    cat("\n")
-  }
-  
-  # Find intersection of trees across all folds
-  if (verbose) {
-    cat("Finding trees appearing in all Rashomon sets...\n")
-  }
-  
+
+  if (verbose) cat("\n")
+
+  if (verbose) cat("Finding trees appearing in all Rashomon sets...\n")
   intersection_result <- find_tree_intersection(rashomon_sets, verbose = verbose)
-  
-  # Per-fold refits of intersecting structures for DML (eta^(-k))
-  # Use X_binary (globally discretized) so feature indices in the tree structure
-  # correctly align with the binary columns used at fit time.
+
+  # Per-fold refits of intersecting structures for DML (eta^(-k)).
+  # Use X_binary so feature indices in the tree structure align with binary columns.
   fold_refits <- vector("list", K)
   if (intersection_result$n_intersecting > 0) {
-    for (k in 1:K) {
-      train_idx <- setdiff(1:n, fold_indices[[k]])
+    for (k in seq_len(K)) {
+      train_idx <- setdiff(seq_len(n), fold_indices[[k]])
       X_k <- X_binary[train_idx, , drop = FALSE]
       y_k <- y[train_idx]
       fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
@@ -436,15 +440,14 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       })
     }
   }
-  
+
   # Fold id per row (for predict with fold_indices)
   fold_id_per_row <- integer(n)
-  for (k in 1:K) {
+  for (k in seq_len(K)) {
     fold_id_per_row[fold_indices[[k]]] <- k
   }
-  
-  # Create S7 result object
-  result <- CFRashomon(
+
+  CFRashomon(
     K = as.integer(K),
     loss_function = loss_function,
     regularization = regularization,
@@ -463,150 +466,6 @@ cross_fitted_rashomon <- function(X, y, K = 5,
     converged = TRUE,
     disc_metadata = disc_metadata
   )
-
-  return(result)
-}
-
-#' Internal helper function for cross-fitted rashomon (used by auto-tuning)
-#'
-#' @description
-#' Performs cross-fitting with given parameters and returns result.
-#' Used internally by auto-tuning logic.
-#'
-#' @param X Data.frame or matrix of binary features
-#' @param y Vector of binary class labels
-#' @param K Number of folds
-#' @param loss_function Loss function
-#' @param regularization Regularization parameter
-#' @param rashomon_bound_multiplier Rashomon bound multiplier
-#' @param rashomon_bound_adder Rashomon bound adder (default 0)
-#' @param max_leaves Optional max leaves sieve (default NULL)
-#' @param single_tree Whether to fit single tree per fold
-#' @param fold_indices Pre-computed fold indices
-#' @param verbose Whether to print progress
-#' @param parallel Whether to use parallel processing
-#' @param ... Additional parameters
-#'
-#' @return cf_rashomon object or NULL on error
-#'
-#' @keywords internal
-try_cross_fitted_rashomon_internal <- function(X, y, K, loss_function, regularization,
-                                               rashomon_bound_multiplier, rashomon_bound_adder = 0,
-                                               rashomon_ignore_trivial_extensions = FALSE,
-                                               max_leaves = NULL, single_tree, fold_indices, verbose, parallel = TRUE, ...) {
-  tryCatch({
-    # Initialize storage
-    fold_models <- vector("list", K)
-    rashomon_sets <- vector("list", K)
-    rashomon_sizes <- integer(K)
-
-    # Determine if we can use parallel processing
-    use_parallel <- parallel && .has_furrr &&
-                    .has_future
-
-    # Function to fit one fold
-    fit_one_fold <- function(k) {
-      # Get training data (all folds except k)
-      test_idx <- fold_indices[[k]]
-      train_idx <- setdiff(1:nrow(X), test_idx)
-
-      X_train <- X[train_idx, , drop = FALSE]
-      y_train <- y[train_idx]
-
-      # Train model using appropriate function based on single_tree parameter
-      if (single_tree) {
-        # Fit single optimal tree
-        model <- optimaltrees::fit_tree(
-          X = X_train,
-          y = y_train,
-          loss_function = loss_function,
-          regularization = regularization,
-          verbose = FALSE,
-          ...
-        )
-      } else {
-        # Fit Rashomon set
-        model <- optimaltrees::fit_rashomon(
-          X = X_train,
-          y = y_train,
-          loss_function = loss_function,
-          regularization = regularization,
-          rashomon_bound_multiplier = rashomon_bound_multiplier,
-          rashomon_bound_adder = rashomon_bound_adder,
-          rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
-          verbose = FALSE,
-          ...
-        )
-      }
-
-      # Extract Rashomon set (optionally filtered by max_leaves)
-      trees <- optimaltrees::get_rashomon_trees(model, max_leaves = max_leaves)
-
-      list(model = model, trees = trees, size = length(trees))
-    }
-
-    # Execute: parallel or sequential
-    if (use_parallel) {
-      fold_results <- furrr::future_map(1:K, fit_one_fold,
-                                        .options = furrr::furrr_options(seed = TRUE))
-    } else {
-      fold_results <- purrr::map(1:K, fit_one_fold)
-    }
-
-    # Extract results
-    for (k in 1:K) {
-      fold_models[[k]] <- fold_results[[k]]$model
-      rashomon_sets[[k]] <- fold_results[[k]]$trees
-      rashomon_sizes[k] <- fold_results[[k]]$size
-    }
-    
-    # Find intersection of trees across all folds
-    intersection_result <- find_tree_intersection(rashomon_sets, verbose = FALSE)
-    
-    n <- nrow(X)
-    fold_refits <- vector("list", K)
-    if (intersection_result$n_intersecting > 0) {
-      for (k in 1:K) {
-        train_idx <- setdiff(1:n, fold_indices[[k]])
-        X_k <- X[train_idx, , drop = FALSE]
-        y_k <- y[train_idx]
-        fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
-          refit_structure_on_data(.x, X_k, y_k)
-        })
-      }
-    }
-    fold_id_per_row <- integer(n)
-    for (k in 1:K) {
-      fold_id_per_row[fold_indices[[k]]] <- k
-    }
-    
-    # Create S7 result object
-    result <- CFRashomon(
-      K = as.integer(K),
-      loss_function = loss_function,
-      regularization = regularization,
-      rashomon_bound_multiplier = rashomon_bound_multiplier,
-      rashomon_bound_adder = rashomon_bound_adder,
-      max_leaves = if (is.null(max_leaves)) NULL else as.integer(max_leaves),
-      rashomon_sizes = as.integer(rashomon_sizes),
-      n_intersecting = as.integer(intersection_result$n_intersecting),
-      intersecting_trees = intersection_result$intersecting_trees,
-      tree_risks = intersection_result$tree_risks,
-      fold_refits = fold_refits,
-      fold_id_per_row = as.integer(fold_id_per_row),
-      fold_indices = fold_indices,
-      X_train = X,
-      y_train = y,
-      converged = TRUE
-    )
-
-    return(result)
-  }, error = function(e) {
-    if (verbose) {
-      cat(sprintf("  -> ERROR: %s\n", e$message))
-    }
-    return(NULL)
-  })
 }
 
 #' Create Stratified Folds
@@ -629,19 +488,19 @@ create_folds <- function(y, K) {
     class_0_idx <- which(y == 0)
     class_1_idx <- which(y == 1)
 
-    fold_0 <- sample(rep(1:K, length.out = length(class_0_idx)))
-    fold_1 <- sample(rep(1:K, length.out = length(class_1_idx)))
+    fold_0 <- sample(rep(seq_len(K), length.out = length(class_0_idx)))
+    fold_1 <- sample(rep(seq_len(K), length.out = length(class_1_idx)))
 
     fold_assignment <- integer(n)
     fold_assignment[class_0_idx] <- fold_0
     fold_assignment[class_1_idx] <- fold_1
   } else {
     # Simple random fold assignment for continuous outcomes
-    fold_assignment <- sample(rep(1:K, length.out = n))
+    fold_assignment <- sample(rep(seq_len(K), length.out = n))
   }
 
   # Convert to list of indices
-  fold_indices <- purrr::map(1:K, ~ {
+  fold_indices <- purrr::map(seq_len(K), ~ {
     which(fold_assignment == .x)
   })
 

@@ -172,12 +172,13 @@ extract_tree_structure <- function(model, tree_index = 1) {
   partition_hash_val <- partition_hash(tree)
 
   # Create TreeStructure object
+  feature_names <- if (!is.null(model@X_train)) colnames(model@X_train) else NULL
   TreeStructure(
     splits = structure$splits,
     leaf_paths = structure$leaf_paths,
     n_leaves = as.integer(structure$n_leaves),
     max_depth = as.integer(structure$max_depth),
-    feature_names = colnames(model@X_train),
+    feature_names = feature_names,
     partition_hash = partition_hash_val
   )
 }

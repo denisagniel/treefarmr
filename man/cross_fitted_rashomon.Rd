@@ -16,9 +16,6 @@ cross_fitted_rashomon(
   max_leaves = NULL,
   single_tree = FALSE,
   auto_tune_intersecting = FALSE,
-  tune_param = "regularization",
-  max_tune_iterations = 20,
-  tune_search_range = NULL,
   seed = NULL,
   verbose = TRUE,
   parallel = TRUE,
@@ -83,12 +80,6 @@ a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via th
   \strong{Theory guarantee:} All tried values satisfy epsilon_n = o(n^{-1/2}),
   ensuring asymptotically valid inference. The adaptive selection is data-dependent
   but still valid because all candidates satisfy the rate condition.}
-
-\item{tune_param}{Character. (Deprecated - ignored when using new auto-tuning algorithm)}
-
-\item{max_tune_iterations}{Integer. (Deprecated - ignored when using new auto-tuning algorithm)}
-
-\item{tune_search_range}{Numeric vector. (Deprecated - ignored when using new auto-tuning algorithm)}
 
 \item{seed}{Random seed for reproducibility. Default: NULL}
 

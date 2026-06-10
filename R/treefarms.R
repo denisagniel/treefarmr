@@ -624,13 +624,13 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
                                   discretize_thresholds = discretize_thresholds,
                                   ...)
     # auto_tune returns a list with $model; unwrap to return S7 model directly
-    model <- if (is.list(tune_result) && !S7::S7_inherits(tune_result) && !is.null(tune_result$model)) {
+    model <- if (is.list(tune_result) && !S7::S7_inherits(tune_result, OptimalTreesModel) && !is.null(tune_result$model)) {
       tune_result$model
     } else {
       tune_result
     }
     # Auto-tune fits with compute_probabilities=FALSE for speed; compute now if requested
-    if (compute_probabilities && S7::S7_inherits(model) && is.null(model@probabilities)) {
+    if (compute_probabilities && S7::S7_inherits(model, OptimalTreesModel) && is.null(model@probabilities)) {
       if (length(model@trees) > 0) {
         # Discretize X to match tree feature names
         disc_result <- discretize_features(

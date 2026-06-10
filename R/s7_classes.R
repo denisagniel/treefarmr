@@ -332,15 +332,13 @@ OptimalTreesModelLoaded <- S7::new_class(
 
   properties = list(
     model = OptimalTreesModel,  # The actual model
-    loaded_from = S7::new_property(S7::class_character, default = ""),  # File path
+    loaded_from = S7::class_character,  # File path (required, no default)
     loaded_at = S7::new_property(S7::class_POSIXct, default = Sys.time())  # Timestamp
   ),
 
   validator = function(self) {
-    # Main validation is in the nested model
-    # Just validate metadata here
     if (nchar(self@loaded_from) == 0) {
-      return("@loaded_from should specify source file path")
+      return("@loaded_from must be a non-empty file path")
     }
   }
 )

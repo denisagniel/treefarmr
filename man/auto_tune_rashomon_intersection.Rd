@@ -9,6 +9,7 @@ auto_tune_rashomon_intersection(
   y,
   K,
   fold_indices,
+  X_binary = NULL,
   loss_function,
   regularization,
   c_start = 1,

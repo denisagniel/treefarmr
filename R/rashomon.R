@@ -1,21 +1,23 @@
-#' Count leaves in a single tree
+#' Count leaves in a single tree node
 #'
 #' @description
-#' Returns the number of leaf nodes in a tree (list or JSON string).
+#' Returns the number of leaf nodes in a raw tree node (list or JSON string).
+#' Unlike \code{count_tree_leaves()} which dispatches on an \code{OptimalTreesModel},
+#' this function operates directly on a tree node (list).
 #' Used for \code{max_leaves} sieve in \code{get_rashomon_trees}.
 #'
 #' @param tree A single tree as list or JSON string
 #' @return Integer number of leaves
 #' @export
-count_leaves_tree <- function(tree) {
+count_leaves_node <- function(tree) {
   if (is.character(tree)) {
     tree <- jsonlite::fromJSON(tree, simplifyVector = FALSE)
   }
   if (!is.list(tree)) return(0L)
   if (!is.null(tree$prediction)) return(1L)
   n <- 0L
-  if (!is.null(tree$true))  n <- n + count_leaves_tree(tree$true)
-  if (!is.null(tree$false)) n <- n + count_leaves_tree(tree$false)
+  if (!is.null(tree$true))  n <- n + count_leaves_node(tree$true)
+  if (!is.null(tree$false)) n <- n + count_leaves_node(tree$false)
   as.integer(n)
 }
 
@@ -115,7 +117,7 @@ get_rashomon_trees <- function(model, max_leaves = NULL) {
     }
   }
   if (!is.null(max_leaves) && length(trees) > 0) {
-    nleaves <- vapply(trees, count_leaves_tree, integer(1))
+    nleaves <- vapply(trees, count_leaves_node, integer(1))
     trees <- trees[nleaves <= max_leaves]
   }
   trees

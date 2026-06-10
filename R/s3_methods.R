@@ -533,10 +533,6 @@ predict.optimaltrees_logloss_model <- function(object, newdata, type = c("class"
 
   # Extract probabilities from tree structure
   if (!is.null(tree_to_use)) {
-    # Use the get_probabilities_from_tree function from treefarms.R
-    # This function is available in the package namespace
-    # We need to access it via the parent environment or use do.call
-    get_probabilities_from_tree <- get("get_probabilities_from_tree", envir = asNamespace("optimaltrees"))
     probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
     
     if (type == "class") {
