@@ -131,8 +131,8 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     # Check both dots and use optimaltrees default if not specified
     discretize_bins_param <- dots$discretize_bins
     if (is.null(discretize_bins_param)) {
-      # Use optimaltrees default (which is 2, but check the function signature)
-      discretize_bins_param <- 2
+      # Match optimaltrees() default: "adaptive" = max(2, ceiling(log(n)/3))
+      discretize_bins_param <- "adaptive"
     }
 
     if (is.character(discretize_bins_param) && discretize_bins_param == "adaptive") {

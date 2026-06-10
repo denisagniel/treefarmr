@@ -139,7 +139,7 @@ test_that("continuous features are discretized automatically", {
 
   # Check discretization metadata exists
   expect_false(is.null(model@discretization_metadata))
-  expect_equal(model@discretization_metadata$method, "median")
+  expect_equal(model@discretization_metadata$method, "quantiles")  # default is now "quantiles"
   expect_equal(length(model@discretization_metadata$features), 2)
 
   # Predictions should work

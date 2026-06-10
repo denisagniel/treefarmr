@@ -50,8 +50,8 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
                                 fixed_param = "regularization", fixed_value = 0.1,
                                 search_range = NULL, max_iterations = 20,
                                 verbose = FALSE,
-                                discretize_method = "median",
-                                discretize_bins = 2,
+                                discretize_method = "quantiles",
+                                discretize_bins = "adaptive",
                                 discretize_thresholds = NULL, ...) {
 
   # Input validation
@@ -73,8 +73,10 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
          discretize_method, call. = FALSE)
   }
 
-  if (!is.numeric(discretize_bins) || length(discretize_bins) != 1 || discretize_bins < 2) {
-    stop("discretize_bins must be a single numeric value >= 2, got: ",
+  valid_bins <- identical(discretize_bins, "adaptive") ||
+    (is.numeric(discretize_bins) && length(discretize_bins) == 1 && discretize_bins >= 2)
+  if (!valid_bins) {
+    stop("discretize_bins must be 'adaptive' or a single numeric value >= 2, got: ",
          discretize_bins, call. = FALSE)
   }
 

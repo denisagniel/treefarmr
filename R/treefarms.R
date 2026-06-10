@@ -49,9 +49,12 @@
 #'   When FALSE, computes a full rashomon set. For convenience, use \code{\link{fit_tree}}
 #'   for single trees or \code{\link{fit_rashomon}} for rashomon sets.
 #' @param discretize_method Method for discretizing continuous features:
-#'   "median" (default) or "quantiles".
-#' @param discretize_bins Number of bins for quantile discretization (default: 2).
-#'   Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with n
+#'   "quantiles" (default) or "median". "quantiles" places thresholds at
+#'   empirical quantiles and respects \code{discretize_bins}. "median" always
+#'   produces exactly 1 threshold (median split) regardless of \code{discretize_bins}.
+#' @param discretize_bins Number of bins for quantile discretization. Default:
+#'   "adaptive" (= max(2, ceiling(log(n)/3)); 3 bins at n=500, 4 at n=1000).
+#'   Can also be a fixed integer >= 2. Only respected when \code{discretize_method = "quantiles"}.
 #'   (theory requires bins → ∞ for optimal rates). Adaptive uses max(2, ceiling(log(n)/3)).
 #'   Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).
 #' @param discretize_thresholds Optional named list of custom thresholds
@@ -497,7 +500,7 @@ worker_limit = 1L, model_limit = NULL, max_depth = 0L, verbose = FALSE,
 store_training_data = NULL,
 compute_probabilities = FALSE, single_tree = TRUE,
 rashomon_ignore_trivial_extensions = NULL,
-discretize_method = "median", discretize_bins = 2, discretize_thresholds = NULL,
+discretize_method = "quantiles", discretize_bins = "adaptive", discretize_thresholds = NULL,
 cart_lookahead = TRUE, cart_lookahead_depth = 0L, k_cluster = TRUE,
 huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   
