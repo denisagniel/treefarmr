@@ -208,13 +208,17 @@ test_that("C3 step function: OOS cor > 0.20 with new defaults", {
   expect_gt(mean_cor, 0.20)
 })
 
-test_that("C5 DGP4 propensity: OOS cor > 0.20 with new defaults", {
+test_that("C5 DGP4 propensity: OOS cor > 0.30 with new defaults (log_loss)", {
   skip_slow_tests()
+  # log_loss used here: misclassification gives stumps at reg=0.05 for this
+  # 4-feature mixed continuous/binary propensity because per-feature gain is
+  # small. log_loss has smoother gradients and correctly exploits weak signals.
   mean_cor <- compute_oos_cor(
     function(seed) dgp_c5_dgp4_propensity(n = 600, seed = seed),
-    n_seeds = 3, regularization = 0.05
+    n_seeds = 5, regularization = 0.05,
+    loss_function = "log_loss"
   )
-  expect_gt(mean_cor, 0.20)
+  expect_gt(mean_cor, 0.30)
 })
 
 
