@@ -166,3 +166,32 @@ dgp_a1_adaptive_bins <- function(n, seed = 1) {
   y <- rbinom(n, 1, truth)
   list(X = X, y = y, truth = truth)
 }
+
+# ---- Category HD: Higher-dimensional (variable p) ---------------------------
+
+# C6: Additive logistic, p continuous features.
+# Signal in first min(3, p) features (equal weight 0.5 each); rest are noise.
+# Design: log_loss is the appropriate loss for this propensity-style DGP.
+dgp_c6_additive_logistic <- function(n, p = 4, seed = 1) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(rnorm(n * p), nrow = n, ncol = p))
+  colnames(X) <- paste0("x", seq_len(p))
+  n_signal <- min(3L, p)
+  signal <- Reduce(`+`, lapply(paste0("x", seq_len(n_signal)),
+                               function(col) 0.5 * X[[col]]))
+  truth <- plogis(signal)
+  y <- rbinom(n, 1, truth)
+  list(X = X, y = y, truth = truth)
+}
+
+# R3: Additive regression, p continuous features.
+# Signal only in x1 + 0.5*x2; remaining features are pure noise.
+# Demonstrates that regularization suppresses irrelevant features regardless of p.
+dgp_r3_additive_regression <- function(n, p = 4, seed = 1) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(rnorm(n * p), nrow = n, ncol = p))
+  colnames(X) <- paste0("x", seq_len(p))
+  truth <- X$x1 + 0.5 * X$x2
+  y <- truth + rnorm(n, 0, 1)
+  list(X = X, y = y, truth = truth)
+}

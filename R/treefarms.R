@@ -569,16 +569,21 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     loss_function <- "squared_error"
   }
 
-  # Resolve loss-aware model_limit default.
-  # 200000 is sufficient for max_depth=4 with 10-20 binary features at theory-scale lambda.
-  # (10000 was too low: with discretized binary features, GOSDT can enumerate far more
-  # structures than when working directly from continuous covariates.)
+  # Resolve model_limit default.
+  # model_limit was designed for Rashomon set enumeration. For single-tree fits,
+  # set it to 0 (unlimited) so GOSDT can explore states freely without truncation.
+  # For Rashomon: 200000 is sufficient for max_depth=4 with 10-20 binary features
+  # at theory-scale lambda.
   if (is.null(model_limit)) {
-    model_limit <- switch(loss_function,
-      "log_loss" = 200000L,
-      "squared_error" = 200000L,
-      200000L
-    )
+    if (single_tree) {
+      model_limit <- 0L
+    } else {
+      model_limit <- switch(loss_function,
+        "log_loss" = 200000L,
+        "squared_error" = 200000L,
+        200000L
+      )
+    }
   }
 
   # Validate loss-specific parameters

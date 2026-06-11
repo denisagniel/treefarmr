@@ -115,8 +115,6 @@ ldouble fill_dp_matrix_dynamic_stop(const std::vector<double> & x, // data
     }
 
   }
-  // TODO: fix this ad hoc thingy 
-  assert (K < 50);
   return S[K-1][N-1] + K * reg;
 
 }
