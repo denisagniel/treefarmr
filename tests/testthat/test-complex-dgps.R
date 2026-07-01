@@ -40,7 +40,7 @@ resolve_reg <- function(regularization, n_train,
       stop("regularization='cv' requires X_train and y_train")
     }
     cv_regularization_adaptive(X_train, y_train,
-                                loss_function = loss_function, verbose = FALSE)
+                                loss_function = loss_function, verbose = FALSE)$best_lambda
   } else if (is.function(regularization)) {
     regularization(n_train)
   } else {
@@ -375,8 +375,15 @@ test_that("R2 regression quadratic: OOS cor > 0.20 with new defaults", {
 # Non-decreasing: bins(100) <= bins(500) <= bins(2000)
 # ============================================================================
 
-test_that("adaptive bin formula: n_bins matches max(2, ceiling(log(n)/3))", {
-  expected_bins_formula <- function(n) max(2L, ceiling(log(n) / 3))
+test_that("adaptive bin formula: n_bins matches ceiling(n^(1/3)) polynomial default", {
+  # C-F2 changed the "adaptive" default from the legacy log schedule
+  # max(2, ceil(log(n)/3)) to the theory-motivated polynomial ceil(n^(1/3))
+  # (bounded by cap = ceil((log2 n)^2), floor 2). The old log formula is now the
+  # "log" schedule. This test tracks the DEFAULT, so it asserts the polynomial rate.
+  cap <- function(n) max(2L, ceiling((log2(max(n, 2)))^2))
+  expected_bins_formula <- function(n) {
+    max(2L, min(cap(n), ceiling(n^(1 / 3))))
+  }
 
   n_vec <- c(100L, 500L, 2000L)
   bins_vec <- integer(length(n_vec))
@@ -404,7 +411,7 @@ test_that("adaptive bin formula: n_bins matches max(2, ceiling(log(n)/3))", {
 })
 
 test_that("adaptive bins: threshold count equals n_bins - 1 for continuous feature", {
-  # n=500 → 3 bins → 2 thresholds per continuous feature
+  # Reads n_bins from metadata (robust to the schedule); asserts thresholds = n_bins - 1.
   d <- dgp_a1_adaptive_bins(n = 500, seed = 1)
   model <- safe_optimaltrees(d$X, d$y,
     regularization = 0.1,
@@ -592,4 +599,129 @@ test_that("higher-dim propensity p=4: RMSE vs true prob beats null (log_loss, CV
   # Below 0.15 confirms the tree found signal over noise (not just predicting mean).
   expect_lt(rmse_val, 0.15,
     label = "C6 p=4 RMSE vs true prob should be below 0.15")
+})
+
+
+# ============================================================================
+# Section 9 — Tier A: New stress regimes and default-bins convergence (slow)
+#
+# These tests address the evidence gaps identified in the 2026-06-11 assessment:
+#   - Convergence under the ACTUAL default bins (not the n^(1/3) benchmark formula)
+#   - Stress regimes required by constitution §9: weak signal, discontinuity,
+#     no-tuning baseline, CV lambda scaling
+#
+# All tests are guarded by skip_slow_tests().
+# ============================================================================
+
+test_that("A1 default-bins convergence: RMSE decreases n=500->4000 (R2, squared_error) [slow]", {
+  skip_slow_tests()
+
+  # Uses DEFAULT discretize_bins = "adaptive" (i.e., max(2, ceiling(log(n)/3))).
+  # At n=500: K=3 bins. At n=4000: K=3 bins (formula barely moves in this range).
+  # Improvement comes from lambda shrinking (more complex trees possible) + more data.
+  # Threshold is intentionally loose (5%) — benchmark Table 5 measures this precisely.
+  n_small <- 500L
+  n_large <- 4000L
+
+  rmse_small <- compute_oos_rmse(
+    function(seed) dgp_r2_regression_quadratic(n = n_small, seed = seed),
+    n_seeds = 5, regularization = reg_logn_over_n,
+    loss_function = "squared_error",
+    max_depth = 3L
+    # no discretize_bins -> uses default "adaptive"
+  )
+  rmse_large <- compute_oos_rmse(
+    function(seed) dgp_r2_regression_quadratic(n = n_large, seed = seed),
+    n_seeds = 5, regularization = reg_logn_over_n,
+    loss_function = "squared_error",
+    max_depth = 3L
+  )
+
+  # Both should beat the null (null RMSE = sqrt(2) ≈ 1.41)
+  expect_lt(rmse_small, 1.41 * 0.92,
+    label = "default-bins n=500: beats null by at least 8%")
+
+  # Some convergence expected even with fixed K=3 bins (lambda shrinks, more data)
+  expect_lt(rmse_large, rmse_small * 0.95,
+    label = "default-bins: at least 5% RMSE improvement from n=500 to n=4000")
+})
+
+test_that("A2 stress — weak signal: near-stump with lambda=0.1, no overfit (C7) [slow]", {
+  skip_slow_tests()
+
+  # C7: truth = plogis(0.1*x1). SD(truth) ≈ 0.025; nearly constant.
+  # With lambda=0.1, the penalty should suppress all splits -> near-constant predictions.
+  # Correct behavior: OOS correlation with truth should be near zero (not high).
+  mean_cor <- compute_oos_cor(
+    function(seed) dgp_c7_weak_signal(n = 400L, seed = seed),
+    n_seeds = 5, regularization = 0.1,
+    loss_function = "log_loss"
+  )
+
+  # Near-zero is correct: truly near-constant truth + strong lambda = stump.
+  # High correlation would indicate overfitting to Bernoulli label noise.
+  expect_lt(mean_cor, 0.30,
+    label = "C7 weak signal: near-constant truth -> no meaningful OOS cor with lambda=0.1")
+})
+
+test_that("A3 stress — step discontinuity: OOS cor > 0.20 (C3, n=400, log_loss) [slow]", {
+  skip_slow_tests()
+
+  # C3 step: truth = 0.1 + 0.6*(x1>0.33) + 0.2*(x1>0.67). Discontinuous.
+  # New defaults place quantile thresholds near the steps; should recover signal.
+  mean_cor <- compute_oos_cor(
+    function(seed) dgp_c3_step(n = 400L, seed = seed),
+    n_seeds = 5, regularization = 0.05,
+    loss_function = "log_loss"
+  )
+
+  expect_gt(mean_cor, 0.20,
+    label = "C3 step: OOS cor > 0.20 at n=400 with new defaults")
+})
+
+test_that("A4 no-tuning baseline: C2 quadratic OOS cor > 0.30 (lambda=0.1, n=800) [slow]", {
+  skip_slow_tests()
+
+  # Tests out-of-the-box performance: only lambda=0.1 set, everything else default.
+  # Verifies that even with no tuning, the new defaults learn the U-shape.
+  mean_cor <- compute_oos_cor(
+    function(seed) dgp_c2_symmetric_quadratic(n = 800L, seed = seed),
+    n_seeds = 5, regularization = 0.1,
+    loss_function = "log_loss"
+  )
+
+  expect_gt(mean_cor, 0.30,
+    label = "C2 quadratic: OOS cor > 0.30 with no-tuning defaults (lambda=0.1)")
+})
+
+test_that("A5 CV lambda scale: selected lambda decreases as n grows (R2, squared_error) [slow]", {
+  skip_slow_tests()
+
+  # CV lambda should shrink as n grows (consistent with oracle rate lambda ~ log(n)/n).
+  # This tests that cv_regularization_adaptive() is consistent with the theory.
+  n_small <- 500L
+  n_large <- 2000L
+
+  cv_lambda_small <- vapply(seq_len(5L), function(s) {
+    d <- dgp_r2_regression_quadratic(n = n_small, seed = s)
+    cv_regularization_adaptive(d$X, d$y, loss_function = "squared_error", verbose = FALSE)$best_lambda
+  }, numeric(1L))
+
+  cv_lambda_large <- vapply(seq_len(5L), function(s) {
+    d <- dgp_r2_regression_quadratic(n = n_large, seed = s)
+    cv_regularization_adaptive(d$X, d$y, loss_function = "squared_error", verbose = FALSE)$best_lambda
+  }, numeric(1L))
+
+  mean_small <- mean(cv_lambda_small)
+  mean_large <- mean(cv_lambda_large)
+
+  # CV lambda should shrink with n (consistent with oracle lambda -> 0)
+  expect_lt(mean_large, mean_small,
+    label = "CV lambda at n=2000 should be smaller than at n=500")
+
+  # Should be in a reasonable range (not degenerate)
+  expect_gt(mean_small, 1e-5,
+    label = "CV lambda at n=500 should be positive")
+  expect_lt(mean_small, 1.0,
+    label = "CV lambda at n=500 should be less than 1.0")
 })

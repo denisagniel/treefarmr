@@ -8,8 +8,13 @@
 #' @param X A data.frame of features (continuous or binary)
 #' @param method Discretization method: "median" or "quantiles"
 #' @param n_bins Number of bins for quantile discretization (creates n_bins-1 thresholds).
-#'   Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with sample size.
-#'   Adaptive uses: max(2, ceiling(log(n) / 3)).
+#'   Can be numeric >= 2, or a character schedule: "adaptive" (default meaning) uses a
+#'   theory-motivated polynomial rate that refines with n, \code{ceiling(n^(1/3))} capped
+#'   for feasibility (see \code{\link{compute_bin_count}}); "log" reproduces the legacy
+#'   \code{ceiling(log(n)/3)} schedule. Note "cv" (data-driven selection via
+#'   \code{\link{select_bins_cv}}) must be resolved by the caller, which has the outcome y.
+#'   For binary covariates no bins are created regardless. See \code{\link{compute_bin_count}}
+#'   for the theory link (grid must refine polynomially to attain the continuous rate).
 #' @param thresholds Optional named list of user-provided thresholds for specific features
 #'
 #' @return A list with two elements:
@@ -32,21 +37,20 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
     stop("method must be 'median' or 'quantiles'")
   }
 
-  # Handle adaptive n_bins
+  # Resolve a character schedule ("adaptive"/"log") to an integer bin count.
+  # "cv" cannot be resolved here (it needs the outcome y); callers that have y
+  # must resolve it to a numeric before calling (see select_bins_cv()).
   if (is.character(n_bins)) {
-    if (n_bins == "adaptive") {
-      n <- nrow(X)
-      # Theory: need bins ~ log(n) to allow tree complexity to grow with n
-      # Practical choice: max(2, ceiling(log(n) / 3))
-      n_bins <- max(2, ceiling(log(n) / 3))
-      if (n_bins < 2) n_bins <- 2  # Safety
-    } else {
-      stop("n_bins must be numeric >= 2 or 'adaptive'")
+    if (identical(n_bins, "cv")) {
+      stop("n_bins = 'cv' must be resolved by the caller (it needs the outcome y); ",
+           "use select_bins_cv() upstream, then pass the selected integer.",
+           call. = FALSE)
     }
+    n_bins <- compute_bin_count(n_bins, nrow(X))
   }
 
   if (!is.numeric(n_bins) || n_bins < 2) {
-    stop("n_bins must be a numeric value >= 2 or 'adaptive'")
+    stop("n_bins must be a numeric value >= 2, 'adaptive', 'log', or 'cv'")
   }
 
   # Fast path: Check if all features are already binary
@@ -131,6 +135,148 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
     X_binary = X_binary,
     metadata = metadata
   ))
+}
+
+
+#' Resolve a bin-count schedule to an integer number of bins
+#'
+#' @description
+#' Maps a character schedule to a concrete bin count as a function of sample
+#' size \code{n}. This is the per-coordinate discretization resolution used to
+#' turn continuous covariates into binary features.
+#'
+#' \strong{Theory link.} The convergence theory for tree nuisance estimators
+#' (piecewise sparse anisotropic Besov class) requires the per-coordinate grid
+#' to \emph{refine with n} at a polynomial rate,
+#' \eqn{m_{n,i} \gtrsim n^{(\alpha_{\min}/\alpha_i)/(2\bar\alpha + s)}}, where
+#' \eqn{\bar\alpha} is the harmonic-mean anisotropic smoothness and \eqn{s} the
+#' sparsity. A logarithmically growing grid (the previous default) is too coarse
+#' to attain the continuous rate: it yields convergence only to a fixed-grid
+#' approximation of the truth. Since \eqn{\bar\alpha} and \eqn{s} are unknown in
+#' practice, the \code{"adaptive"} default uses a conservative fixed-exponent
+#' polynomial surrogate \eqn{m_n = \lceil c\, n^{\rho}\rceil} with \eqn{\rho =
+#' 1/3}, which dominates the log schedule and meets the required rate for a broad
+#' range of \eqn{(\bar\alpha, s)}. For binary covariates no bins are needed at all
+#' (a tree fits the active subcube exactly). Data-driven selection is available
+#' via \code{"cv"} (see \code{\link{select_bins_cv}}).
+#'
+#' @param schedule Character: "adaptive" (polynomial, default), "log" (legacy
+#'   \eqn{\lceil \log(n)/3 \rceil}), or a numeric value (returned as-is after
+#'   validation).
+#' @param n Sample size.
+#' @param rho Polynomial exponent for "adaptive" (default 1/3, must be in (0, 1/2)).
+#' @param const Multiplicative constant \eqn{c} for "adaptive" (default 1).
+#' @param cap Upper bound on the returned bin count (default: a bounded
+#'   \eqn{\lceil 4 \log_2(n) \rceil^2}-style cap; see Details). Keeps the number of
+#'   binary features---hence tree/Rashomon-set size---bounded at feasible \eqn{n}.
+#'
+#' @details
+#' The cap is deliberately polynomial-but-bounded to avoid an explosion in the
+#' number of binary features (which enlarges candidate trees and Rashomon sets).
+#' The floor is 2 (at least one threshold). Returns an integer \eqn{\ge 2}.
+#'
+#' @return Integer number of bins (\eqn{\ge 2}).
+#' @keywords internal
+compute_bin_count <- function(schedule, n, rho = 1/3, const = 1, cap = NULL) {
+  if (is.numeric(schedule)) {
+    if (length(schedule) != 1 || schedule < 2) {
+      stop("numeric n_bins must be a single value >= 2, got: ", schedule, call. = FALSE)
+    }
+    return(as.integer(round(schedule)))
+  }
+  if (!is.character(schedule) || length(schedule) != 1) {
+    stop("bin schedule must be a single string or numeric, got: ",
+         paste(schedule, collapse = ", "), call. = FALSE)
+  }
+  if (is.null(cap)) {
+    # Bounded cap: grows slowly so bin count stays feasible even for large n.
+    cap <- max(2L, ceiling((log2(max(n, 2)))^2))
+  }
+  m <- switch(schedule,
+    "adaptive" = {
+      if (rho <= 0 || rho >= 0.5) {
+        stop("rho must be in (0, 1/2), got: ", rho, call. = FALSE)
+      }
+      ceiling(const * n^rho)
+    },
+    # Legacy logarithmic schedule; retained for reproducibility of older runs.
+    "log" = ceiling(log(n) / 3),
+    stop("unknown bin schedule '", schedule,
+         "'; use 'adaptive', 'log', 'cv', or a numeric value >= 2", call. = FALSE)
+  )
+  max(2L, min(as.integer(cap), as.integer(m)))
+}
+
+
+#' Select the number of discretization bins by cross-validation
+#'
+#' @description
+#' Data-driven alternative to the fixed \code{"adaptive"} polynomial schedule
+#' (\code{\link{compute_bin_count}}). Chooses the per-coordinate bin count from a
+#' candidate grid by minimizing \eqn{K}-fold held-out risk under the given loss.
+#' Because the theory-optimal grid resolution depends on the unknown smoothness
+#' and sparsity of the target, cross-validation is the practical way to adapt the
+#' grid to the data; the polynomial default is the theory-motivated fallback.
+#'
+#' @param X Data frame of features (continuous and/or binary).
+#' @param y Outcome vector.
+#' @param loss_function "misclassification", "log_loss", or "squared_error".
+#' @param candidate_bins Integer vector of candidate bin counts to try. If NULL,
+#'   a default geometric-ish grid spanning the log and polynomial schedules is used.
+#' @param K Number of CV folds (default 5).
+#' @param regularization Regularization passed to \code{fit_tree} during CV
+#'   (default \code{(log n)/n}, the theory rate on the mean-loss scale).
+#' @param method Discretization method ("quantiles" recommended for CV).
+#'
+#' @return A list with \code{best_bins} (integer), \code{cv_loss} (numeric vector
+#'   aligned with \code{candidate_bins}), and \code{candidate_bins}.
+#' @keywords internal
+select_bins_cv <- function(X, y, loss_function = "log_loss",
+                           candidate_bins = NULL, K = 5L,
+                           regularization = NULL, method = "quantiles") {
+  n <- nrow(X)
+  if (is.null(candidate_bins)) {
+    # Span from the legacy log schedule up to the polynomial default and a bit beyond.
+    lo <- compute_bin_count("log", n)
+    hi <- compute_bin_count("adaptive", n)
+    candidate_bins <- sort(unique(pmax(2L, as.integer(round(
+      seq(lo, max(hi, lo + 2L), length.out = 4L)
+    )))))
+  }
+  if (is.null(regularization)) regularization <- log(n) / n
+
+  is_regression <- loss_function == "squared_error"
+  folds <- create_folds(if (is_regression) rep(0, n) else y, K = K)
+
+  cv_loss <- vapply(candidate_bins, function(nb) {
+    fold_losses <- vapply(seq_len(K), function(k) {
+      test_idx <- folds[[k]]
+      train_idx <- setdiff(seq_len(n), test_idx)
+      if (length(train_idx) < 2L || length(test_idx) < 1L) return(NA_real_)
+      fit <- tryCatch(
+        fit_tree(X[train_idx, , drop = FALSE], y[train_idx],
+                 loss_function = loss_function, regularization = regularization,
+                 discretize_method = method, discretize_bins = nb, verbose = FALSE),
+        error = function(e) NULL
+      )
+      if (is.null(fit)) return(NA_real_)
+      Xtest <- X[test_idx, , drop = FALSE]
+      ytest <- y[test_idx]
+      if (is_regression) {
+        pred <- predict(fit, Xtest)
+        mean((ytest - pred)^2)
+      } else {
+        prob <- predict(fit, Xtest, type = "prob")[, 2L]
+        prob <- pmin(pmax(prob, 1e-12), 1 - 1e-12)
+        -mean(ytest * log(prob) + (1 - ytest) * log(1 - prob))
+      }
+    }, numeric(1))
+    mean(fold_losses, na.rm = TRUE)
+  }, numeric(1))
+
+  best_bins <- candidate_bins[which.min(cv_loss)]
+  list(best_bins = as.integer(best_bins), cv_loss = cv_loss,
+       candidate_bins = candidate_bins)
 }
 
 

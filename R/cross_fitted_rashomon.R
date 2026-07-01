@@ -210,8 +210,25 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   # making trees structurally incomparable across folds (only the stump would ever
   # intersect, causing constant nuisance predictions and naive-estimator bias).
   X_df <- if (is.matrix(X)) as.data.frame(X) else X
-  n_bins_global <- if (is.character(discretize_bins) && discretize_bins == "adaptive") {
-    max(2L, ceiling(log(n) / 3L))
+  # GATED (2026-07-01): the Rashomon path is sensitive to the number of binary
+  # features (finer grid -> larger candidate trees -> larger Rashomon sets ->
+  # potential model_limit overflow / OOM on complex DGPs, cf. the eps_n work).
+  # Until the Rashomon radius (eps_n) is retuned, this path uses the conservative
+  # LEGACY log schedule for the "adaptive" keyword rather than the new polynomial
+  # default used elsewhere. "cv" is resolved to an integer via select_bins_cv.
+  n_bins_global <- if (is.character(discretize_bins)) {
+    if (identical(discretize_bins, "cv")) {
+      # Resolve CV against the pooled data (outcome available here as `A`/`Y`?).
+      # cross_fitted_rashomon fits a single nuisance target `y`; use it.
+      select_bins_cv(X_df, y, loss_function = loss_function,
+                     method = discretize_method)$best_bins
+    } else if (discretize_bins %in% c("adaptive", "log")) {
+      # Force the bounded log schedule on the Rashomon path (gating).
+      compute_bin_count("log", n)
+    } else {
+      stop("discretize_bins must be numeric, 'adaptive', 'log', or 'cv', got: ",
+           discretize_bins, call. = FALSE)
+    }
   } else {
     as.integer(discretize_bins)
   }

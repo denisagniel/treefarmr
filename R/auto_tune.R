@@ -73,10 +73,11 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
          discretize_method, call. = FALSE)
   }
 
-  valid_bins <- identical(discretize_bins, "adaptive") ||
+  valid_bins <- (is.character(discretize_bins) &&
+                   discretize_bins %in% c("adaptive", "log", "cv")) ||
     (is.numeric(discretize_bins) && length(discretize_bins) == 1 && discretize_bins >= 2)
   if (!valid_bins) {
-    stop("discretize_bins must be 'adaptive' or a single numeric value >= 2, got: ",
+    stop("discretize_bins must be 'adaptive', 'log', 'cv', or a single numeric value >= 2, got: ",
          discretize_bins, call. = FALSE)
   }
 
@@ -117,11 +118,18 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
   # Store original X for metadata
   X_original <- X
 
+  # Resolve a "cv" bin schedule to a concrete count (needs the outcome y).
+  bins_arg <- discretize_bins
+  if (identical(bins_arg, "cv")) {
+    bins_arg <- select_bins_cv(X, y, loss_function = loss_function,
+                               method = discretize_method)$best_bins
+  }
+
   # Discretize continuous features
   discretization_result <- discretize_features(
     X = X,
     method = discretize_method,
-    n_bins = discretize_bins,
+    n_bins = bins_arg,
     thresholds = discretize_thresholds
   )
 

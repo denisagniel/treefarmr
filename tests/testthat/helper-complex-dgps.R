@@ -195,3 +195,34 @@ dgp_r3_additive_regression <- function(n, p = 4, seed = 1) {
   y <- truth + rnorm(n, 0, 1)
   list(X = X, y = y, truth = truth)
 }
+
+# ---- Category C (continued): Stress regimes --------------------------------
+
+# C7: Weak signal / near-stump stress test.
+# truth = plogis(0.1*x1): barely separable, nearly constant (~0.5 everywhere).
+# Correct behavior with lambda=0.1: stump or near-stump. No overfit to noise.
+# SD(truth) ≈ 0.025 vs observed label noise ~ Bernoulli(0.5). SNR is tiny.
+# If lambda is too small, tree may split spuriously on x2 (pure noise feature).
+dgp_c7_weak_signal <- function(n = 400, seed = 1) {
+  set.seed(seed)
+  x1 <- rnorm(n, 0, 1)
+  x2 <- rnorm(n, 0, 1)
+  X <- data.frame(x1 = x1, x2 = x2)
+  truth <- plogis(0.1 * x1)
+  y <- rbinom(n, 1, truth)
+  list(X = X, y = y, truth = truth)
+}
+
+# C8: Propensity overlap stress (DML use case).
+# truth = plogis(x1 + 2*x2*(x2 > 1)), x1, x2, ... ~ N(0,1).
+# Creates near-zero/near-one propensities in the upper tail of x2.
+# P(x2 > 1) ≈ 0.16; in that region truth = plogis(x1 + 2*x2) → near 1.
+# Signal features: x1, x2. Noise features: x3, ..., xp.
+dgp_c8_overlap_stress <- function(n = 500, p = 4, seed = 1) {
+  set.seed(seed)
+  X <- as.data.frame(matrix(rnorm(n * p), nrow = n, ncol = p))
+  colnames(X) <- paste0("x", seq_len(p))
+  truth <- plogis(X$x1 + 2 * X$x2 * (X$x2 > 1))
+  y <- rbinom(n, 1, truth)
+  list(X = X, y = y, truth = truth)
+}
