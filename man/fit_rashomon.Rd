@@ -32,11 +32,24 @@ Options: "misclassification" (default), "log_loss", or "squared_error".
 Use "squared_error" for regression with continuous outcomes.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
-lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
+lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
+The fitted objective is \strong{mean} empirical loss plus
+\code{regularization * (number of leaves)} (see \code{\link{fit_tree}});
+all loss functions are mean-normalized, so \code{regularization}
+corresponds to \eqn{\lambda} in Xu et al. (2026), rate
+\eqn{\lambda \propto (\log n)/n}.}
 
-\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.}
+\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.
+The Rashomon set is \eqn{\{f : \mathrm{obj}(f) \le (1 + \varepsilon)\,\mathrm{obj}^*\}}.
+Because the objective is now mean-scaled, this multiplicative bound is a
+\emph{ratio} and is unchanged by the mean normalization. On complex DGPs at
+larger \eqn{n}, the default 0.05 can admit very large (memory-bounding)
+Rashomon sets; reduce it (e.g. 0.01) if enumeration is truncated.}
 
-\item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
+\item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
+\strong{Note:} interpreted on the \emph{mean}-loss scale (objective is mean
+loss + \eqn{\lambda}*leaves); an adder calibrated to a summed objective must
+be divided by \eqn{n}.}
 
 \item{rashomon_ignore_trivial_extensions}{Logical. If FALSE (default), keep all trees including trivial
 extensions (same partition, different split order). This is CRITICAL for cross-fitted Rashomon workflows,

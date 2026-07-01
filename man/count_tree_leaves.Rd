@@ -54,7 +54,11 @@ Rashomon set enumeration. If NULL (default), resolved based on loss function:
 
 \item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
 of trees in the Rashomon set, which is the most effective control for
-preventing combinatorial explosion with many features. Default: 0 (no limit).}
+preventing combinatorial explosion with many features. Default: 0 (no limit).
+\strong{Auto-cap:} for single-tree regression with many binary features (> 8)
+and \code{max_depth = 0}, the function silently sets \code{max_depth = 4}
+to prevent exponential search-space growth. Pass \code{max_depth = 0L}
+explicitly and check the warning to override.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 
@@ -70,11 +74,15 @@ When FALSE, computes a full rashomon set. For convenience, use \code{\link{fit_t
 for single trees or \code{\link{fit_rashomon}} for rashomon sets.}
 
 \item{discretize_method}{Method for discretizing continuous features:
-"median" (default) or "quantiles".}
+"quantiles" (default) or "median". "quantiles" places thresholds at
+empirical quantiles and respects \code{discretize_bins}. "median" always
+produces exactly 1 threshold (median split) regardless of \code{discretize_bins}.}
 
-\item{discretize_bins}{Number of bins for quantile discretization (default: 2).
-Can be numeric >= 2, or "adaptive" for data-dependent bins that grow with n
-(theory requires bins → ∞ for optimal rates). Adaptive uses max(2, ceiling(log(n)/3)).
+\item{discretize_bins}{Number of bins for quantile discretization. Default:
+\code{"adaptive"} (= \code{ceiling(n^(1/3))}, capped at \code{floor(log2(n)^2)};
+~8 bins at n=500, ~10 at n=1000). Use \code{"log"} for the legacy
+\code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"} for data-driven selection.
+Can also be a fixed integer >= 2. Only respected when \code{discretize_method = "quantiles"}.
 Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).}
 
 \item{discretize_thresholds}{Optional named list of custom thresholds

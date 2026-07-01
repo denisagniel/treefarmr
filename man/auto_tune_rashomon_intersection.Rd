@@ -43,7 +43,7 @@ auto_tune_rashomon_intersection(
 
 \item{verbose}{Logical, print diagnostic info}
 
-\item{...}{Additional arguments passed to try_cross_fitted_rashomon_internal()}
+\item{...}{Additional arguments passed to fit_rashomon_folds()}
 }
 \value{
 List with:

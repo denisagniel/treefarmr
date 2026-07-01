@@ -15,8 +15,8 @@ auto_tune_optimaltrees(
   search_range = NULL,
   max_iterations = 20,
   verbose = FALSE,
-  discretize_method = "median",
-  discretize_bins = 2,
+  discretize_method = "quantiles",
+  discretize_bins = "adaptive",
   discretize_thresholds = NULL,
   ...
 )

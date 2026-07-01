@@ -28,7 +28,14 @@ Options: "misclassification" (default), "log_loss", or "squared_error".
 Use "squared_error" for regression with continuous outcomes.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
-lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
+lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
+The fitted objective is the \strong{mean} empirical loss plus
+\code{regularization * (number of leaves)}, i.e.
+\eqn{\frac{1}{n}\sum_i L(y_i, f(x_i)) + \lambda\,|\mathrm{leaves}(f)|}.
+All three loss functions (misclassification, log_loss, squared_error) are
+mean-normalized, so \code{regularization} has the same meaning across them
+and corresponds directly to \eqn{\lambda} in Xu et al. (2026), with the
+theory-motivated rate \eqn{\lambda \propto (\log n)/n}.}
 
 \item{rashomon_ignore_trivial_extensions}{Logical. If TRUE (default), prune trees with identical
 partitions but different split sequences, keeping one representative. This is appropriate when fitting

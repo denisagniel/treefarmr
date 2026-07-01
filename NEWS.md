@@ -1,3 +1,32 @@
+# optimaltrees 0.4.1 (dev)
+
+## Bug Fixes
+
+### Depth-cap safety net for single-tree regression with fine discretization
+
+**Problem:** `optimaltrees()` and `fit_tree()` with `loss_function = "squared_error"`,
+small `regularization` (e.g. 0.01–0.05), and the new `"adaptive"` polynomial default
+for continuous features could OOM or hang indefinitely. Root cause: the `n^{1/3}`
+adaptive schedule produces ~5–10 binary features per original continuous feature at
+practical n; without a depth limit, OSRT explores an exponential number of candidate
+trees at low regularization.
+
+**Fix:** A safety net in `optimaltrees()` auto-sets `max_depth = 4L` when all of these
+are true: `single_tree = TRUE`, regression loss, `max_depth == 0L` (user left it
+unlimited), and more than 8 post-discretization binary features. Depth = 4 collapses
+search time from >30s (or OOM) to ~1s with no change to n_trees. Users can disable
+the cap by passing `max_depth = 0L` explicitly (the auto-set emits a cli message
+when `verbose = TRUE`).
+
+**Impact:** Fixes the `test-numerical-edge-cases.R` hang that could crash the machine
+when `devtools::test()` ran with the new adaptive default. All 19 test files now
+complete in ≤4s each.
+
+### Stale comment in fit_tree.R
+
+Fixed the comment documenting the adaptive bin formula (was the old log schedule,
+now reflects `ceiling(n^(1/3))`).
+
 # treefarmr 0.3.0
 
 ## Major Changes

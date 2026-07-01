@@ -13,6 +13,13 @@
 #'   Use "squared_error" for regression with continuous outcomes.
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
+#'   The fitted objective is the \strong{mean} empirical loss plus
+#'   \code{regularization * (number of leaves)}, i.e.
+#'   \eqn{\frac{1}{n}\sum_i L(y_i, f(x_i)) + \lambda\,|\mathrm{leaves}(f)|}.
+#'   All three loss functions (misclassification, log_loss, squared_error) are
+#'   mean-normalized, so \code{regularization} has the same meaning across them
+#'   and corresponds directly to \eqn{\lambda} in Xu et al. (2026), with the
+#'   theory-motivated rate \eqn{\lambda \propto (\log n)/n}.
 #' @param rashomon_ignore_trivial_extensions Logical. If TRUE (default), prune trees with identical
 #'   partitions but different split sequences, keeping one representative. This is appropriate when fitting
 #'   a single tree, as users typically want one interpretable model, not multiple equivalent representations.
@@ -131,16 +138,23 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     # Check both dots and use optimaltrees default if not specified
     discretize_bins_param <- dots$discretize_bins
     if (is.null(discretize_bins_param)) {
-      # Match optimaltrees() default: "adaptive" = max(2, ceiling(log(n)/3))
+      # Match optimaltrees() default: "adaptive" = ceiling(n^(1/3)), capped
       discretize_bins_param <- "adaptive"
     }
 
-    if (is.character(discretize_bins_param) && discretize_bins_param == "adaptive") {
-      n_bins <- max(2, ceiling(log(n) / 3))
+    if (is.character(discretize_bins_param) &&
+        discretize_bins_param %in% c("adaptive", "log")) {
+      # Use the same schedule the discretizer will use, so the feature-count
+      # estimate (for the model_limit safeguard) matches the actual grid.
+      n_bins <- compute_bin_count(discretize_bins_param, n)
+    } else if (identical(discretize_bins_param, "cv")) {
+      # CV picks from a grid topping out near the adaptive schedule; use that
+      # as the conservative (largest) estimate for the safeguard.
+      n_bins <- compute_bin_count("adaptive", n)
     } else {
       n_bins <- suppressWarnings(as.numeric(discretize_bins_param))
       if (is.na(n_bins)) {
-        stop("discretize_bins must be numeric or 'adaptive', got: ", discretize_bins_param, call. = FALSE)
+        stop("discretize_bins must be numeric, 'adaptive', 'log', or 'cv', got: ", discretize_bins_param, call. = FALSE)
       }
       # Issue #15: Validate n_bins is at least 2
       if (n_bins < 2) {

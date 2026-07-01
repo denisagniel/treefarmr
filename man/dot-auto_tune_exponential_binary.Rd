@@ -22,13 +22,8 @@
 )
 }
 \description{
-Implements bidirectional exponential search followed by binary refinement.
-Similar to auto_tune_rashomon_intersection() but adapted for single-model fitting.
-
-Algorithm:
-1. Start at midpoint of search_range
-2. If midpoint succeeds (trees in target range): search downward (minimize parameter)
-3. If midpoint fails (trees outside range): search upward or downward as needed
-4. Binary refinement after exponential phase brackets target
+Wraps \code{bidirectional_exp_binary_search()} for single-model tree-count fitting.
+Searches for a parameter value (regularization or rashomon_bound_multiplier) that
+yields a tree count in [target_trees, max_trees].
 }
 \keyword{internal}

@@ -15,6 +15,7 @@ cv_regularization(
   worker_limit = 1L,
   parallel = TRUE,
   seed = NULL,
+  fold_indices = NULL,
   ...
 )
 }
@@ -40,6 +41,8 @@ cv_regularization(
 \item{parallel}{Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.}
 
 \item{seed}{Optional integer. If provided, \code{set.seed(seed)} is called before creating folds for reproducibility.}
+
+\item{fold_indices}{Optional list of pre-computed fold index vectors (length K). If provided, skips fold creation and \code{seed} is used only for per-task reproducibility. Default: \code{NULL}.}
 
 \item{...}{Additional arguments passed to \code{\link{fit_tree}}.}
 }
