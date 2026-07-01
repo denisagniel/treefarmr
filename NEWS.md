@@ -2,6 +2,29 @@
 
 ## Bug Fixes
 
+### `fit_rashomon` with `squared_error` no longer crashes (segfault at 0x47)
+
+**Problem:** `fit_rashomon()` with `loss_function = "squared_error"` crashed
+with a segfault at address `0x47` during Rashomon set extraction. The crash
+occurred in `ModelSet::ModelSet()` which called `encoder.target_value()` unconditionally.
+For `SQUARED_ERROR`, the encoder has no binary target codex entry
+(`number_of_binary_targets = 0`), so `codex[number_of_binary_columns]` was an
+out-of-bounds vector access — undefined behavior leading to the segfault.
+A second latent bug: `Objective(n, 1, state)` accessed `mismatch_costs[0]` which
+is also empty for `SQUARED_ERROR` (cost matrix not built for regression).
+
+**Fix:** Guard both unsafe calls in `ModelSet::ModelSet()` with a check for
+`SQUARED_ERROR`: skip `encoder.target_value()` entirely; construct `Objective`
+via its default constructor and set `objective = max_loss + regularization`
+directly. This path is only used for compact Rashomon model-set output (not
+the Model objects returned to R), so behavior is fully preserved.
+
+**Impact:** `fit_rashomon()` now works for all three loss functions. Added
+`test-rashomon-validity.R` with 5 test blocks verifying bound validity,
+brute-force optimum match, monotone set growth, additive bound, and
+single-tree/Rashomon objective agreement — for both `log_loss` and
+`squared_error`.
+
 ### Depth-cap safety net for single-tree regression with fine discretization
 
 **Problem:** `optimaltrees()` and `fit_tree()` with `loss_function = "squared_error"`,
