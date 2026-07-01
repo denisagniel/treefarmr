@@ -45,25 +45,26 @@ when `verbose = TRUE`).
 when `devtools::test()` ran with the new adaptive default. All 20 test files now
 complete in ≤4s each.
 
-### `depth_budget` off-by-two: max_depth now gives the depth it promises
+### `depth_budget` off-by-one: max_depth now enforces the depth it promises
 
-**Problem (critical, long-standing):** The R parameter `max_depth = d` was passed
-directly to GOSDT's C++ `depth_budget = d`. However, GOSDT's internal accounting
-starts the budget at `depth_budget` and decrements it once per `subset()` call
-(i.e., per split level). A node with remaining budget = 1 is forced to a leaf.
-This means `depth_budget = k` allows at most `k − 2` actual splits (tree depth),
-not `k` splits. Concretely: `max_depth = 3` produced depth-1 trees; `max_depth = 4`
-produced depth-2 trees.
+**Problem (critical, long-standing):** The R parameter `max_depth = d` was
+previously mapped to `depth_budget = d + 2` in GOSDT's C++ (`+2` was inferred
+from an empirical sweep on data where the optimal tree depth was always shallower
+than the cap, so the constraint was never binding). The actual GOSDT accounting
+decrements the budget by 1 on each split level and forces a leaf at budget = 1,
+so `depth_budget = k` allows actual tree depth up to `k − 1`. With the wrong `+2`
+mapping, `max_depth = 1` passed `depth_budget = 3`, which allowed depth-2 trees.
+The prior brute-force test suite only verified that the objective matched the
+unconstrained optimum — it did not test that the depth constraint was enforced.
 
-**Fix:** The R→C++ mapping now passes `depth_budget = max_depth + 2` when
-`max_depth > 0`, preserving `depth_budget = 0` (unlimited) for `max_depth = 0`.
+**Fix:** The mapping is now `depth_budget = max_depth + 1` (for `max_depth > 0`).
+`depth_budget = 0` (unlimited) is unchanged.
 
-**Impact:** Trees are now as deep as requested. A brute-force optimality test suite
-(11 test cases across all three loss functions and up to 16-observation datasets
-with exhaustive enumeration) verifies that GOSDT matches the globally optimal
-objective to within 1e-4. The depth-cap safety net was also corrected from
-`max_depth = 4L` to `max_depth = 2L` since the mapping fix changes what depth-4
-vs depth-2 means in C++.
+**Impact:** `max_depth = d` now correctly limits actual tree depth to ≤ d.
+Two new depth-constraint test cases added to `test-brute-force-optimality.R`:
+(1) `max_depth = 1` on a 2-way AND dataset confirms depth ≤ 1, and (2) `max_depth
+= 2` on a 3-way AND dataset confirms depth ≤ 2 with depth-3 strictly better.
+All 13 brute-force test cases pass.
 
 ### Stale comment in fit_tree.R
 

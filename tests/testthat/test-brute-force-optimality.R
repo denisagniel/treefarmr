@@ -218,3 +218,56 @@ test_that("squared_error objective is invariant to row duplication", {
   expect_equal(o1, o2, tolerance = 1e-5,
                label = "n=4 objective", expected.label = "n=8 objective (duplicate rows)")
 })
+
+# ── depth constraint enforcement ──────────────────────────────────────────────
+
+# Helper: recursively compute max depth of a tree (list with $feature key at splits)
+tree_actual_depth <- function(node, d = 0L) {
+  if (is.null(node$feature)) return(d)
+  max(tree_actual_depth(node$false, d + 1L), tree_actual_depth(node$true, d + 1L))
+}
+
+test_that("max_depth=1 produces depth-1 trees on a depth-2-optimal interaction", {
+  # XOR/2-way-AND dataset: depth-1 cannot separate, depth-2 is optimal.
+  # With max_depth=1, GOSDT must produce a stump (depth 1).
+  X <- data.frame(f1 = c(0, 0, 1, 1, 0, 0, 1, 1),
+                  f2 = c(0, 1, 0, 1, 0, 1, 0, 1))
+  y <- as.integer(X$f1 == 1L & X$f2 == 1L)  # AND
+
+  m1 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.001, max_depth = 1L)
+  m2 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.001, max_depth = 2L)
+  m3 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.001, max_depth = 3L)
+
+  expect_lte(tree_actual_depth(m1@trees[[1]]), 1L)
+  expect_lte(tree_actual_depth(m2@trees[[1]]), 2L)
+  expect_lte(tree_actual_depth(m3@trees[[1]]), 3L)
+
+  # Depth-2 objective should be strictly better than depth-1 on this data
+  expect_lt(gosdt_obj(m2), gosdt_obj(m1) - 0.01,
+            label = "depth-2 objective strictly better than depth-1 on AND data")
+})
+
+test_that("max_depth=2 produces depth-2 trees on a depth-3-optimal 3-way interaction", {
+  # 3-way AND: depth-3 splits x1, x2, x3 in sequence.
+  # With max_depth=2, GOSDT can only achieve depth-2 (or less).
+  n <- 32
+  x1 <- rep(c(0L, 1L), 16L); x2 <- rep(c(0L, 0L, 1L, 1L), 8L)
+  x3 <- rep(c(rep(0L, 4L), rep(1L, 4L)), 4L)
+  X <- data.frame(f1 = x1, f2 = x2, f3 = x3)
+  y <- as.integer(x1 == 1L & x2 == 1L & x3 == 1L)
+
+  m2 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.0001, max_depth = 2L)
+  m3 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.0001, max_depth = 3L)
+  m4 <- fit_tree(X, y, loss_function = "log_loss", regularization = 0.0001, max_depth = 4L)
+
+  expect_lte(tree_actual_depth(m2@trees[[1]]), 2L)
+  expect_lte(tree_actual_depth(m3@trees[[1]]), 3L)
+  expect_lte(tree_actual_depth(m4@trees[[1]]), 4L)
+
+  # Depth-3 objective should be strictly better than depth-2 on this data
+  expect_lt(gosdt_obj(m3), gosdt_obj(m2) - 0.05,
+            label = "depth-3 objective strictly better than depth-2 on 3-way AND")
+  # Depth-4 should match depth-3 (no improvement beyond depth-3)
+  expect_equal(gosdt_obj(m4), gosdt_obj(m3), tolerance = 1e-4,
+               label = "depth-4 objective matches depth-3 (3-way AND is fully captured)")
+})

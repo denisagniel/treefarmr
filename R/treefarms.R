@@ -728,10 +728,10 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   # Create configuration JSON
   # depth_budget semantics in GOSDT C++: budget starts at Configuration::depth_budget
   # and is decremented by 1 on each subset() call; a node with budget=1 is forced to
-  # a leaf. Empirically: depth_budget=k allows trees of actual depth (splits) <= k-2.
-  # So R max_depth=d (= d allowed splits) maps to depth_budget = d+2 (for d>0).
+  # a leaf. Empirically: depth_budget=k allows trees of actual depth (splits) <= k-1.
+  # So R max_depth=d (= d allowed splits) maps to depth_budget = d+1 (for d>0).
   # depth_budget=0 means unlimited (no constraint), matching R max_depth=0.
-  depth_budget_cpp <- if (max_depth == 0L) 0L else as.integer(max_depth) + 2L
+  depth_budget_cpp <- if (max_depth == 0L) 0L else as.integer(max_depth) + 1L
   config <- list(
     loss_function = loss_function,
     regularization = regularization,
