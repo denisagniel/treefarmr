@@ -11,16 +11,36 @@ adaptive schedule produces ~5–10 binary features per original continuous featu
 practical n; without a depth limit, OSRT explores an exponential number of candidate
 trees at low regularization.
 
-**Fix:** A safety net in `optimaltrees()` auto-sets `max_depth = 4L` when all of these
+**Fix:** A safety net in `optimaltrees()` auto-sets `max_depth = 2L` when all of these
 are true: `single_tree = TRUE`, regression loss, `max_depth == 0L` (user left it
-unlimited), and more than 8 post-discretization binary features. Depth = 4 collapses
+unlimited), and more than 8 post-discretization binary features. Depth = 2 collapses
 search time from >30s (or OOM) to ~1s with no change to n_trees. Users can disable
 the cap by passing `max_depth = 0L` explicitly (the auto-set emits a cli message
 when `verbose = TRUE`).
 
 **Impact:** Fixes the `test-numerical-edge-cases.R` hang that could crash the machine
-when `devtools::test()` ran with the new adaptive default. All 19 test files now
+when `devtools::test()` ran with the new adaptive default. All 20 test files now
 complete in ≤4s each.
+
+### `depth_budget` off-by-two: max_depth now gives the depth it promises
+
+**Problem (critical, long-standing):** The R parameter `max_depth = d` was passed
+directly to GOSDT's C++ `depth_budget = d`. However, GOSDT's internal accounting
+starts the budget at `depth_budget` and decrements it once per `subset()` call
+(i.e., per split level). A node with remaining budget = 1 is forced to a leaf.
+This means `depth_budget = k` allows at most `k − 2` actual splits (tree depth),
+not `k` splits. Concretely: `max_depth = 3` produced depth-1 trees; `max_depth = 4`
+produced depth-2 trees.
+
+**Fix:** The R→C++ mapping now passes `depth_budget = max_depth + 2` when
+`max_depth > 0`, preserving `depth_budget = 0` (unlimited) for `max_depth = 0`.
+
+**Impact:** Trees are now as deep as requested. A brute-force optimality test suite
+(11 test cases across all three loss functions and up to 16-observation datasets
+with exhaustive enumeration) verifies that GOSDT matches the globally optimal
+objective to within 1e-4. The depth-cap safety net was also corrected from
+`max_depth = 4L` to `max_depth = 2L` since the mapping fix changes what depth-4
+vs depth-2 means in C++.
 
 ### Stale comment in fit_tree.R
 

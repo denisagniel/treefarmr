@@ -40,9 +40,10 @@
 #'   of trees in the Rashomon set, which is the most effective control for
 #'   preventing combinatorial explosion with many features. Default: 0 (no limit).
 #'   \strong{Auto-cap:} for single-tree regression with many binary features (> 8)
-#'   and \code{max_depth = 0}, the function silently sets \code{max_depth = 4}
-#'   to prevent exponential search-space growth. Pass \code{max_depth = 0L}
-#'   explicitly and check the warning to override.
+#'   and \code{max_depth = 0}, the function auto-sets \code{max_depth = 2}
+#'   (depth-2 trees) to prevent exponential search-space growth. Pass
+#'   \code{max_depth = 0L} explicitly to disable and set \code{verbose = TRUE}
+#'   to see the message.
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
 #'   Default: FALSE. Set to TRUE only if you need to access training data later.
@@ -709,15 +710,15 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   # Depth-cap safety net for single-tree regression with fine discretization.
   # Without a depth limit, OSRT explores an exponential search space when
   # regularization is small and the binary feature count is nontrivial —
-  # confirmed by probe: n=50,p=3,reg=0.01 times out; depth=4 collapses to ~1s.
-  # This guard fires only for the single-tree regression path; the Rashomon
-  # path is already bounded (max_depth=3L in fit_nuisances_rashomon and the
-  # log-schedule gate in cross_fitted_rashomon).
+  # confirmed by probe: n=50,p=3,reg=0.01 times out; max_depth=2 (depth-2 trees)
+  # collapses to ~1s. This guard fires only for the single-tree regression path;
+  # the Rashomon path is already bounded (max_depth=3L in fit_nuisances_rashomon
+  # and the log-schedule gate in cross_fitted_rashomon).
   if (single_tree && is_regression && max_depth == 0L && ncol(X) > 8L) {
-    max_depth <- 4L
+    max_depth <- 2L
     if (verbose) {
       cli::cli_inform(c(
-        "Auto-set {.arg max_depth} = {.val 4}.",
+        "Auto-set {.arg max_depth} = {.val 2} (depth-2 trees).",
         "i" = "Reason: regression + {ncol(X)} binary features + unlimited depth can OOM.",
         "i" = "Pass {.code max_depth = 0L} explicitly to disable this cap."
       ))
@@ -725,13 +726,19 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   }
 
   # Create configuration JSON
+  # depth_budget semantics in GOSDT C++: budget starts at Configuration::depth_budget
+  # and is decremented by 1 on each subset() call; a node with budget=1 is forced to
+  # a leaf. Empirically: depth_budget=k allows trees of actual depth (splits) <= k-2.
+  # So R max_depth=d (= d allowed splits) maps to depth_budget = d+2 (for d>0).
+  # depth_budget=0 means unlimited (no constraint), matching R max_depth=0.
+  depth_budget_cpp <- if (max_depth == 0L) 0L else as.integer(max_depth) + 2L
   config <- list(
     loss_function = loss_function,
     regularization = regularization,
     verbose = verbose,
     worker_limit = as.integer(worker_limit),
     model_limit = as.integer(model_limit),
-    depth_budget = as.integer(max_depth),
+    depth_budget = depth_budget_cpp,
     look_ahead = cart_lookahead,  # Map to C++ look_ahead (OSRT one-step lookahead)
     # cart_lookahead_depth is currently unused - reserved for future enhancements
     k_cluster = k_cluster,
