@@ -415,6 +415,20 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
             potential = 0.0f;
         }
 
+        // Normalize to MEAN squared error over the full sample. Xu et al. (2026)
+        // analyze mean empirical risk + lambda*(#leaves); each leaf's summed SSE
+        // divided by global n = size() so leaf contributions sum to MSE across
+        // leaves, putting `regularization` on the theory scale (~log(n)/n).
+        // All internal lower-bound logic above stays in summed units (self-
+        // consistent), so only the three exported loss-scale outputs are rescaled.
+        // See quality_reports/plans/2026-06-30_loss-normalization-fix.md
+        {
+            const float inv_n = 1.0f / static_cast<float>(size());
+            min_loss *= inv_n;
+            max_loss *= inv_n;
+            potential *= inv_n;
+        }
+
         return;
     }
     Bitmask & buffer = state.locals[id].columns[0];
@@ -445,7 +459,13 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 // Using clamped prob ensures log(prob) is always finite
                 log_loss -= prob * log(prob);
             }
-            min_cost = log_loss * total_points; // Scale by number of points
+            // MEAN cross-entropy over the full sample: leaf entropy weighted by
+            // the leaf's sample fraction (total_points / n). Summed across leaves
+            // this yields mean cross-entropy, matching Xu et al. (2026)'s mean-loss
+            // objective so `regularization` sits on the theory scale (~log(n)/n).
+            // (Misclassification shares the tail below and is already mean-scaled
+            // via costs = 1/height(), so only log-loss quantities are rescaled here.)
+            min_cost = log_loss * total_points / static_cast<float>(size());
             cost_minimizer = 0; // For log-loss, we don't have a single prediction
             
             // Debug output for root node
@@ -493,8 +513,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 // Entropy: -sum(p_i * log(p_i))
                 entropy -= prob * log(prob);
             }
-            max_cost_reduction = entropy * total_points;
-            equivalent_point_loss = entropy * total_points;
+            // Mean-scale to match min_cost above (entropy weighted by leaf
+            // fraction total_points/n). Keeps potential/equivalent-point-loss in
+            // the same mean units as the loss so branch-and-bound stays consistent.
+            max_cost_reduction = entropy * total_points / static_cast<float>(size());
+            equivalent_point_loss = entropy * total_points / static_cast<float>(size());
         }
     } else {
         // Original misclassification loss calculation

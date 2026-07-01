@@ -32,30 +32,56 @@ test_that("log-loss training completes and produces valid output", {
   expect_valid_treefarms_model(model_pattern, "log_loss")
 })
 
-test_that("log-loss vs misclassification outputs differ", {
-  # Train both models with same data and parameters
-  model_logloss <- safe_optimaltrees(simple_dataset$X, simple_dataset$y,
+test_that("log-loss vs misclassification select different trees on calibration signal", {
+  # RE-BASELINED 2026-06-30 (loss-normalization fix). The previous version ran
+  # both losses on `simple_dataset` (pure noise: random binary X, random y) and
+  # asserted their probabilities differ. That only "passed" because the OLD
+  # summed-scale log_loss had an ~n-times-too-weak penalty and spuriously
+  # over-split the noise. With log_loss now mean-normalized (matching Xu et al.
+  # 2026 / the manuscript), BOTH losses correctly select the stump on noise and
+  # return the identical base-rate probability -- so the old assertion is no
+  # longer a valid invariant. See
+  # quality_reports/plans/2026-06-30_loss-normalization-fix.md
+  #
+  # Probabilities are leaf empirical proportions under BOTH losses, so they can
+  # only differ when the two losses select DIFFERENT trees. The genuine,
+  # theory-grounded difference is calibration: a split that sharpens within-leaf
+  # probabilities WITHOUT changing any leaf's majority class is invisible to
+  # misclassification (no prediction changes) but rewarded by log_loss. This DGP
+  # constructs exactly that: within feature_1 == 1 the majority is always class
+  # 1, but feature_2 separates p = 0.6 from p = 0.95.
+  set.seed(7)
+  n <- 400
+  f1 <- sample(0:1, n, replace = TRUE)
+  f2 <- sample(0:1, n, replace = TRUE)
+  f3 <- sample(0:1, n, replace = TRUE)
+  prob <- ifelse(f1 == 0, 0.1, ifelse(f2 == 0, 0.6, 0.95))
+  y <- rbinom(n, 1, prob)
+  X <- data.frame(feature_1 = f1, feature_2 = f2, feature_3 = f3)
+
+  model_logloss <- safe_optimaltrees(X, y,
                                      loss_function = "log_loss",
-                                     regularization = 0.1,
+                                     regularization = 0.02,
                                      compute_probabilities = TRUE,
                                      verbose = FALSE)
 
-  model_misclass <- safe_optimaltrees(simple_dataset$X, simple_dataset$y,
+  model_misclass <- safe_optimaltrees(X, y,
                                       loss_function = "misclassification",
-                                      regularization = 0.1,
+                                      regularization = 0.02,
                                       compute_probabilities = TRUE,
                                       verbose = FALSE)
 
   expect_valid_treefarms_model(model_logloss, "log_loss")
   expect_valid_treefarms_model(model_misclass, "misclassification")
 
-  # Probabilities should differ between loss functions
-  expect_false(identical(model_logloss@probabilities, model_misclass@probabilities))
+  # log_loss rewards the calibration split (feature_2) that misclassification
+  # ignores, so it yields strictly more distinct probability levels.
+  n_levels_logloss <- nrow(unique(model_logloss@probabilities))
+  n_levels_misclass <- nrow(unique(model_misclass@probabilities))
+  expect_gt(n_levels_logloss, n_levels_misclass)
 
-  # Probability distributions should differ
-  logloss_mean_diff <- mean(abs(model_logloss@probabilities - 0.5))
-  misclass_mean_diff <- mean(abs(model_misclass@probabilities - 0.5))
-  expect_true(logloss_mean_diff != misclass_mean_diff)
+  # And therefore the probability vectors must differ.
+  expect_false(identical(model_logloss@probabilities, model_misclass@probabilities))
 })
 
 test_that("log-loss handles various datasets", {

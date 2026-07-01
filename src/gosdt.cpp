@@ -420,6 +420,12 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
                 std::cout << "Found Optimal Objective: " << optimal_objective << std::endl;
             }
             
+            // NOTE: as of the mean-loss normalization (2026-06-30), optimal_objective
+            // is on the MEAN-loss scale (loss() now sums per-leaf MEAN contributions).
+            // The multiplicative bound below is a ratio and is scale-invariant.
+            // The additive bound interprets rashomon_bound_adder on the MEAN scale
+            // (previously summed); callers using the adder must scale accordingly.
+            // The doubletree pipeline uses the multiplier (epsilon_n) path, not the adder.
             if (Configuration::rashomon_bound_multiplier != 0) {
                 rashomon_bound = optimal_objective * (1 + Configuration::rashomon_bound_multiplier);
             } else {
