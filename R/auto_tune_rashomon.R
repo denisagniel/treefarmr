@@ -46,15 +46,19 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
                                            verbose = TRUE,
                                            ...) {
   n <- nrow(X)
-  sqrt_log_n_over_n <- sqrt(log(n) / n)
+  # Base scale = theory rate log(n)/n (select_epsilon_n), NOT sqrt(log(n)/n):
+  # the latter is not o(n^{-1/2}) and is not inference-valid. Auto-tuning the
+  # multiplier c is a post-selection device (exploratory only); see the warning
+  # in cross_fitted_rashomon() and select_epsilon_n() for the fixed alternative.
+  eps_base <- select_epsilon_n(n)
 
   if (verbose) {
     cat("=== AUTO-TUNING RASHOMON INTERSECTION ===\n")
-    cat(sprintf("n = %d, sqrt(log(n)/n) = %.4f\n", n, sqrt_log_n_over_n))
+    cat(sprintf("n = %d, log(n)/n = %.4f\n", n, eps_base))
   }
 
   probe_fn <- function(c_val) {
-    epsilon_n <- c_val * sqrt_log_n_over_n
+    epsilon_n <- c_val * eps_base
     tryCatch(
       fit_rashomon_folds(
         X_binary = X_binary, y = y, K = K, fold_indices = fold_indices,

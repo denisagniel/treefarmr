@@ -278,3 +278,23 @@ test_that("auto_tune_treefarms handles edge cases", {
 # Note: Removed target_trees variation test (redundant)
 # Note: Removed parameter range sanity test (over-defensive)
 # This file focuses on core auto-tuning functionality
+
+# ============================================================================
+# Auto-tune epsilon_n is exploratory-only: must warn (post-selection, voids
+# the o(n^{-1/2}) inference guarantee). select_epsilon_n() is the fixed,
+# theory-valid alternative.
+# ============================================================================
+
+test_that("cross_fitted_rashomon(auto_tune_intersecting=TRUE) warns it is inference-invalid", {
+  expect_warning(
+    cross_fitted_rashomon(
+      pattern_data$X, pattern_data$y, K = 2,
+      loss_function = "misclassification",
+      regularization = 0.1,
+      auto_tune_intersecting = TRUE,
+      max_leaves = 4L,
+      verbose = FALSE
+    ),
+    "post-selection|valid-inference|o\\(n"
+  )
+})

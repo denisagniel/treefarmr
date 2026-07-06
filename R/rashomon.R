@@ -1,3 +1,40 @@
+#' Theory-justified Rashomon tolerance epsilon_n
+#'
+#' @description
+#' Returns the fixed, deterministic Rashomon tolerance
+#' \eqn{\varepsilon_n = c \cdot \log(n) / n} recommended for valid
+#' Rashomon-DML inference. This rate is \eqn{o(n^{-1/2})} (since
+#' \eqn{\varepsilon_n / n^{-1/2} = c \log(n) / \sqrt{n} \to 0}), the condition
+#' required by the doubletree structural-margin resolution
+#' (manuscript Corollary "Rashomon tolerance without the intersection
+#' trade-off"): a single fixed tolerance of this order yields both a non-empty
+#' cross-fold intersection (under the structural-margin assumption) and the
+#' \eqn{o(n^{-1/2})} validity rate, with no data-adaptive tuning.
+#'
+#' @details
+#' Prefer this fixed value over data-adaptive selection of \eqn{\varepsilon_n}
+#' (e.g. \code{auto_tune_intersecting = TRUE}), which is a post-selection device
+#' not covered by the validity theory. When the intersection is empty at this
+#' tolerance, the correct escape is to fall back to fold-specific trees
+#' (\code{use_rashomon = FALSE}), not to enlarge \eqn{\varepsilon_n}.
+#'
+#' @param n Sample size (integer \eqn{\ge 2}).
+#' @param c Positive constant multiplier (default 1).
+#' @return A single numeric: \eqn{c \cdot \log(n) / n}.
+#' @examples
+#' select_epsilon_n(1000)      # 0.00691...
+#' select_epsilon_n(1000, c = 2)
+#' @export
+select_epsilon_n <- function(n, c = 1) {
+  if (!is.numeric(n) || length(n) != 1 || n < 2) {
+    stop("`n` must be a single number >= 2, got: ", n, call. = FALSE)
+  }
+  if (!is.numeric(c) || length(c) != 1 || c <= 0) {
+    stop("`c` must be a single positive number, got: ", c, call. = FALSE)
+  }
+  c * log(n) / n
+}
+
 #' Count leaves in a single tree node
 #'
 #' @description

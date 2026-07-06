@@ -32,7 +32,8 @@ auto_tune_regularization_for_intersection(
 
 \item{regularization_start}{User's starting lambda value}
 
-\item{epsilon_n_fixed}{Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)}
+\item{epsilon_n_fixed}{Fixed epsilon_n for lambda search. If NULL, uses the
+theory rate \code{select_epsilon_n(n)} = log(n)/n (= o(n^{-1/2}))}
 
 \item{max_attempts}{Maximum lambda candidates to try in Tier 2. Default: 6}
 

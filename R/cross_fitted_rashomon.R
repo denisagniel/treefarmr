@@ -21,33 +21,23 @@
 #'   Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold computes
 #'   a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via the underlying
 #'   \code{\link{treefarms}} call.
-#' @param auto_tune_intersecting Logical. If TRUE, automatically search for the
-#'   smallest \code{rashomon_bound_multiplier} that yields non-empty intersection.
-#'   Uses bidirectional exponential search followed by binary refinement to find
-#'   epsilon_n = c * sqrt(log(n)/n). Default: FALSE.
+#' @param auto_tune_intersecting Logical. If TRUE, search (over the multiplier
+#'   \code{c}, base rate \code{select_epsilon_n(n)} = log(n)/n) for the smallest
+#'   tolerance that yields a non-empty cross-fold intersection. Default: FALSE.
 #'
-#'   \strong{How it works (Bidirectional Search):}
-#'   \enumerate{
-#'     \item Initial test: Try c = 1 (reasonable default)
-#'     \item If c = 1 succeeds: Downward search c = 0.5, 0.25, 0.125, ... to minimize bias
-#'     \item If c = 1 fails: Upward search c = 2, 4, 8, ... to find intersection
-#'     \item Binary refinement: Narrow to smallest working epsilon_n (within 10\%)
-#'     \item Tree selection: If multiple trees, picks best by penalized risk
-#'   }
+#'   \strong{Not valid for inference.} Data-adaptive selection of the Rashomon
+#'   tolerance is a \emph{post-selection} device: the tolerance becomes a function
+#'   of the data, so it is not covered by the fixed-\eqn{\varepsilon_n} validity
+#'   theory, and on hard instances the search can inflate \eqn{\varepsilon_n} well
+#'   beyond \eqn{o(n^{-1/2})}, voiding the CLT. Use it only for exploration. For
+#'   inference, pass a fixed \code{rashomon_bound_multiplier =
+#'   select_epsilon_n(n)} and, if the intersection is empty at that tolerance,
+#'   fall back to fold-specific trees rather than enlarging \eqn{\varepsilon_n}.
+#'   A \code{warning} is emitted at runtime when this is TRUE.
 #'
-#'   \strong{Why bidirectional?} Minimizes bias by finding smallest epsilon_n.
-#'   If c=1 works but c=0.25 also works, using c=1 accepts 4x higher bias unnecessarily.
-#'
-#'   \strong{Efficiency:} O(log c) exponential attempts + O(log precision) binary attempts.
-#'   Typical: 3-6 attempts total. Guaranteed to find solution if one exists (c in [0.01, 100]).
-#'
-#'   \strong{When it fails:} If no intersection found from c=0.01 to c=100, indicates
-#'   substantial cross-fold heterogeneity. Returns fold-specific trees with warning.
-#'   Consider using fold-specific nuisance functions instead of intersection.
-#'
-#'   \strong{Theory guarantee:} All tried values satisfy epsilon_n = o(n^{-1/2}),
-#'   ensuring asymptotically valid inference. The adaptive selection is data-dependent
-#'   but still valid because all candidates satisfy the rate condition.
+#'   \strong{Mechanics (exploratory):} bidirectional exponential search from
+#'   \code{c = 1} (down if it succeeds, up if it fails) plus binary refinement,
+#'   \code{c} in [0.01, 100]; if none intersects, returns fold-specific trees.
 #'
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param verbose Print progress information. Default: TRUE
@@ -256,6 +246,14 @@ cross_fitted_rashomon <- function(X, y, K = 5,
   # Tier 3: saturated trees (lambda -> 0)
   # Tier 4: give up, fall through to regular cross-fitting
   if (auto_tune_intersecting) {
+    warning(
+      "auto_tune_intersecting = TRUE selects the Rashomon tolerance from the ",
+      "data (post-selection), which voids the o(n^{-1/2}) valid-inference ",
+      "guarantee; use it for exploration only. For inference, set ",
+      "rashomon_bound_multiplier = select_epsilon_n(nrow(X)) and fall back to ",
+      "fold-specific trees if the intersection is empty.",
+      call. = FALSE
+    )
     auto_result <- auto_tune_regularization_for_intersection(
       X_binary = X_binary, X = X, y = y, K = K, fold_indices = fold_indices,
       loss_function = loss_function,

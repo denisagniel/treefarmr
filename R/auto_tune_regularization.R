@@ -16,7 +16,8 @@
 #' @param fold_indices Pre-computed fold indices (list of length K)
 #' @param loss_function Loss function: "log_loss" or "squared_error"
 #' @param regularization_start User's starting lambda value
-#' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses 2*sqrt(log(n)/n)
+#' @param epsilon_n_fixed Fixed epsilon_n for lambda search. If NULL, uses the
+#'   theory rate \code{select_epsilon_n(n)} = log(n)/n (= o(n^{-1/2}))
 #' @param max_attempts Maximum lambda candidates to try in Tier 2. Default: 6
 #' @param lambda_min Minimum lambda floor applied in Tier 2 search. Any candidate
 #'   lambda below this value is clamped to \code{lambda_min}. Default: \code{NULL},
@@ -65,7 +66,8 @@ auto_tune_regularization_for_intersection <- function(
 
   # Set fixed epsilon if not provided
   if (is.null(epsilon_n_fixed)) {
-    epsilon_n_fixed <- 2 * sqrt(log(n) / n)
+    # Theory rate log(n)/n (= o(n^{-1/2})); NOT sqrt(log(n)/n).
+    epsilon_n_fixed <- select_epsilon_n(n)
   }
 
   if (verbose) {

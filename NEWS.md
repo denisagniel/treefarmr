@@ -1,5 +1,29 @@
 # optimaltrees 0.4.1 (dev)
 
+## New Features
+
+### `select_epsilon_n()`: theory-justified Rashomon tolerance
+
+New exported function `select_epsilon_n(n, c = 1)` returning the fixed,
+deterministic Rashomon tolerance `epsilon_n = c * log(n)/n`. This rate is
+`o(n^{-1/2})`, the condition required for valid Rashomon-DML inference under the
+structural-margin condition (doubletree manuscript). Prefer this fixed value
+over data-adaptive tuning of `epsilon_n`.
+
+## Changes
+
+### Rashomon auto-tuning re-based on `log(n)/n` and flagged inference-invalid
+
+- The auto-tune search (`auto_tune_intersecting = TRUE` in
+  `cross_fitted_rashomon()`) now scales its probe multiplier off the theory
+  base `log(n)/n` (via `select_epsilon_n()`) instead of the former
+  `sqrt(log(n)/n)`, which is not `o(n^{-1/2})`.
+- `cross_fitted_rashomon(auto_tune_intersecting = TRUE)` now emits a `warning`:
+  data-adaptive selection of `epsilon_n` is a post-selection device that voids
+  the `o(n^{-1/2})` valid-inference guarantee (exploratory use only). For
+  inference, pass a fixed `rashomon_bound_multiplier = select_epsilon_n(nrow(X))`
+  and fall back to fold-specific fitting if the intersection is empty.
+
 ## Bug Fixes
 
 ### `fit_rashomon` with `squared_error` no longer crashes (segfault at 0x47)
