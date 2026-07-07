@@ -1,5 +1,15 @@
 # optimaltrees 0.4.1 (dev)
 
+## Fixes
+
+### `devtools::document()` / `pkgload::load_all()` no longer fail on `predict`
+
+`R/s7_classes.R` registered S7 methods on the bare `predict` generic, which is
+not in scope under `pkgload` (source-load), causing `object 'predict' not found`
+and aborting NAMESPACE regeneration (for optimaltrees and for downstream packages
+that load it, e.g. doubletree). Added `@importFrom stats predict` so the generic
+is available. `document()` and `load_all()` now succeed.
+
 ## New Features
 
 ### `select_epsilon_n()`: theory-justified Rashomon tolerance

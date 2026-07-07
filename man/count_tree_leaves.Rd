@@ -56,9 +56,10 @@ Rashomon set enumeration. If NULL (default), resolved based on loss function:
 of trees in the Rashomon set, which is the most effective control for
 preventing combinatorial explosion with many features. Default: 0 (no limit).
 \strong{Auto-cap:} for single-tree regression with many binary features (> 8)
-and \code{max_depth = 0}, the function silently sets \code{max_depth = 4}
-to prevent exponential search-space growth. Pass \code{max_depth = 0L}
-explicitly and check the warning to override.}
+and \code{max_depth = 0}, the function auto-sets \code{max_depth = 2}
+(depth-2 trees) to prevent exponential search-space growth. Pass
+\code{max_depth = 0L} explicitly to disable and set \code{verbose = TRUE}
+to see the message.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 

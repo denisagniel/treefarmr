@@ -8,6 +8,7 @@
 #' S3 structure that allowed invalid objects and made debugging difficult.
 #'
 #' @import S7
+#' @importFrom stats predict
 #' @name optimaltrees-s7-imports
 NULL
 
