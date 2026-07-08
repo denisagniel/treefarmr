@@ -37,7 +37,8 @@ auto_tune_rashomon_intersection(
 
 \item{c_min}{Minimum constant for downward search (default: 0.01)}
 
-\item{c_max}{Maximum constant for upward search (default: 100)}
+\item{c_max}{Maximum constant for upward search (default: 100). The sole caller
+(\code{auto_tune_regularization_for_intersection}) overrides this with a smaller value.}
 
 \item{binary_tolerance}{Tolerance for binary refinement (default: 0.1)}
 
@@ -48,6 +49,7 @@ auto_tune_rashomon_intersection(
 \value{
 List with:
   - epsilon_n: Selected epsilon_n value
+  - c: Selected multiplier such that epsilon_n = c * log(n)/n (NA if failed)
   - n_intersecting: Number of intersecting trees
   - converged: TRUE if intersection found, FALSE if all attempts failed
   - attempts: Number of attempts tried

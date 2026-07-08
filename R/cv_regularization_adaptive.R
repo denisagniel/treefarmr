@@ -129,7 +129,7 @@ cv_regularization_adaptive <- function(X, y,
     fold_assignment <- sample(rep(seq_len(K), length.out = n))
     purrr::map(seq_len(K), ~ which(fold_assignment == .x))
   } else {
-    create_folds(y, K = K)
+    create_stratified_folds_from_y(y, K = K)
   }
 
   # Lambda cache: R environment as hash map.

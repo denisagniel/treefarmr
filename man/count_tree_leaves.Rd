@@ -169,8 +169,8 @@ used in the loss function optimization, ensuring consistency between training an
 By default, probabilities are not computed immediately during training (lazy evaluation).
 This reduces memory usage, especially for large datasets. To compute probabilities for
 training data, use \code{compute_probabilities=TRUE} or access them via \code{predict()}
-or the helper functions \code{get_probabilities()}, \code{get_predictions()}, or
-\code{get_accuracy()}.
+or the model's S7 properties (\code{model@probabilities}, \code{model@predictions},
+\code{model@accuracy}).
 
 Training data (\code{X_train}, \code{y_train}) is not stored by default to save memory.
 Set \code{store_training_data=TRUE} if you need to access training data later (e.g., for

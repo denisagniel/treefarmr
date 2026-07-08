@@ -125,44 +125,6 @@ expect_logloss_bounds <- function(probabilities, lower_bound = 0.01,
               info = paste(info, "- log-loss probabilities should be <", upper_bound))
 }
 
-#' Validate probability outputs from get_probabilities() function
-#' 
-#' @param model treefarms_model object
-#' @param loss_function Expected loss function
-#' @param info Additional information for test output
-expect_valid_get_probabilities <- function(model, loss_function = NULL, info = NULL) {
-  # Get probabilities using get_probabilities()
-  probs <- get_probabilities(model)
-  
-  # Validate probabilities
-  expect_valid_probabilities(probs, loss_function = loss_function, info = info)
-  
-  # Check that probabilities match model@probabilities (if computed)
-  if (!is.null(model@probabilities)) {
-    expect_equal(probs, model@probabilities, tolerance = 1e-10,
-                info = paste(info, "- get_probabilities() should match model@probabilities"))
-  }
-}
-
-#' Validate lazy probability computation
-#' 
-#' @param model treefarms_model object (with compute_probabilities=FALSE)
-#' @param loss_function Expected loss function
-#' @param info Additional information for test output
-expect_lazy_probabilities <- function(model, loss_function = NULL, info = NULL) {
-  # Initially, probabilities may be NULL
-  # Access via get_probabilities() should compute them
-  probs <- get_probabilities(model)
-  
-  # Validate computed probabilities
-  expect_valid_probabilities(probs, loss_function = loss_function, info = info)
-  
-  # After first access, probabilities should be cached
-  probs2 <- get_probabilities(model)
-  expect_equal(probs, probs2, tolerance = 1e-10,
-              info = paste(info, "- probabilities should be cached after first access"))
-}
-
 #' Create test dataset with known probability distribution
 #' 
 #' @param n_samples Number of samples

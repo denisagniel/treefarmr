@@ -77,6 +77,12 @@ and may require larger \code{model_limit} for the solver to complete. This funct
 automatically scales \code{model_limit} based on lambda magnitude relative to the
 theory-driven value \eqn{(\log n)/n}. Additionally, if a lambda value fails on 3 or
 more folds, remaining folds for that lambda are skipped to avoid wasted computation.
+
+This is the lower-level fixed-grid CV. Most callers should prefer
+\code{\link{cv_regularization_adaptive}}, which wraps this function and extends the
+grid automatically when the CV optimum lands on a boundary (all doubletree production
+estimators use the adaptive form). \code{cv_regularization} remains exported for direct
+use with a known grid.
 }
 \examples{
 \dontrun{
@@ -95,6 +101,7 @@ pred <- predict(cv$model, X, type = "class")
 
 }
 \seealso{
+\code{\link{cv_regularization_adaptive}} (recommended wrapper),
 \code{\link{fit_tree}} for fitting a single tree with fixed regularization,
-\code{\link{auto_tune_treefarms}} for tuning to a target number of trees (different tuning path).
+\code{\link{auto_tune_optimaltrees}} for tuning to a target number of trees (different tuning path).
 }

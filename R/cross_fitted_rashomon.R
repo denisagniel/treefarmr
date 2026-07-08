@@ -42,7 +42,7 @@
 #' @param seed Random seed for reproducibility. Default: NULL
 #' @param verbose Print progress information. Default: TRUE
 #' @param parallel Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.
-#' @param fold_indices Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_folds(y, K)}.
+#' @param fold_indices Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_stratified_folds_from_y(y, K)}.
 #' @param ... Additional parameters passed to TreeFARMS
 #'
 #' @return Object of class `cf_rashomon` containing:
@@ -176,7 +176,7 @@ cross_fitted_rashomon <- function(X, y, K = 5,
       set.seed(seed)
     }
     # Create stratified folds AFTER setting seed
-    fold_indices <- create_folds(y, K = K)
+    fold_indices <- create_stratified_folds_from_y(y, K = K)
   }
   
   if (verbose) {
@@ -451,7 +451,9 @@ fit_rashomon_folds <- function(X_binary, y, K, fold_indices, fold_seeds,
       X_k <- X_binary[train_idx, , drop = FALSE]
       y_k <- y[train_idx]
       fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
-        refit_structure_on_data(.x, X_k, y_k)
+        # Cross-fitting folds may not cover every leaf of the shared structure;
+        # tolerate empty leaves (filled with the fold's overall mean, with a warning).
+        refit_structure_on_data(.x, X_k, y_k, allow_partial_leaves = TRUE)
       })
     }
   }
@@ -494,7 +496,7 @@ fit_rashomon_folds <- function(X_binary, y, K, fold_indices, fold_seeds,
 #' @return List of length K, each element containing indices for that fold
 #'
 #' @keywords internal
-create_folds <- function(y, K) {
+create_stratified_folds_from_y <- function(y, K) {
   n <- length(y)
   is_binary <- all(y %in% c(0, 1))
 
