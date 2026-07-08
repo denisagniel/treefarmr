@@ -138,7 +138,15 @@ compute_safe_model_limit <- function(lambda, n, p_features) {
 #' pred <- predict(cv$model, X, type = "class")
 #' }
 #'
+#' @details
+#' This is the lower-level fixed-grid CV. Most callers should prefer
+#' \code{\link{cv_regularization_adaptive}}, which wraps this function and extends the
+#' grid automatically when the CV optimum lands on a boundary (all doubletree production
+#' estimators use the adaptive form). \code{cv_regularization} remains exported for direct
+#' use with a known grid.
+#'
 #' @seealso
+#' \code{\link{cv_regularization_adaptive}} (recommended wrapper),
 #' \code{\link{fit_tree}} for fitting a single tree with fixed regularization,
 #' \code{\link{auto_tune_optimaltrees}} for tuning to a target number of trees (different tuning path).
 #'
