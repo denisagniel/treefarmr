@@ -246,7 +246,7 @@ select_bins_cv <- function(X, y, loss_function = "log_loss",
   if (is.null(regularization)) regularization <- log(n) / n
 
   is_regression <- loss_function == "squared_error"
-  folds <- create_folds(if (is_regression) rep(0, n) else y, K = K)
+  folds <- create_stratified_folds_from_y(if (is_regression) rep(0, n) else y, K = K)
 
   cv_loss <- vapply(candidate_bins, function(nb) {
     fold_losses <- vapply(seq_len(K), function(k) {
@@ -433,14 +433,17 @@ compute_thresholds <- function(x, method, n_bins, user_threshold = NULL) {
 #'
 #' @description
 #' Applies the discretization metadata from training to new prediction data.
-#' Ensures feature names match and applies the same thresholds.
+#' Ensures feature names match and applies the same thresholds. Exported so that
+#' downstream packages can map raw covariates into the binary feature space that a
+#' fitted tree's split indices reference (previously reached as an internal).
 #'
 #' @param X A data.frame of new features (must match training features)
-#' @param metadata Discretization metadata from training
+#' @param metadata Discretization metadata from training (e.g. a model's
+#'   \code{@discretization_metadata} or a \code{CFRashomon}'s \code{@disc_metadata}).
 #'
 #' @return A data.frame with binary features (same structure as training)
 #'
-#' @keywords internal
+#' @export
 apply_discretization <- function(X, metadata) {
 
   if (!is.data.frame(X)) {

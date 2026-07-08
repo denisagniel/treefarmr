@@ -2,21 +2,21 @@
 #'
 #' @description
 #' Returns the fixed, deterministic Rashomon tolerance
-#' \eqn{\varepsilon_n = c \cdot \log(n) / n} recommended for valid
-#' Rashomon-DML inference. This rate is \eqn{o(n^{-1/2})} (since
-#' \eqn{\varepsilon_n / n^{-1/2} = c \log(n) / \sqrt{n} \to 0}), the condition
-#' required by the doubletree structural-margin resolution
-#' (manuscript Corollary "Rashomon tolerance without the intersection
-#' trade-off"): a single fixed tolerance of this order yields both a non-empty
-#' cross-fold intersection (under the structural-margin assumption) and the
-#' \eqn{o(n^{-1/2})} validity rate, with no data-adaptive tuning.
+#' \eqn{\varepsilon_n = c \cdot \log(n) / n}: a sample-size-dependent rate that
+#' shrinks the Rashomon set as \eqn{n} grows. This rate is \eqn{o(n^{-1/2})}
+#' (since \eqn{\varepsilon_n / n^{-1/2} = c \log(n) / \sqrt{n} \to 0}).
 #'
 #' @details
-#' Prefer this fixed value over data-adaptive selection of \eqn{\varepsilon_n}
-#' (e.g. \code{auto_tune_intersecting = TRUE}), which is a post-selection device
-#' not covered by the validity theory. When the intersection is empty at this
-#' tolerance, the correct escape is to fall back to fold-specific trees
-#' (\code{use_rashomon = FALSE}), not to enlarge \eqn{\varepsilon_n}.
+#' The \eqn{o(n^{-1/2})} order is the condition required by downstream
+#' Rashomon-DML inference (e.g. the doubletree structural-margin resolution): a
+#' single fixed tolerance of this order yields both a non-empty cross-fold
+#' intersection (under a structural-margin assumption) and the \eqn{o(n^{-1/2})}
+#' validity rate, with no data-adaptive tuning. Prefer this fixed value over
+#' data-adaptive selection of \eqn{\varepsilon_n} (e.g.
+#' \code{auto_tune_intersecting = TRUE}), which is a post-selection device not
+#' covered by that validity theory; when the intersection is empty at this
+#' tolerance, the correct escape is to fall back to fold-specific trees rather
+#' than to enlarge \eqn{\varepsilon_n}.
 #'
 #' @param n Sample size (integer \eqn{\ge 2}).
 #' @param c Positive constant multiplier (default 1).

@@ -77,7 +77,7 @@ a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via th
 
 \item{parallel}{Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.}
 
-\item{fold_indices}{Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_folds(y, K)}.}
+\item{fold_indices}{Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_stratified_folds_from_y(y, K)}.}
 
 \item{...}{Additional parameters passed to TreeFARMS}
 }

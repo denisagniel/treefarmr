@@ -201,7 +201,7 @@ cv_regularization <- function(X, y, loss_function = "misclassification",
       fold_assignment <- sample(rep(seq_len(K), length.out = n))
       fold_indices <- purrr::map(seq_len(K), ~ which(fold_assignment == .x))
     } else {
-      fold_indices <- create_folds(y, K = K)
+      fold_indices <- create_stratified_folds_from_y(y, K = K)
     }
   }
 

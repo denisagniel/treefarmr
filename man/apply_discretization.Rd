@@ -9,13 +9,15 @@ apply_discretization(X, metadata)
 \arguments{
 \item{X}{A data.frame of new features (must match training features)}
 
-\item{metadata}{Discretization metadata from training}
+\item{metadata}{Discretization metadata from training (e.g. a model's
+\code{@discretization_metadata} or a \code{CFRashomon}'s \code{@disc_metadata}).}
 }
 \value{
 A data.frame with binary features (same structure as training)
 }
 \description{
 Applies the discretization metadata from training to new prediction data.
-Ensures feature names match and applies the same thresholds.
+Ensures feature names match and applies the same thresholds. Exported so that
+downstream packages can map raw covariates into the binary feature space that a
+fitted tree's split indices reference (previously reached as an internal).
 }
-\keyword{internal}
