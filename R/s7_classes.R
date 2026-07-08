@@ -314,38 +314,6 @@ CFRashomon <- S7::new_class(
 
 
 # =============================================================================
-# Loaded Model Class (Serialization)
-# =============================================================================
-
-#' Loaded Optimal Trees Model
-#'
-#' @description
-#' Wrapper for models loaded from disk via save_optimaltrees/load_optimaltrees.
-#' Contains the model plus serialization metadata.
-#'
-#' @details
-#' This class exists to distinguish loaded models from freshly trained ones,
-#' which can be useful for deciding whether certain operations (like retraining)
-#' are safe.
-OptimalTreesModelLoaded <- S7::new_class(
-  name = "OptimalTreesModelLoaded",
-  package = "optimaltrees",
-
-  properties = list(
-    model = OptimalTreesModel,  # The actual model
-    loaded_from = S7::class_character,  # File path (required, no default)
-    loaded_at = S7::new_property(S7::class_POSIXct, default = Sys.time())  # Timestamp
-  ),
-
-  validator = function(self) {
-    if (nchar(self@loaded_from) == 0) {
-      return("@loaded_from must be a non-empty file path")
-    }
-  }
-)
-
-
-# =============================================================================
 # S7 Method Stubs (backward compatibility with S3 generics)
 # =============================================================================
 
