@@ -420,11 +420,13 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
     stop("nrow(X) must equal length(y)", call. = FALSE)
   }
 
-  # Check that structure's feature indices don't exceed ncol(X)
+  # Check that structure's feature indices don't exceed ncol(X). get_max_feature_index
+  # returns the raw 0-based node$feature, so the valid range is 0..(ncol(X)-1); a
+  # 0-based index of ncol(X) is out of range (would map to 1-based column ncol(X)+1).
   max_feature <- get_max_feature_index(structure)
-  if (!is.null(max_feature) && max_feature > ncol(X)) {
+  if (!is.null(max_feature) && max_feature + 1L > ncol(X)) {
     stop("structure references feature index ", max_feature,
-         " but X only has ", ncol(X), " columns", call. = FALSE)
+         " (0-based) but X only has ", ncol(X), " columns", call. = FALSE)
   }
   row_indices <- seq_len(n)
 

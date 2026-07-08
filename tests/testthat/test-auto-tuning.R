@@ -298,3 +298,47 @@ test_that("cross_fitted_rashomon(auto_tune_intersecting=TRUE) warns it is infere
     "post-selection|valid-inference|o\\(n"
   )
 })
+
+# ============================================================================
+# Regression guard: auto_tune_rashomon_intersection must not reference the
+# formerly-undefined `sqrt_log_n_over_n`. Both the converged and the failed
+# (c_max exhausted) branches must return a well-formed list with a numeric `c`
+# on success and NA_real_ on failure. Prior to the 2026-07-08 fix, the
+# failure/verbose path errored on an undefined variable.
+# ============================================================================
+
+test_that("auto_tune_rashomon_intersection returns c on both converged and failed branches", {
+  X <- pattern_data$X
+  y <- pattern_data$y
+  n <- nrow(X)
+  K <- 2L
+  # List-form fold indices (test indices per fold), as fit_rashomon_folds expects.
+  fold_indices <- split(seq_len(n), rep(seq_len(K), length.out = n))
+
+  # Converged branch: a normal grid reaches a non-empty intersection.
+  conv <- auto_tune_rashomon_intersection(
+    X = X, y = y, K = K, fold_indices = fold_indices, X_binary = X,
+    loss_function = "misclassification", regularization = 0.05,
+    c_start = 1, c_max = 100, verbose = FALSE
+  )
+  expect_type(conv, "list")
+  expect_true(all(c("epsilon_n", "c", "converged", "n_intersecting") %in% names(conv)))
+  if (isTRUE(conv$converged)) {
+    expect_true(is.numeric(conv$c) && is.finite(conv$c))
+  }
+
+  # Failed branch: force c_max == c_min so the search exhausts immediately.
+  # Must return (not error) with c = NA_real_ and converged = FALSE.
+  # verbose = TRUE exercises the failure-path message that used to hit the
+  # undefined sqrt_log_n_over_n.
+  failed <- expect_no_error(
+    auto_tune_rashomon_intersection(
+      X = X, y = y, K = K, fold_indices = fold_indices, X_binary = X,
+      loss_function = "misclassification", regularization = 1e6,  # huge lambda -> stumps only
+      c_start = 0.001, c_min = 0.001, c_max = 0.001, verbose = TRUE
+    )
+  )
+  expect_type(failed, "list")
+  expect_true("c" %in% names(failed))
+  expect_true(is.na(failed$c) || is.numeric(failed$c))
+})

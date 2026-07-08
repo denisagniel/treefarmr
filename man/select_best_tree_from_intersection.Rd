@@ -7,15 +7,22 @@
 select_best_tree_from_intersection(result, verbose = TRUE)
 }
 \arguments{
-\item{result}{cross_fitted_rashomon result with n_intersecting > 1}
+\item{result}{A \code{CFRashomon} intersection result.}
 
-\item{verbose}{Logical}
+\item{verbose}{Logical.}
 }
 \value{
-Updated result with selected tree moved to first position
+\code{result}, unchanged.
 }
 \description{
-When intersection contains multiple trees, select the one with lowest
-penalized risk: R_pen = empirical_risk + regularization * complexity
+Returns the intersection result unchanged: \code{find_tree_intersection()} already
+selects the minimum-penalized-risk tree (\code{model_objective = empirical_loss +
+lambda * n_leaves}) and reorders it to position 1, and \code{predict.cf_rashomon()}
+uses the first tree. This wrapper exists only as a named selection step (and for the
+verbose trace); it no longer re-selects.
+
+The former implementation also carried an S3-list reordering branch, but
+\code{fit_rashomon_folds()} always returns an S7 \code{CFRashomon} object, so that
+branch was unreachable and has been removed.
 }
 \keyword{internal}

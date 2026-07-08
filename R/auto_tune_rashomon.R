@@ -139,101 +139,28 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
 #' Select Best Tree from Rashomon Intersection
 #'
 #' @description
-#' When intersection contains multiple trees, select the one with lowest
-#' penalized risk: R_pen = empirical_risk + regularization * complexity
+#' Returns the intersection result unchanged: \code{find_tree_intersection()} already
+#' selects the minimum-penalized-risk tree (\code{model_objective = empirical_loss +
+#' lambda * n_leaves}) and reorders it to position 1, and \code{predict.cf_rashomon()}
+#' uses the first tree. This wrapper exists only as a named selection step (and for the
+#' verbose trace); it no longer re-selects.
 #'
-#' @param result cross_fitted_rashomon result with n_intersecting > 1
-#' @param verbose Logical
-#' @return Updated result with selected tree moved to first position
+#' The former implementation also carried an S3-list reordering branch, but
+#' \code{fit_rashomon_folds()} always returns an S7 \code{CFRashomon} object, so that
+#' branch was unreachable and has been removed.
+#'
+#' @param result A \code{CFRashomon} intersection result.
+#' @param verbose Logical.
+#' @return \code{result}, unchanged.
 #' @keywords internal
 select_best_tree_from_intersection <- function(result, verbose = TRUE) {
-  if (get_rashomon_prop(result, "n_intersecting") <= 1) {
-    # Only one tree, nothing to select
-    if (verbose && get_rashomon_prop(result, "n_intersecting") == 1) {
-      cat("  Single tree in intersection, no selection needed\n")
-    }
-    return(result)
-  }
-
-  # S7 objects can't be mutated easily - skip tree selection for now
-  # The first tree in the intersection is already chosen appropriately
-  if (S7::S7_inherits(result, CFRashomon)) {
-    if (verbose) {
-      cat("  Using first tree from S7 intersection\n")
-    }
-    return(result)
-  }
-
-  # Extract penalized risks for each intersecting tree (S3 only)
-  # Check if tree_risks is available from intersection results
-  tree_risks <- get_rashomon_prop(result, "tree_risks")
-  if (is.null(tree_risks) || length(tree_risks) == 0) {
-    if (verbose) {
-      cat("  No risk information available, using first tree\n")
-    }
-    return(result)
-  }
-
-  # Check if any tree has non-null penalized risk
-  has_risk_info <- purrr::map_lgl(tree_risks, ~ !is.null(.x$penalized_risk))
-
-  if (!any(has_risk_info)) {
-    if (verbose) {
-      cat("  No penalized risk information available, using first tree\n")
-    }
-    return(result)
-  }
-
-  # Find tree with minimum penalized risk
-  risks <- purrr::map_dbl(tree_risks, ~ {
-    if (!is.null(.x$penalized_risk)) {
-      return(.x$penalized_risk)
-    } else {
-      return(Inf)  # Trees without risk info get Inf (won't be selected)
-    }
-  })
-
-  best_idx <- which.min(risks)
-
+  n_int <- get_rashomon_prop(result, "n_intersecting")
   if (verbose) {
-    # Only show risks for trees with valid info
-    valid_risks <- risks[is.finite(risks)]
-    if (length(valid_risks) > 0) {
-      cat(sprintf("  Penalized risks: %s\n",
-                 paste(sprintf("%.4f", valid_risks), collapse = ", ")))
-      cat(sprintf("  Selected tree %d (R_pen = %.4f)\n", best_idx, risks[best_idx]))
+    if (is.null(n_int) || n_int <= 1) {
+      cat("  Single tree in intersection, no selection needed\n")
     } else {
-      cat("  Using first tree (no valid risk information)\n")
+      cat("  Using best tree from intersection (already ordered by penalized risk)\n")
     }
   }
-
-  # Reorder so best tree is first (used by predict.cf_rashomon) - S3 only
-  if (best_idx != 1 && is.finite(risks[best_idx])) {
-    intersecting_trees <- get_rashomon_prop(result, "intersecting_trees")
-    tree_jsons <- get_rashomon_prop(result, "tree_jsons")
-    intersecting_structures <- get_rashomon_prop(result, "intersecting_structures")
-
-    result[["intersecting_trees"]] <- c(
-      intersecting_trees[best_idx],
-      intersecting_trees[-best_idx]
-    )
-    result[["tree_risks"]] <- c(
-      tree_risks[best_idx],
-      tree_risks[-best_idx]
-    )
-    if (!is.null(tree_jsons)) {
-      result[["tree_jsons"]] <- c(
-        tree_jsons[best_idx],
-        tree_jsons[-best_idx]
-      )
-    }
-    if (!is.null(intersecting_structures)) {
-      result[["intersecting_structures"]] <- c(
-        intersecting_structures[best_idx],
-        intersecting_structures[-best_idx]
-      )
-    }
-  }
-
-  return(result)
+  result
 }
