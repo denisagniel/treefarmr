@@ -199,6 +199,32 @@ test_that("refit_structure_on_data works", {
   expect_true(is.list(refit))
 })
 
+test_that("refit_structure_on_data attaches n_per_leaf with extract_leaf_values keys", {
+  # One split on feature 0: each leaf gets the rows with that binary value.
+  structure <- list(
+    feature = 0L, relation = "==", reference = 1L,
+    true = list(prediction = 1L, probabilities = c(0, 1)),
+    false = list(prediction = 0L, probabilities = c(1, 0))
+  )
+  set.seed(7)
+  X <- data.frame(x0 = rbinom(60, 1, 0.5), x1 = rbinom(60, 1, 0.5))
+  y <- rbinom(60, 1, 0.5)
+
+  refit <- refit_structure_on_data(structure, X, y)
+  npl <- attr(refit, "n_per_leaf")
+
+  # Attribute present, keyed identically to extract_leaf_values, counts partition n.
+  expect_false(is.null(npl))
+  expect_setequal(names(npl), names(extract_leaf_values(refit)))
+  expect_equal(sum(npl), nrow(X))
+  # The two leaves hold exactly the false (x0==0) and true (x0==1) row counts.
+  expect_equal(unname(npl[["0"]]), sum(X$x0 == 0))
+  expect_equal(unname(npl[["1"]]), sum(X$x0 == 1))
+
+  # n_per_leaf is directly usable as weights in average_trees (weighted averaging path).
+  expect_no_error(average_trees(list(refit, refit), list(npl, npl)))
+})
+
 test_that("refit_structure_on_data empty-leaf contract (stop vs allow_partial_leaves)", {
   # Structure splits on feature 0 (0-indexed). Make that column constant (all 1) so
   # the false-child leaf receives zero observations -> an empty leaf.

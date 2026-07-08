@@ -382,7 +382,12 @@ get_max_feature_index <- function(node) {
 #'   previous silent 0.5 / 0 fallback, which could corrupt DML nuisance estimates without
 #'   any signal.
 #' @return A tree (list) with the same structure and leaf \code{prediction} and
-#'   \code{probabilities} fitted on \code{(X, y)}.
+#'   \code{probabilities} fitted on \code{(X, y)}. The returned tree carries an
+#'   \code{"n_per_leaf"} attribute: a named integer vector of the number of \code{(X, y)}
+#'   observations that reached each leaf, keyed by leaf path (\code{"root"}, then
+#'   \code{"0"}/\code{"1"} for false/true branches, joined by \code{"-"}) --- the same
+#'   key convention as \code{\link{extract_leaf_values}}, so it can be passed directly as
+#'   the weights in \code{\link{average_trees}}. Empty leaves get count 0.
 #' @seealso \code{\link{refit_tree_structure}}, which performs the analogous refit but
 #'   takes a validated S7 \code{TreeStructure} (rather than a raw tree list/JSON) and
 #'   returns a \code{refit_result} with per-leaf counts; it shares the same
@@ -435,18 +440,25 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
   # For classification this is P(Y=1); for regression the mean outcome. Replaces the
   # former silent 0.5/0 fallback with a principled default (and a loud signal below).
   default_value <- mean(y, na.rm = TRUE)
-  # Count empty leaves encountered during traversal (mutable state for the closure).
+  # Mutable state for the closure: count of empty leaves, and per-leaf observation
+  # counts keyed by leaf path (same scheme as extract_leaf_values: "root", else the
+  # integer path 0=false/1=true joined by "-"). Enables sample-size-weighted averaging.
   empty_state <- new.env(parent = emptyenv())
   empty_state$n_empty <- 0L
+  empty_state$counts <- integer(0)
 
-  fill_leaf_values <- function(node, indices) {
+  leaf_path_str <- function(path) if (length(path) == 0) "root" else paste(path, collapse = "-")
+
+  fill_leaf_values <- function(node, indices, path = integer(0)) {
     if (is.null(node) || !is.list(node)) {
       empty_state$n_empty <- empty_state$n_empty + 1L
+      empty_state$counts[leaf_path_str(path)] <- 0L
       if (is_regression) return(list(prediction = default_value))
       p1 <- max(0, min(1, default_value))
       return(list(prediction = as.integer(p1 >= 0.5), probabilities = c(1 - p1, p1)))
     }
     if (!is.null(node$prediction)) {
+      empty_state$counts[leaf_path_str(path)] <- length(indices)
       if (length(indices) == 0) {
         empty_state$n_empty <- empty_state$n_empty + 1L
         if (is_regression) return(list(prediction = default_value))
@@ -471,8 +483,9 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
       }
       true_idx <- indices[col == 1]
       false_idx <- indices[col == 0]
-      true_child <- fill_leaf_values(node$true, true_idx)
-      false_child <- fill_leaf_values(node$false, false_idx)
+      # Path convention matches extract_leaf_values: false child appends 0, true appends 1.
+      false_child <- fill_leaf_values(node$false, false_idx, c(path, 0L))
+      true_child <- fill_leaf_values(node$true, true_idx, c(path, 1L))
       return(list(
         feature = node$feature,
         relation = if (is.null(node$relation)) "==" else node$relation,
@@ -485,6 +498,7 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
   }
 
   out <- fill_leaf_values(structure, row_indices)
+  attr(out, "n_per_leaf") <- empty_state$counts
 
   if (empty_state$n_empty > 0L) {
     if (!allow_partial_leaves) {
