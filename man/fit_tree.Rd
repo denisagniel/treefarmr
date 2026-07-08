@@ -50,8 +50,9 @@ for detailed measurements.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 
-\item{store_training_data}{Logical. Whether to store training data in the model object.
-Default: FALSE. Set to TRUE only if you need to access training data later.}
+\item{store_training_data}{Logical or NULL. Whether to store training data in the
+model object. Default: NULL, which defers to \code{optimaltrees()}'s default (FALSE).
+Set to TRUE only if you need to access training data later.}
 
 \item{compute_probabilities}{Logical. Whether to compute probabilities for all training samples immediately.
 Default: FALSE. Probabilities will be computed on-demand when accessed.}

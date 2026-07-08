@@ -4,12 +4,10 @@
 \alias{structure_hash}
 \title{Compute Hash of Tree Structure (Partition-Based)}
 \usage{
-structure_hash(structure, precision = 8)
+structure_hash(structure)
 }
 \arguments{
 \item{structure}{TreeStructure object}
-
-\item{precision}{Unused (kept for API compatibility)}
 }
 \value{
 Character string (xxhash64 digest)

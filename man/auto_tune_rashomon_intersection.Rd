@@ -14,7 +14,7 @@ auto_tune_rashomon_intersection(
   regularization,
   c_start = 1,
   c_min = 0.01,
-  c_max = 1000,
+  c_max = 100,
   binary_tolerance = 0.1,
   verbose = TRUE,
   ...
@@ -37,7 +37,8 @@ auto_tune_rashomon_intersection(
 
 \item{c_min}{Minimum constant for downward search (default: 0.01)}
 
-\item{c_max}{Maximum constant for upward search (default: 100)}
+\item{c_max}{Maximum constant for upward search (default: 100). The sole caller
+(\code{auto_tune_regularization_for_intersection}) overrides this with a smaller value.}
 
 \item{binary_tolerance}{Tolerance for binary refinement (default: 0.1)}
 

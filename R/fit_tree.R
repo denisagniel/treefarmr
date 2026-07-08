@@ -30,8 +30,9 @@
 #'   specific problem before using worker_limit > 1. See benchmarks/performance_results.txt
 #'   for detailed measurements.
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
-#' @param store_training_data Logical. Whether to store training data in the model object.
-#'   Default: FALSE. Set to TRUE only if you need to access training data later.
+#' @param store_training_data Logical or NULL. Whether to store training data in the
+#'   model object. Default: NULL, which defers to \code{optimaltrees()}'s default (FALSE).
+#'   Set to TRUE only if you need to access training data later.
 #' @param compute_probabilities Logical. Whether to compute probabilities for all training samples immediately.
 #'   Default: FALSE. Probabilities will be computed on-demand when accessed.
 #' @param ... Additional parameters passed to TreeFARMS configuration.

@@ -4,14 +4,12 @@
 \alias{compare_structures}
 \title{Compare Two Tree Structures (Partition-Based)}
 \usage{
-compare_structures(structure1, structure2, tol = 1e-08)
+compare_structures(structure1, structure2)
 }
 \arguments{
 \item{structure1}{TreeStructure object}
 
 \item{structure2}{TreeStructure object}
-
-\item{tol}{Unused (kept for API compatibility)}
 }
 \value{
 Logical: TRUE if structures are equivalent, FALSE otherwise

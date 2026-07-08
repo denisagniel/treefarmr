@@ -357,7 +357,6 @@ partition_hash <- function(tree_node, precision = 8) {
 #'
 #' @param structure1 TreeStructure object
 #' @param structure2 TreeStructure object
-#' @param tol Unused (kept for API compatibility)
 #' @return Logical: TRUE if structures are equivalent, FALSE otherwise
 #'
 #' @details
@@ -382,7 +381,7 @@ partition_hash <- function(tree_node, precision = 8) {
 #' }
 #'
 #' @export
-compare_structures <- function(structure1, structure2, tol = 1e-8) {
+compare_structures <- function(structure1, structure2) {
   # Validate input
   if (!S7::S7_inherits(structure1, TreeStructure) ||
       !S7::S7_inherits(structure2, TreeStructure)) {
@@ -401,7 +400,6 @@ compare_structures <- function(structure1, structure2, tol = 1e-8) {
 #' regardless of split order.
 #'
 #' @param structure TreeStructure object
-#' @param precision Unused (kept for API compatibility)
 #' @return Character string (xxhash64 digest)
 #'
 #' @details
@@ -429,7 +427,7 @@ compare_structures <- function(structure1, structure2, tol = 1e-8) {
 #' }
 #'
 #' @export
-structure_hash <- function(structure, precision = 8) {
+structure_hash <- function(structure) {
   if (!S7::S7_inherits(structure, TreeStructure)) {
     stop("structure must be a TreeStructure object", call. = FALSE)
   }
