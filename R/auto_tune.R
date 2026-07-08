@@ -358,24 +358,21 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
     verbose     = verbose
   )
 
-  # Return the search result if converged to a "success" zone
-  if (search$converged && !is.null(search$result)) {
-    result <- search$result
-    result$iterations <- search$attempts
-    result$converged  <- TRUE
-    return(result)
+  # Determine convergence from the ACTUAL tree count of the closest result found,
+  # not from search$converged. The generic bidirectional_exp_binary_search sets
+  # converged = TRUE whenever a "lower"-or-"success" result was ever seen (and its
+  # terminal binary-refinement return is unconditionally TRUE). For tree-count tuning
+  # a "lower" result means too FEW trees -> NOT success. So an impossible target
+  # (e.g. more trees than the data can produce) would falsely report convergence.
+  # `best_result`/`best_distance` track the closest-to-target result across all probes
+  # and are authoritative: best_distance == 0 iff some probe landed in [target, max].
+  final <- best_result %||% search$result
+  if (is.null(final)) return(NULL)
+  final$iterations <- search$attempts
+  final$converged  <- (final$n_trees >= target_trees && final$n_trees <= max_trees)
+  if (verbose && !final$converged) {
+    message(sprintf("\nNo exact match found. Best result: %d trees", final$n_trees))
   }
-
-  # Best-effort fallback: return closest result found (may not be in zone)
-  if (!is.null(best_result)) {
-    best_result$iterations <- search$attempts
-    best_result$converged  <- (best_distance == 0)
-    if (verbose && !best_result$converged) {
-      message(sprintf("\nNo exact match found. Best result: %d trees", best_result$n_trees))
-    }
-    return(best_result)
-  }
-
-  NULL
+  final
 }
 
