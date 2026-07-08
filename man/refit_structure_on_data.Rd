@@ -4,7 +4,7 @@
 \alias{refit_structure_on_data}
 \title{Refit a tree structure on data (leaf values only)}
 \usage{
-refit_structure_on_data(structure, X, y)
+refit_structure_on_data(structure, X, y, allow_partial_leaves = FALSE)
 }
 \arguments{
 \item{structure}{A tree (list or JSON string) with the same split structure;
@@ -13,6 +13,15 @@ leaf values are ignored and replaced.}
 \item{X}{Data.frame or matrix of features (binary 0/1)}
 
 \item{y}{Vector of binary class labels (0/1)}
+
+\item{allow_partial_leaves}{Logical. Controls behavior when a leaf receives no
+observations from \code{(X, y)} (e.g. a small cross-fitting fold does not cover
+every leaf of the structure). If \code{FALSE} (default), \code{refit_structure_on_data}
+\code{stop()}s with a diagnostic. If \code{TRUE}, empty leaves are filled with the
+overall mean of \code{y} (\eqn{P(Y=1)} for classification) and a single
+\code{warning()} is emitted listing how many leaves were empty. This replaces the
+previous silent 0.5 / 0 fallback, which could corrupt DML nuisance estimates without
+any signal.}
 }
 \value{
 A tree (list) with the same structure and leaf \code{prediction} and
@@ -23,4 +32,10 @@ Given a tree structure (splits), route each row of \code{X} to a leaf and set
 leaf predictions and probabilities from the empirical class distribution in
 that leaf. Used for DML: the same structure is refit on \eqn{\mathcal{D}^{(-k)}}
 per fold to obtain \eqn{\tilde{\eta}^{(-k)}}.
+}
+\seealso{
+\code{\link{refit_tree_structure}}, which performs the analogous refit but
+  takes a validated S7 \code{TreeStructure} (rather than a raw tree list/JSON) and
+  returns a \code{refit_result} with per-leaf counts; it shares the same
+  \code{allow_partial_leaves} contract.
 }

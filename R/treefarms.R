@@ -399,7 +399,14 @@ get_probabilities_from_tree <- function(tree_json, X) {
     }
     if (!is.null(node$feature)) {
       feature_idx <- as.integer(as.numeric(node$feature) + 1)
-      if (feature_idx < 1 || feature_idx > ncol(X)) return()
+      if (feature_idx < 1 || feature_idx > ncol(X)) {
+        # Malformed tree: split references a feature index outside X. Silently
+        # returning here would leave these rows at the default 0.5 probability.
+        stop("get_probabilities_from_tree: split references feature index ",
+             feature_idx, " but X has ", ncol(X), " columns. ",
+             "This indicates a malformed tree or a mismatch between the tree and X.",
+             call. = FALSE)
+      }
       if (is.data.frame(X)) {
         feature_vals <- X[row_indices, feature_idx, drop = TRUE]
       } else {
@@ -478,7 +485,14 @@ get_fitted_from_tree <- function(tree_json, X) {
     }
     if (!is.null(node$feature)) {
       feature_idx <- as.integer(as.numeric(node$feature) + 1)
-      if (feature_idx < 1 || feature_idx > ncol(X)) return()
+      if (feature_idx < 1 || feature_idx > ncol(X)) {
+        # Malformed tree: split references a feature index outside X. Silently
+        # returning here would leave these rows at the default NA fitted value.
+        stop("get_fitted_from_tree: split references feature index ",
+             feature_idx, " but X has ", ncol(X), " columns. ",
+             "This indicates a malformed tree or a mismatch between the tree and X.",
+             call. = FALSE)
+      }
       if (is.data.frame(X)) {
         feature_vals <- X[row_indices, feature_idx, drop = TRUE]
       } else {

@@ -377,9 +377,12 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
       }
       na_rows <- which(is.na(fitted))
       if (length(na_rows) > 0) {
-        warning("Some fold_indices were not in 1:K; using fold 1 refit for those rows")
-        refit_1 <- object$fold_refits[[1L]][[1L]]
-        fitted[na_rows] <- get_fitted_from_tree(refit_1, newdata[na_rows, , drop = FALSE])
+        # Silently reassigning out-of-range folds to fold 1 breaks cross-fit validity
+        # for DML (observation predicted by a tree trained on its own data). Fail loudly.
+        stop(sprintf(
+          "predict.cf_rashomon: %d row(s) have fold_indices outside 1:%d. Every row must ",
+          length(na_rows), object$K),
+          "map to a valid fold for cross-fitted prediction.", call. = FALSE)
       }
       return(fitted)
     }
@@ -387,7 +390,7 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
       refit_tree <- object$fold_refits[[1L]][[1L]]
       return(get_fitted_from_tree(refit_tree, newdata))
     }
-    return(predict(object$fold_models[[1]], newdata, ...))
+    stop("predict.cf_rashomon: object has no fold_refits; cannot predict.", call. = FALSE)
   }
   
   # DML: fold-specific predictions using fold_refits (classification)
@@ -407,9 +410,12 @@ predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
     }
     na_rows <- which(is.na(probs[, 1L]))
     if (length(na_rows) > 0) {
-      warning("Some fold_indices were not in 1:K; using fold 1 refit for those rows")
-      refit_1 <- object$fold_refits[[1L]][[1L]]
-      probs[na_rows, ] <- get_probabilities_from_tree(refit_1, newdata[na_rows, , drop = FALSE])
+      # Silently reassigning out-of-range folds to fold 1 breaks cross-fit validity
+      # for DML (observation predicted by a tree trained on its own data). Fail loudly.
+      stop(sprintf(
+        "predict.cf_rashomon: %d row(s) have fold_indices outside 1:%d. Every row must ",
+        length(na_rows), object$K),
+        "map to a valid fold for cross-fitted prediction.", call. = FALSE)
     }
     if (type == "class") {
       return(ifelse(probs[, 2L] >= .CLASSIFICATION_THRESHOLD, 1, 0))

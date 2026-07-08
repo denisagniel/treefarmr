@@ -373,10 +373,22 @@ get_max_feature_index <- function(node) {
 #'   leaf values are ignored and replaced.
 #' @param X Data.frame or matrix of features (binary 0/1)
 #' @param y Vector of binary class labels (0/1)
+#' @param allow_partial_leaves Logical. Controls behavior when a leaf receives no
+#'   observations from \code{(X, y)} (e.g. a small cross-fitting fold does not cover
+#'   every leaf of the structure). If \code{FALSE} (default), \code{refit_structure_on_data}
+#'   \code{stop()}s with a diagnostic. If \code{TRUE}, empty leaves are filled with the
+#'   overall mean of \code{y} (\eqn{P(Y=1)} for classification) and a single
+#'   \code{warning()} is emitted listing how many leaves were empty. This replaces the
+#'   previous silent 0.5 / 0 fallback, which could corrupt DML nuisance estimates without
+#'   any signal.
 #' @return A tree (list) with the same structure and leaf \code{prediction} and
 #'   \code{probabilities} fitted on \code{(X, y)}.
+#' @seealso \code{\link{refit_tree_structure}}, which performs the analogous refit but
+#'   takes a validated S7 \code{TreeStructure} (rather than a raw tree list/JSON) and
+#'   returns a \code{refit_result} with per-leaf counts; it shares the same
+#'   \code{allow_partial_leaves} contract.
 #' @export
-refit_structure_on_data <- function(structure, X, y) {
+refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALSE) {
   # Validate structure input
   if (is.null(structure)) {
     stop("structure cannot be NULL", call. = FALSE)
@@ -417,19 +429,32 @@ refit_structure_on_data <- function(structure, X, y) {
   row_indices <- seq_len(n)
 
   is_regression <- !all(y %in% c(0L, 1L)) && is.numeric(y)
+  # Overall mean used to fill any leaf that receives no observations (empty leaf).
+  # For classification this is P(Y=1); for regression the mean outcome. Replaces the
+  # former silent 0.5/0 fallback with a principled default (and a loud signal below).
+  default_value <- mean(y, na.rm = TRUE)
+  # Count empty leaves encountered during traversal (mutable state for the closure).
+  empty_state <- new.env(parent = emptyenv())
+  empty_state$n_empty <- 0L
+
   fill_leaf_values <- function(node, indices) {
     if (is.null(node) || !is.list(node)) {
-      if (is_regression) return(list(prediction = 0))
-      return(list(prediction = 0L, probabilities = c(1, 0)))
+      empty_state$n_empty <- empty_state$n_empty + 1L
+      if (is_regression) return(list(prediction = default_value))
+      p1 <- max(0, min(1, default_value))
+      return(list(prediction = as.integer(p1 >= 0.5), probabilities = c(1 - p1, p1)))
     }
     if (!is.null(node$prediction)) {
-      if (is_regression) {
-        leaf_mean <- if (length(indices) > 0) mean(y[indices], na.rm = TRUE) else 0
-        return(list(prediction = leaf_mean))
+      if (length(indices) == 0) {
+        empty_state$n_empty <- empty_state$n_empty + 1L
+        if (is_regression) return(list(prediction = default_value))
+        p1 <- max(0, min(1, default_value))
+        return(list(prediction = as.integer(p1 >= 0.5), probabilities = c(1 - p1, p1)))
       }
-      p1 <- mean(y[indices], na.rm = TRUE)
-      if (length(indices) == 0) p1 <- 0.5
-      p1 <- max(0, min(1, p1))
+      if (is_regression) {
+        return(list(prediction = mean(y[indices], na.rm = TRUE)))
+      }
+      p1 <- max(0, min(1, mean(y[indices], na.rm = TRUE)))
       pred <- as.integer(p1 >= 0.5)
       return(list(prediction = pred, probabilities = c(1 - p1, p1)))
     }
@@ -458,6 +483,21 @@ refit_structure_on_data <- function(structure, X, y) {
   }
 
   out <- fill_leaf_values(structure, row_indices)
+
+  if (empty_state$n_empty > 0L) {
+    if (!allow_partial_leaves) {
+      stop(sprintf(
+        paste0("refit_structure_on_data: %d leaf(ves) received no observations from (X, y).\n",
+               "The data does not cover all leaves of this structure (covariate mismatch,\n",
+               "or a small cross-fitting fold). To fill empty leaves with the overall mean\n",
+               "(%.4f) instead of erroring, set allow_partial_leaves = TRUE."),
+        empty_state$n_empty, default_value), call. = FALSE)
+    }
+    warning(sprintf(
+      "refit_structure_on_data: %d empty leaf(ves) filled with overall mean (%.4f).",
+      empty_state$n_empty, default_value), call. = FALSE)
+  }
+
   out
 }
 

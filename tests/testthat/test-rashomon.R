@@ -199,6 +199,34 @@ test_that("refit_structure_on_data works", {
   expect_true(is.list(refit))
 })
 
+test_that("refit_structure_on_data empty-leaf contract (stop vs allow_partial_leaves)", {
+  # Structure splits on feature 0 (0-indexed). Make that column constant (all 1) so
+  # the false-child leaf receives zero observations -> an empty leaf.
+  structure <- list(
+    feature = 0L, relation = "==", reference = 1L,
+    true = list(prediction = 1L, probabilities = c(0, 1)),
+    false = list(prediction = 0L, probabilities = c(1, 0))
+  )
+  X <- data.frame(x0 = rep(1L, 20L), x1 = rep(c(0L, 1L), 10L))
+  y <- rep(c(0L, 1L), 10L)  # overall mean P(Y=1) = 0.5
+
+  # Default: fail loudly instead of the old silent 0.5 fill.
+  expect_error(
+    refit_structure_on_data(structure, X, y),
+    "received no observations|allow_partial_leaves"
+  )
+
+  # Opt-in: fill empty leaf with overall mean, with a single warning (not silent).
+  expect_warning(
+    refit <- refit_structure_on_data(structure, X, y, allow_partial_leaves = TRUE),
+    "empty leaf"
+  )
+  # The empty (false) leaf is filled with the overall mean P(Y=1) = 0.5.
+  expect_equal(refit$false$probabilities[2], 0.5)
+  # The non-empty (true) leaf reflects its own data (all y=... for x0==1 rows).
+  expect_true(refit$true$probabilities[2] >= 0 && refit$true$probabilities[2] <= 1)
+})
+
 # ============================================================================
 # Rashomon Bound and Multiplier Effects
 # ============================================================================

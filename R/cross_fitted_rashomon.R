@@ -451,7 +451,9 @@ fit_rashomon_folds <- function(X_binary, y, K, fold_indices, fold_seeds,
       X_k <- X_binary[train_idx, , drop = FALSE]
       y_k <- y[train_idx]
       fold_refits[[k]] <- purrr::map(intersection_result$intersecting_structures, ~ {
-        refit_structure_on_data(.x, X_k, y_k)
+        # Cross-fitting folds may not cover every leaf of the shared structure;
+        # tolerate empty leaves (filled with the fold's overall mean, with a warning).
+        refit_structure_on_data(.x, X_k, y_k, allow_partial_leaves = TRUE)
       })
     }
   }
