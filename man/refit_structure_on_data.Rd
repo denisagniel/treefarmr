@@ -25,7 +25,12 @@ any signal.}
 }
 \value{
 A tree (list) with the same structure and leaf \code{prediction} and
-  \code{probabilities} fitted on \code{(X, y)}.
+  \code{probabilities} fitted on \code{(X, y)}. The returned tree carries an
+  \code{"n_per_leaf"} attribute: a named integer vector of the number of \code{(X, y)}
+  observations that reached each leaf, keyed by leaf path (\code{"root"}, then
+  \code{"0"}/\code{"1"} for false/true branches, joined by \code{"-"}) --- the same
+  key convention as \code{\link{extract_leaf_values}}, so it can be passed directly as
+  the weights in \code{\link{average_trees}}. Empty leaves get count 0.
 }
 \description{
 Given a tree structure (splits), route each row of \code{X} to a leaf and set
