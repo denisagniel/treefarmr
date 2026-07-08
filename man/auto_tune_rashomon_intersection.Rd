@@ -14,7 +14,7 @@ auto_tune_rashomon_intersection(
   regularization,
   c_start = 1,
   c_min = 0.01,
-  c_max = 100,
+  c_max = 1000,
   binary_tolerance = 0.1,
   verbose = TRUE,
   ...
@@ -48,6 +48,7 @@ auto_tune_rashomon_intersection(
 \value{
 List with:
   - epsilon_n: Selected epsilon_n value
+  - c: Selected multiplier such that epsilon_n = c * log(n)/n (NA if failed)
   - n_intersecting: Number of intersecting trees
   - converged: TRUE if intersection found, FALSE if all attempts failed
   - attempts: Number of attempts tried

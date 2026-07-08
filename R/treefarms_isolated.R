@@ -222,15 +222,6 @@ treefarms_isolated <- function(X, y,
       cat("JSON output length:", nchar(json_output), "characters\n")
     }
     
-    # Parse JSON and process result (reuse existing logic from treefarms.R)
-    # We need to access the helper functions from treefarms.R
-    # Get the extract_tree_from_stdout function if available
-    extract_tree_from_stdout <- tryCatch({
-      get("extract_tree_from_stdout", envir = asNamespace("optimaltrees"))
-    }, error = function(e) {
-      function(stdout_lines) { NULL }
-    })
-    
     # Parse the JSON result
     if (is.null(json_output) || json_output == "" || trimws(json_output) == "{}") {
       result_data <- NULL

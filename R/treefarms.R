@@ -129,8 +129,8 @@
 #' By default, probabilities are not computed immediately during training (lazy evaluation).
 #' This reduces memory usage, especially for large datasets. To compute probabilities for
 #' training data, use \code{compute_probabilities=TRUE} or access them via \code{predict()}
-#' or the helper functions \code{get_probabilities()}, \code{get_predictions()}, or
-#' \code{get_accuracy()}.
+#' or the model's S7 properties (\code{model@probabilities}, \code{model@predictions},
+#' \code{model@accuracy}).
 #' 
 #' Training data (\code{X_train}, \code{y_train}) is not stored by default to save memory.
 #' Set \code{store_training_data=TRUE} if you need to access training data later (e.g., for
@@ -1460,154 +1460,6 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
   })
 }
 
-#' Predict using a trained TreeFARMS model
-#'
-#' @param object A trained TreeFARMS model object returned by \code{optimaltrees()}.
-#' @param newdata A data.frame or matrix of new features to predict on.
-#' @param type Character string specifying the type of prediction.
-#'   Options: "class" (binary predictions) or "prob" (probabilities). Default: "class".
-#' @param ... Additional arguments (currently unused).
-#'
-#' @return For \code{type = "class"}: A vector of binary predictions (0/1).
-#'   For \code{type = "prob"}: A matrix with columns [P(class=0), P(class=1)].
-#'
-#' @examples
-#' \dontrun{
-#' # Train a model
-#' model <- optimaltrees(X, y, loss_function = "log_loss")
-#'
-#' # Get binary predictions
-#' pred_class <- predict(model, X_new, type = "class")
-#'
-#' # Get probability predictions
-#' pred_prob <- predict(model, X_new, type = "prob")
-#' }
-#'
-#' Get probabilities from a treefarms model (with lazy evaluation)
-#'
-#' @param object A optimaltrees_model object
-#' @return A matrix of probabilities [P(class=0), P(class=1)]
-#' @export
-get_probabilities <- function(object) {
-  if (!is.null(object$probabilities)) {
-    # Already computed
-    return(object$probabilities)
-  } else if (!is.null(object$.compute_probabilities)) {
-    # Compute lazily
-    return(object$.compute_probabilities())
-  } else {
-    stop("Cannot compute probabilities: model structure incomplete")
-  }
-}
-
-#' Get predictions from a treefarms model (with lazy evaluation)
-#'
-#' @param object A optimaltrees_model object
-#' @return A vector of binary predictions (0/1)
-#' @export
-get_predictions <- function(object) {
-  if (!is.null(object$predictions)) {
-    # Already computed
-    return(object$predictions)
-  } else if (!is.null(object$.compute_predictions)) {
-    # Compute lazily
-    return(object$.compute_predictions())
-  } else {
-    cli::cli_abort("Cannot compute predictions: model structure incomplete.")
-  }
-}
-
-#' Get accuracy from a treefarms model (with lazy evaluation)
-#'
-#' @param object A optimaltrees_model object
-#' @return Training accuracy (numeric)
-#' @export
-get_accuracy <- function(object) {
-  if (!is.null(object$accuracy)) {
-    # Already computed
-    return(object$accuracy)
-  } else if (!is.null(object$.compute_accuracy)) {
-    # Compute lazily
-    return(object$.compute_accuracy())
-  } else {
-    stop("Cannot compute accuracy: model structure incomplete")
-  }
-}
-
-#' @export
-predict_optimaltrees <- function(object, newdata, type = "class", ...) {
-  
-  if (!inherits(object, "optimaltrees_model")) {
-    stop("object must be a optimaltrees_model object")
-  }
-  
-  if (!type %in% c("class", "prob")) {
-    stop("type must be either 'class' or 'prob'")
-  }
-  
-  # Convert to data.frame if matrix
-  if (is.matrix(newdata)) {
-    newdata <- as.data.frame(newdata)
-  }
-  
-  # Get tree structure from model object
-  # Use tree_json if available, otherwise use result_data
-  tree_to_use <- if (!is.null(object$model$tree_json)) {
-    object$model$tree_json
-  } else if (!is.null(object$model$result_data)) {
-    object$model$result_data
-  } else {
-    NULL
-  }
-  
-  # Validate features match training data if available, otherwise use tree structure
-  if (!is.null(object$X_train)) {
-    if (!identical(names(newdata), names(object$X_train))) {
-      stop("Feature names in newdata must match training data")
-    }
-  } else if (!is.null(tree_to_use)) {
-    # Try to infer feature names from tree structure
-    # This is a best-effort approach
-    if (is.null(names(newdata))) {
-      warning("Cannot validate feature names: training data not stored")
-    }
-  }
-  
-  # Check for binary features
-  for (col in names(newdata)) {
-    if (!all(newdata[[col]] %in% c(0, 1))) {
-      cli::cli_abort("Feature {.field {col}} must contain only binary values (0 and 1).")
-    }
-  }
-  
-  # Regression: return fitted values
-  if (identical(object$loss_function, "squared_error")) {
-    if (!is.null(tree_to_use)) {
-      return(get_fitted_from_tree(tree_to_use, newdata))
-    }
-    return(rep(NA_real_, nrow(newdata)))
-  }
-  
-  # Extract probabilities from tree structure (classification)
-  if (!is.null(tree_to_use)) {
-    probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
-    
-    if (type == "class") {
-      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
-      return(predictions)
-    } else {
-      return(probabilities)
-    }
-  } else {
-    # No tree structure available - this should never happen for a properly fitted model
-    stop(
-      "Cannot make predictions: tree structure not found in model object.\n",
-      "This indicates a problem during model fitting or an invalid model object.\n",
-      "Check that the model was fitted successfully."
-    )
-  }
-}
-
 #' Print summary of a TreeFARMS model
 #'
 #' @param x A trained TreeFARMS model object.
@@ -1652,7 +1504,7 @@ print.optimaltrees_model <- function(x, ...) {
     cat("(Regression model - accuracy not applicable)\n")
   } else {
     tryCatch({
-      acc <- if (is_s7) get_prop(x, "accuracy") else get_accuracy(x)
+      acc <- get_prop(x, "accuracy")
       if (!is.na(acc)) {
         cat("Training accuracy:", round(acc, 4), "\n")
       }

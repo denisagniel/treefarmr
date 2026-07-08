@@ -96,5 +96,5 @@ pred <- predict(cv$model, X, type = "class")
 }
 \seealso{
 \code{\link{fit_tree}} for fitting a single tree with fixed regularization,
-\code{\link{auto_tune_treefarms}} for tuning to a target number of trees (different tuning path).
+\code{\link{auto_tune_optimaltrees}} for tuning to a target number of trees (different tuning path).
 }
