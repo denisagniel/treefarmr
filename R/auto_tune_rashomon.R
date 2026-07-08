@@ -30,6 +30,7 @@
 #'
 #' @return List with:
 #'   - epsilon_n: Selected epsilon_n value
+#'   - c: Selected multiplier such that epsilon_n = c * log(n)/n (NA if failed)
 #'   - n_intersecting: Number of intersecting trees
 #'   - converged: TRUE if intersection found, FALSE if all attempts failed
 #'   - attempts: Number of attempts tried
@@ -41,15 +42,18 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
                                            loss_function, regularization,
                                            c_start = 1,
                                            c_min = 0.01,
-                                           c_max = 100,
+                                           c_max = 1000,
                                            binary_tolerance = 0.1,
                                            verbose = TRUE,
                                            ...) {
   n <- nrow(X)
-  # Base scale = theory rate log(n)/n (select_epsilon_n), NOT sqrt(log(n)/n):
-  # the latter is not o(n^{-1/2}) and is not inference-valid. Auto-tuning the
-  # multiplier c is a post-selection device (exploratory only); see the warning
-  # in cross_fitted_rashomon() and select_epsilon_n() for the fixed alternative.
+  # Base scale = theory rate log(n)/n (select_epsilon_n). The reported multiplier c
+  # is defined ON THIS SAME BASE: c = epsilon_n / (log(n)/n). (An earlier version
+  # divided the reported c by sqrt(log n/n) -- an undefined variable and an
+  # inconsistent scale vs the searched c; both fixed here.) epsilon_n = c*log(n)/n
+  # is o(n^{-1/2}) for any fixed c, so a large-but-finite c stays asymptotically
+  # valid; the selected c is RETURNED so downstream inference can be evaluated
+  # against it empirically.
   eps_base <- select_epsilon_n(n)
 
   if (verbose) {
@@ -90,12 +94,16 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
   )
 
   if (!search$converged) {
+    # No non-empty intersection even at c_max. We do NOT silently fall back to
+    # fold-specific trees (that abandons the single-tree goal); the caller decides.
+    # Report the failure honestly with the (large) c reached.
     if (verbose) {
-      cat(sprintf("\nUpward search failed (tried up to c = %.1f)\n", c_max))
-      cat("Recommendation: Use fold-specific trees (use_rashomon = FALSE)\n")
+      cat(sprintf("\nUpward search failed: no non-empty intersection up to c = %.1f (epsilon_n = %.4f)\n",
+                  c_max, c_max * eps_base))
     }
     return(list(
-      epsilon_n = c_max * sqrt_log_n_over_n,
+      epsilon_n = c_max * eps_base,
+      c = NA_real_,
       n_intersecting = 0L,
       converged = FALSE,
       attempts = search$attempts,
@@ -110,15 +118,17 @@ auto_tune_rashomon_intersection <- function(X, y, K, fold_indices,
   }
   result_success <- select_best_tree_from_intersection(search$result, verbose)
   final_epsilon  <- get_rashomon_prop(result_success, "rashomon_bound_multiplier")
+  final_c        <- final_epsilon / eps_base   # consistent base = log(n)/n
 
   if (verbose) {
-    cat(sprintf("\nAuto-tuning complete: epsilon_n = %.4f (c ~ %.2f)\n",
-                final_epsilon, final_epsilon / sqrt_log_n_over_n))
+    cat(sprintf("\nAuto-tuning complete: epsilon_n = %.4f (c = %.2f)\n",
+                final_epsilon, final_c))
     cat(sprintf("Total attempts: %d\n", search$attempts))
   }
 
   list(
     epsilon_n = final_epsilon,
+    c = final_c,
     n_intersecting = get_rashomon_prop(result_success, "n_intersecting"),
     converged = TRUE,
     attempts = search$attempts,
