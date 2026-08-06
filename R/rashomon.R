@@ -481,8 +481,16 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
       if (is.null(col)) {
         col <- X[, feat_idx]
       }
-      true_idx <- indices[col == 1]
-      false_idx <- indices[col == 0]
+      # Subset the column to THIS node's observations before testing it. `col` is
+      # full-length (n) while `indices` holds only the rows that reached this node,
+      # so `indices[col == 1]` would index a length-|indices| vector with a length-n
+      # logical mask: correct at the root (where indices == seq_len(n)) but silently
+      # misaligned at every deeper node, yielding NA and duplicated rows. The NAs
+      # were then absorbed by `mean(y[indices], na.rm = TRUE)` below, so depth >= 2
+      # trees returned wrong leaf values with no error and no warning.
+      col_here <- col[indices]
+      true_idx <- indices[col_here == 1]
+      false_idx <- indices[col_here == 0]
       # Path convention matches extract_leaf_values: false child appends 0, true appends 1.
       false_child <- fill_leaf_values(node$false, false_idx, c(path, 0L))
       true_child <- fill_leaf_values(node$true, true_idx, c(path, 1L))
