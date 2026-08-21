@@ -353,35 +353,65 @@ get_probabilities_from_tree <- function(tree_json, X) {
         call. = FALSE
       )
     }
-    tryCatch({
-      if (!is.null(node$probabilities) && length(node$probabilities) >= 2) {
+    if (!is.null(node$probabilities) && length(node$probabilities) >= 2) {
+      return(tryCatch({
         probs <- as.numeric(node$probabilities)
-        if (length(probs) == 2 && all(is.finite(probs)) && all(probs >= 0)) {
-          prob_sum <- sum(probs)
-          if (prob_sum > 0) {
-            probs <- probs / prob_sum
-          } else {
-            stop(
-              "Leaf probabilities sum to zero: ", paste(node$probabilities, collapse = ", "), "\n\n",
-              "This indicates invalid probability values in tree.",
-              call. = FALSE
-            )
-          }
-          return(probs)
+        if (length(probs) != 2 || !all(is.finite(probs)) || !all(probs >= 0)) {
+          stop("malformed probabilities vector", call. = FALSE)
         }
-      }
-      pred <- as.numeric(node$prediction)
-      if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
-    }, error = function(e) {
+        prob_sum <- sum(probs)
+        if (prob_sum <= 0) {
+          stop(
+            "Leaf probabilities sum to zero: ", paste(node$probabilities, collapse = ", "), "\n\n",
+            "This indicates invalid probability values in tree.",
+            call. = FALSE
+          )
+        }
+        probs / prob_sum
+      }, error = function(e) {
+        stop(
+          "Failed to extract probabilities from leaf node.\n\n",
+          "Node fields: ", paste(names(node), collapse = ", "), "\n",
+          "Prediction value: ", node$prediction, "\n",
+          "Original error: ", conditionMessage(e), "\n\n",
+          "This indicates invalid leaf node structure.",
+          call. = FALSE
+        )
+      }))
+    }
+
+    # No `probabilities` field. Every genuine classification leaf (log_loss OR
+    # misclassification) always carries one -- from the C++ solver
+    # (model.cpp's Model::_to_json(), gated on `loss_function != SQUARED_ERROR`
+    # and populated for both non-squared_error losses) and from every R-side
+    # reconstruction path (tree_refit.R's reconstruct_tree_with_leaves() /
+    # reconstruct_from_structure(), rashomon.R's fill_leaf_values()). A leaf
+    # that lacks it but carries a `prediction` that is NOT a 0/1 class label is
+    # therefore a regression (squared_error) leaf mean being misrouted through
+    # the classification predict path -- almost certainly because the model's
+    # loss_function was changed/desynced after fitting (see
+    # doubletree::predict_nuisances_fold()'s type = "response" note for the
+    # concrete failure mode this closes). Fail loud here instead of silently
+    # hard-thresholding the mean into a fake class-1 probability.
+    pred <- suppressWarnings(as.numeric(node$prediction))
+    is_hard_label <- length(pred) == 1 && is.finite(pred) &&
+      isTRUE(all.equal(pred, round(pred))) && (pred == 0 || pred == 1)
+    if (!is_hard_label) {
       stop(
-        "Failed to extract probabilities from leaf node.\n\n",
-        "Node fields: ", paste(names(node), collapse = ", "), "\n",
-        "Prediction value: ", node$prediction, "\n",
-        "Original error: ", conditionMessage(e), "\n\n",
-        "This indicates invalid leaf node structure.",
+        "Leaf has no 'probabilities' field and its 'prediction' (", node$prediction,
+        ") is not a 0/1 class label, so it cannot be read as a class probability.\n\n",
+        "This looks like a regression leaf (a continuous leaf mean from a ",
+        "squared_error fit); returning class probabilities for it would silently ",
+        "threshold that mean into a degenerate {0, 1} \"probability\".\n\n",
+        "Likely cause: the model's loss_function does not match what the tree was ",
+        "actually fit with (e.g. @loss_function set to \"log_loss\" or ",
+        "\"misclassification\" on a model fit with loss_function = \"squared_error\").\n\n",
+        "Use type = \"response\" (predict.optimaltrees_model) or ",
+        "get_fitted_from_tree() directly for a genuine regression model.",
         call. = FALSE
       )
-    })
+    }
+    if (pred == 0) c(1.0, 0.0) else c(0.0, 1.0)
   }
 
   traverse_batch <- function(node, row_indices, depth) {

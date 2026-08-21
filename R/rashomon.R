@@ -455,7 +455,15 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
       empty_state$counts[leaf_path_str(path)] <- 0L
       if (is_regression) return(list(prediction = default_value))
       p1 <- max(0, min(1, default_value))
-      return(list(prediction = as.integer(p1 >= 0.5), probabilities = c(1 - p1, p1)))
+      # `prediction` holds the leaf's continuous P(Y=1) here, matching
+      # reconstruct_tree_with_leaves()'s convention (tree_refit.R) -- NOT a
+      # hard-thresholded {0,1} class label as before. Every consumer that needs
+      # P(Y=1) already reads `probabilities[2]` (predict_averaged_tree(),
+      # extract_leaf_values()), never `prediction`'s value, for a classification
+      # leaf; thresholding `prediction` only mattered for
+      # get_probabilities_from_tree()'s missing-`probabilities` fallback
+      # (treefarms.R), and every leaf built here always carries `probabilities`.
+      return(list(prediction = p1, probabilities = c(1 - p1, p1)))
     }
     if (!is.null(node$prediction)) {
       empty_state$counts[leaf_path_str(path)] <- length(indices)
@@ -463,14 +471,13 @@ refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALS
         empty_state$n_empty <- empty_state$n_empty + 1L
         if (is_regression) return(list(prediction = default_value))
         p1 <- max(0, min(1, default_value))
-        return(list(prediction = as.integer(p1 >= 0.5), probabilities = c(1 - p1, p1)))
+        return(list(prediction = p1, probabilities = c(1 - p1, p1)))
       }
       if (is_regression) {
         return(list(prediction = mean(y[indices], na.rm = TRUE)))
       }
       p1 <- max(0, min(1, mean(y[indices], na.rm = TRUE)))
-      pred <- as.integer(p1 >= 0.5)
-      return(list(prediction = pred, probabilities = c(1 - p1, p1)))
+      return(list(prediction = p1, probabilities = c(1 - p1, p1)))
     }
     if (!is.null(node$feature)) {
       feat_idx <- node$feature + 1L
