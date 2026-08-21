@@ -182,6 +182,27 @@ void Task::create_children(unsigned int id, State & state) {
                     skip = true;
                     continue;
                 }
+                // Subgroup-aware minimum leaf size: reject a candidate split whose child
+                // is deficient in either arm of the subgroup indicator. Load-bearing for
+                // the propensity tree, where an all-treated leaf yields a fitted
+                // propensity of exactly 1 and hence an infinite ATT weight p/(1-p).
+                // Counts come from the same raw-row-count convention as the total-size
+                // check immediately above. Rejecting candidates only shrinks the feasible
+                // set, so the existing min_loss/max_loss/potential bounds stay valid, and
+                // the predicate depends only on (capture set, feature) -- both already
+                // part of the memoization key -- so cached subproblems remain shareable.
+                // See quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md
+                if (Configuration::subgroup_target_index >= 0 &&
+                    (Configuration::subgroup_min_count_0 > 0 || Configuration::subgroup_min_count_1 > 0)) {
+                    unsigned int subgroup_count_0 = 0, subgroup_count_1 = 0;
+                    state.dataset.subgroup_counts(buffer, (unsigned int)(Configuration::subgroup_target_index),
+                                                  subgroup_count_0, subgroup_count_1, id, state);
+                    if (subgroup_count_0 < Configuration::subgroup_min_count_0 ||
+                        subgroup_count_1 < Configuration::subgroup_min_count_1) {
+                        skip = true;
+                        continue;
+                    }
+                }
                 Task child(buffer, this -> _feature_set, id, state);
                 state.locals[id].neighbourhood[2 * j + k] = child;
             }

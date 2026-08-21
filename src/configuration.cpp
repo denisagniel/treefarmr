@@ -33,6 +33,10 @@ unsigned char Configuration::depth_budget = 0;
 
 unsigned int Configuration::minimum_captured_points = 0;
 
+int Configuration::subgroup_target_index = -1;
+unsigned int Configuration::subgroup_min_count_0 = 0;
+unsigned int Configuration::subgroup_min_count_1 = 0;
+
 std::vector<int> Configuration::memory_checkpoints = {}; 
 
 bool Configuration::output_accuracy_model_set = false; 
@@ -96,6 +100,18 @@ void Configuration::configure(std::istream & source) {
 };
 
 void Configuration::configure(json config) {
+    // Configuration is process-global and configure() otherwise only overwrites the
+    // fields a caller happens to supply, so a value set by one fit would persist into
+    // every later fit in the same process. For the subgroup floors that would be a
+    // correctness bug, not just a surprise: an outcome-tree fit issued after a
+    // propensity-tree fit would silently inherit the propensity tree's floor. Reset
+    // them to "disabled" first so each fit is self-contained. Scoped to these three
+    // fields deliberately -- every other field keeps its long-standing sticky
+    // behaviour.
+    Configuration::subgroup_target_index = -1;
+    Configuration::subgroup_min_count_0 = 0;
+    Configuration::subgroup_min_count_1 = 0;
+
     if (config.contains("uncertainty_tolerance")) { Configuration::uncertainty_tolerance = config["uncertainty_tolerance"]; }
     if (config.contains("regularization")) { Configuration::regularization = config["regularization"]; }
     if (config.contains("upperbound")) { Configuration::upperbound = config["upperbound"]; }
@@ -112,6 +128,10 @@ void Configuration::configure(json config) {
     if (config.contains("depth_budget")) { Configuration::depth_budget = config["depth_budget"]; }
 
     if (config.contains("minimum_captured_points")) { Configuration::minimum_captured_points = config["minimum_captured_points"]; }
+
+    if (config.contains("subgroup_target_index")) { Configuration::subgroup_target_index = config["subgroup_target_index"]; }
+    if (config.contains("subgroup_min_count_0")) { Configuration::subgroup_min_count_0 = config["subgroup_min_count_0"]; }
+    if (config.contains("subgroup_min_count_1")) { Configuration::subgroup_min_count_1 = config["subgroup_min_count_1"]; }
 
     if (config.contains("memory_checkpoints")) { Configuration::memory_checkpoints = config["memory_checkpoints"].get<std::vector<int>>(); }
     
@@ -208,6 +228,10 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["depth_budget"] = Configuration::depth_budget;
 
     obj["minimum_captured_points"] = Configuration::minimum_captured_points;
+
+    obj["subgroup_target_index"] = Configuration::subgroup_target_index;
+    obj["subgroup_min_count_0"] = Configuration::subgroup_min_count_0;
+    obj["subgroup_min_count_1"] = Configuration::subgroup_min_count_1;
 
     obj["memory_checkpoints"] = Configuration::memory_checkpoints;
 

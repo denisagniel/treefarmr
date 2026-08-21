@@ -35,6 +35,10 @@ NULL
 #' - X_train: Training features (optional, for retraining/inspection)
 #' - y_train: Training outcomes (optional, for retraining/inspection)
 #' - discretization_metadata: Info about feature discretization (optional)
+#' - min_leaf_subgroup_fraction: `min` over leaves of (rows with `y == 0`) /
+#'   (rows in leaf); the empirical analogue of the positivity/overlap constant
+#'   \eqn{c} in \eqn{1 - e_0(x) \ge c}. `NA` for regression fits and whenever the
+#'   diagnostic cannot be computed. See [min_leaf_subgroup_fraction()].
 #' - is_regression: Logical flag for regression vs classification
 #'
 #' All properties are validated on creation and modification.
@@ -63,6 +67,14 @@ OptimalTreesModel <- S7::new_class(
     X_train = S7::new_property(S7::class_any, default = NULL),
     y_train = S7::new_property(S7::class_any, default = NULL),  # NULL or numeric/integer vector
 
+    # Diagnostics
+    # min over leaves of (rows with y == 0) / (rows in leaf). Empirical analogue of
+    # the positivity/overlap constant c in 1 - e_0(x) >= c; 0 means some leaf is
+    # all-treated, so a propensity fit there is exactly 1 and the ATT weight
+    # diverges. NA_real_ where it does not apply (regression, or no tree/data) --
+    # same not-applicable convention @accuracy already uses for regression.
+    min_leaf_subgroup_fraction = S7::new_property(S7::class_double, default = NA_real_),
+
     # Metadata
     discretization_metadata = S7::new_property(S7::class_list, default = NULL),
     is_regression = S7::class_logical
@@ -88,6 +100,13 @@ OptimalTreesModel <- S7::new_class(
     if (!self@is_regression && !is.na(self@accuracy)) {
       if (self@accuracy < 0 || self@accuracy > 1) {
         return("@accuracy must be in [0, 1]")
+      }
+    }
+
+    # Subgroup fraction diagnostic: NA when not applicable (mirrors @accuracy)
+    if (!is.na(self@min_leaf_subgroup_fraction)) {
+      if (self@min_leaf_subgroup_fraction < 0 || self@min_leaf_subgroup_fraction > 1) {
+        return("@min_leaf_subgroup_fraction must be in [0, 1]")
       }
     }
 
@@ -138,6 +157,7 @@ new_optimal_trees_model <- function(loss_function,
                                    X_train = NULL,
                                    y_train = NULL,
                                    discretization_metadata = NULL,
+                                   min_leaf_subgroup_fraction = NA_real_,
                                    is_regression = FALSE) {
 
   # Normalize trees to consistent format
@@ -165,6 +185,7 @@ new_optimal_trees_model <- function(loss_function,
     X_train = X_train,
     y_train = y_train,
     discretization_metadata = discretization_metadata,
+    min_leaf_subgroup_fraction = as.double(min_leaf_subgroup_fraction),
     is_regression = is_regression
   )
 }

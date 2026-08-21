@@ -579,6 +579,21 @@ void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned i
     }
 }
 
+void Dataset::subgroup_counts(Bitmask const & capture_set, unsigned int target_index, unsigned int & count_0, unsigned int & count_1, unsigned int id, State & state) const {
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
+    }
+    if (target_index >= this -> targets.size()) {
+        throw std::runtime_error("subgroup_target_index out of bounds: " + std::to_string(target_index) + " >= " + std::to_string(this -> targets.size()));
+    }
+    unsigned int const total = capture_set.count();
+    Bitmask & buffer = state.locals[id].columns[1];
+    buffer = capture_set;
+    this -> targets.at(target_index).bit_and(buffer);
+    count_1 = buffer.count();
+    count_0 = total - count_1;
+}
+
 void Dataset::get_total_P_N(unsigned int & P, unsigned int & N) {
     if (Configuration::loss_function == SQUARED_ERROR || targets.size() < 2) {
         P = 0;

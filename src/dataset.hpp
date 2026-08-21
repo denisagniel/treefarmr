@@ -71,6 +71,16 @@ public:
     
     void get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN, State & state);
     
+    // @param capture_set: The indicator for the rows captured by a (candidate) node
+    // @param target_index: Index of a binary target (label) indicator column, in [0, depth())
+    // @modifies count_0: Number of captured rows whose selected indicator is 0
+    // @modifies count_1: Number of captured rows whose selected indicator is 1
+    // @note Counts are raw physical row counts, the identical convention used by the
+    //       Configuration::minimum_captured_points check in Task::create_children().
+    // @note Uses local column buffer 1, NOT buffer 0, because callers in
+    //       Task::create_children() hold the capture set under test in buffer 0.
+    void subgroup_counts(Bitmask const & capture_set, unsigned int target_index, unsigned int & count_0, unsigned int & count_1, unsigned int id, State & state) const;
+
     // Get class distribution for probability predictions
     void get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id, State & state) const;
     

@@ -14,6 +14,7 @@ OptimalTreesModel(
   probabilities = NULL,
   X_train = NULL,
   y_train = NULL,
+  min_leaf_subgroup_fraction = NA_real_,
   discretization_metadata = list(),
   is_regression = logical(0)
 )
@@ -35,6 +36,10 @@ Properties:
 - X_train: Training features (optional, for retraining/inspection)
 - y_train: Training outcomes (optional, for retraining/inspection)
 - discretization_metadata: Info about feature discretization (optional)
+- min_leaf_subgroup_fraction: `min` over leaves of (rows with `y == 0`) /
+  (rows in leaf); the empirical analogue of the positivity/overlap constant
+  \eqn{c} in \eqn{1 - e_0(x) \ge c}. `NA` for regression fits and whenever the
+  diagnostic cannot be computed. See [min_leaf_subgroup_fraction()].
 - is_regression: Logical flag for regression vs classification
 
 All properties are validated on creation and modification.

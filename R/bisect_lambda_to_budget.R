@@ -63,22 +63,66 @@ assign_leaf_ids <- function(tree_json, X) {
   leaf_id
 }
 
+#' Minimum per-leaf subgroup fraction of a fitted single-tree model
+#'
+#' @description
+#' Computes \eqn{\min_\ell |\ell|_0 / |\ell|} over the leaves of a fitted tree:
+#' the smallest fraction of a leaf's members that belong to subgroup 0. For a
+#' propensity tree fit with `y = A`, this is the **empirical analogue of the
+#' positivity/overlap constant** \eqn{c} in \eqn{1 - e_0(x) \ge c}: a value of
+#' `0` means some leaf holds only treated units, so the fitted propensity there
+#' is exactly 1 and the ATT weight \eqn{\hat p/(1 - \hat p)} diverges. Values
+#' near 0 are a warning that the fit is close to violating positivity even when
+#' it does not violate it outright. Reported on the fitted model as
+#' `@min_leaf_subgroup_fraction`; the solver-side floor that keeps it away from
+#' 0 is `subgroup_min_count_0`. See
+#' `quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md` in the
+#' `global-scholars` project.
+#'
+#' @param tree_json Tree structure, or an `OptimalTreesModel` (its first tree is
+#'   used) — the same representation [assign_leaf_ids()] accepts.
+#' @param X Data.frame or matrix of the binary features used at fit time.
+#' @param y Outcome vector of length `nrow(X)`.
+#' @param subgroup_value The outcome value defining subgroup 0 (default `0`,
+#'   i.e. control units).
+#' @return A single double in `[0, 1]`, or `NA_real_` when the diagnostic does
+#'   not apply or cannot be computed (no tree, no data, length mismatch, or a
+#'   tree that does not match `X`).
+#' @keywords internal
+min_leaf_subgroup_fraction <- function(tree_json, X, y, subgroup_value = 0) {
+  if (is.null(tree_json) || is.null(X) || is.null(y)) return(NA_real_)
+  if (!is.data.frame(X) && !is.matrix(X)) return(NA_real_)
+  if (nrow(X) == 0L || length(y) != nrow(X)) return(NA_real_)
+
+  leaf_id <- tryCatch(assign_leaf_ids(tree_json, X), error = function(e) NULL)
+  if (is.null(leaf_id) || length(leaf_id) != nrow(X)) return(NA_real_)
+
+  n_tab <- table(leaf_id)
+  if (length(n_tab) == 0L) return(NA_real_)
+
+  in_subgroup <- !is.na(y) & y == subgroup_value
+  subgroup_tab <- table(factor(leaf_id[in_subgroup], levels = names(n_tab)))
+  min(as.numeric(subgroup_tab) / as.numeric(n_tab))
+}
+
 #' Check per-leaf sample-size feasibility of a fitted single-tree model
 #'
 #' @description
 #' Verifies that every leaf of a fitted tree carries at least `m_n`
 #' observations, and, if `group` is supplied, that every leaf also carries at
 #' least `m_n_group` observations with `group == group_value` (e.g. control
-#' units, `A == 0`, for the outcome tree's feasible set in the theory). This
-#' is an R-side, post-fit check: the solver's native
-#' `Configuration::minimum_captured_points` floor is a *total*-count floor
-#' with no group awareness (and is not currently threaded through from R at
-#' all), so the group-specific condition cannot be enforced during the
-#' search itself and must be confirmed here. See
-#' `quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md` in
-#' the `global-scholars` project for the native-C++ alternative (not yet
-#' implemented) that would make this a cheap confirmation rather than the
-#' only check.
+#' units, `A == 0`, for the outcome tree's feasible set in the theory).
+#'
+#' This is an R-side, post-fit check. The solver's
+#' `Configuration::minimum_captured_points` floor is a *total*-count floor with
+#' no group awareness (and is not threaded through from R). Since
+#' 2026-08-20 the solver additionally enforces a group-aware floor natively via
+#' `subgroup_target_index` / `subgroup_min_count_0` / `subgroup_min_count_1` (passed
+#' through `...` of [optimaltrees()]; see
+#' `quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md` in the
+#' `global-scholars` project), so when those are set this function is a cheap
+#' independent confirmation rather than the only line of defence. It remains the
+#' only check for fits that do not set them.
 #'
 #' @param fit An `OptimalTreesModel` (e.g. the return value of [fit_tree()]).
 #' @param X Data.frame or matrix used to fit `fit`.

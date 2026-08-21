@@ -513,6 +513,28 @@ get_fitted_from_tree <- function(tree_json, X) {
   state_env$fitted  # Return from environment
 }
 
+#' Encoded label-indicator index for a binary outcome
+#'
+#' @description
+#' Resolves the value of the solver's `subgroup_target_index` setting that selects the
+#' `y == 1` indicator. `Encoder::build()` (src/encoder.cpp) binarizes the outcome
+#' column into one indicator per distinct outcome value, ordered by the value's
+#' *string* representation (a `std::set<std::string>`), and `subgroup_target_index`
+#' indexes that ordering. So for a 0/1 outcome, `1{y == 0}` is index 0 and
+#' `1{y == 1}` is index 1. Selecting the `y == 1` indicator is what makes
+#' `subgroup_min_count_0` a floor on control (`y == 0`) rows per leaf.
+#'
+#' @param y Outcome vector as passed to [optimaltrees()].
+#' @return Integer index, or `NULL` if `y` never takes the value `1` (in which
+#'   case no `y == 1` indicator column exists to select).
+#' @keywords internal
+subgroup_target_index <- function(y) {
+  distinct_values <- sort(unique(as.character(y)))
+  idx <- match("1", distinct_values)
+  if (is.na(idx)) return(NULL)
+  as.integer(idx - 1L)
+}
+
 #' @export
 optimaltrees <- function(X, y, loss_function = "misclassification", regularization = 0.1,
 rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0, target_trees = 1, max_trees = 5,
@@ -762,6 +784,97 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     ...
   )
   
+  # Subgroup-aware minimum leaf size (opt-in; disabled unless a positive floor is
+  # asked for). Like the solver's `minimum_captured_points`, these are reached
+  # through `...` rather than as formal arguments, so they arrive in `config` above
+  # already. Three things still have to happen here.
+  #
+  # (1) Coerce the counts to integers, so the JSON carries whole numbers for the
+  #     C++ `unsigned int` fields.
+  # (2) Emit all three fields on every fit, explicitly disabled when unused. The
+  #     solver's Configuration is process-global, so an omitted field would leave a
+  #     previous fit's value in place -- which for these means an outcome-tree fit
+  #     could inherit a propensity-tree fit's floor.
+  # (3) Resolve `subgroup_target_index`, which indexes the *encoder's* binary
+  #     label-indicator columns and so is not something a caller can compute. The
+  #     encoder emits one indicator per distinct outcome value, ordered as strings,
+  #     so for a 0/1 outcome the `y == 1` indicator sits at index 1. Selecting that
+  #     indicator is what turns `subgroup_min_count_0` into a floor on control
+  #     (`y == 0`) rows per leaf -- the constraint that keeps a fitted propensity
+  #     away from exactly 1, where the ATT weight p/(1 - p) diverges.
+  #
+  # See quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md
+  #
+  # Both checks below exist because the C++ side cannot fail safely on bad input:
+  # subgroup_target_index/subgroup_min_count_* are consumed on worker threads inside
+  # Task::create_children(), which cannot throw an R-catchable condition (an
+  # out-of-range std::runtime_error there escapes the thread function and calls
+  # std::terminate(), hard-aborting the R session with no cleanup), and the counts
+  # are `unsigned int` in C++, so a negative value wraps to ~4.29e9 rather than
+  # erroring, silently making every leaf infeasible (a root-only tree, no warning).
+  # Validating here, before any JSON crosses into C++, converts both failure modes
+  # into ordinary R errors.
+  validate_subgroup_min_count <- function(value, arg_name) {
+    val <- as.integer(value)
+    if (is.na(val) || val < 0L) {
+      cli::cli_abort(c(
+        "{.arg {arg_name}} must be a non-negative integer.",
+        "i" = "Got {.val {value}}. Negative values wrap to a huge unsigned bound in \\
+               the solver (C++ {.code unsigned int}), making every leaf infeasible \\
+               with no warning."
+      ))
+    }
+    val
+  }
+  config$subgroup_min_count_0 <- if (is.null(config$subgroup_min_count_0)) {
+    0L
+  } else {
+    validate_subgroup_min_count(config$subgroup_min_count_0, "subgroup_min_count_0")
+  }
+  config$subgroup_min_count_1 <- if (is.null(config$subgroup_min_count_1)) {
+    0L
+  } else {
+    validate_subgroup_min_count(config$subgroup_min_count_1, "subgroup_min_count_1")
+  }
+  subgroup_floor_requested <- config$subgroup_min_count_0 > 0L ||
+    config$subgroup_min_count_1 > 0L
+
+  if (!is.null(config$subgroup_target_index)) {
+    config$subgroup_target_index <- as.integer(config$subgroup_target_index)
+    # subgroup_target_index indexes the encoder's binary label indicators, in
+    # [0, n_label_indicators - 1]. Out of range crashes the R session (see above),
+    # so it is checked here rather than left to the solver.
+    n_label_indicators <- length(unique(as.character(y)))
+    if (is.na(config$subgroup_target_index) ||
+        config$subgroup_target_index < 0L ||
+        config$subgroup_target_index >= n_label_indicators) {
+      cli::cli_abort(c(
+        "{.arg subgroup_target_index} must index one of the encoder's binary label indicators.",
+        "i" = "Got {.val {config$subgroup_target_index}}; valid range for this {.arg y} is \\
+               [0, {n_label_indicators - 1}].",
+        "i" = "An out-of-range value would hard-crash the solver's worker thread, so \\
+               this is checked here instead."
+      ))
+    }
+  } else if (!subgroup_floor_requested) {
+    config$subgroup_target_index <- -1L
+  } else if (is_regression) {
+    cli::cli_abort(c(
+      "Subgroup count floors are not available for regression losses.",
+      "i" = "{.arg subgroup_min_count_0}/{.arg subgroup_min_count_1} floor the arms of a binary label indicator, which regression fits do not have."
+    ))
+  } else {
+    resolved_column <- subgroup_target_index(y)
+    if (is.null(resolved_column)) {
+      cli::cli_abort(c(
+        "Cannot resolve {.arg subgroup_target_index} from {.arg y}.",
+        "i" = "A subgroup count floor was requested, but {.arg y} does not contain the value {.val 1}.",
+        "i" = "Pass {.arg subgroup_target_index} explicitly (index into the encoder's binary label indicators)."
+      ))
+    }
+    config$subgroup_target_index <- resolved_column
+  }
+
   # Add rashomon parameters
   # If single_tree = TRUE, disable rashomon to get exactly one tree
   if (single_tree) {
@@ -1354,6 +1467,16 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
   # what we actually extract from tree_json/trees fields
   n_trees_actual <- length(trees)
 
+  # Positivity/overlap diagnostic. Only defined for a binary-label fit, where
+  # subgroup 0 is `y == 0`; NA otherwise, matching how @accuracy reports
+  # not-applicable. Computed on the discretized X the tree actually splits on.
+  subgroup_fraction <- if (!is_regression && n_trees_actual > 0 &&
+                           !is.null(y) && all(y %in% c(0, 1))) {
+    min_leaf_subgroup_fraction(trees[[1]], X, y)
+  } else {
+    NA_real_
+  }
+
   # Create S7 model object
   s7_model <- new_optimal_trees_model(
     loss_function = result$loss_function,
@@ -1366,6 +1489,7 @@ finalize_result_object <- function(result, model_obj, X, y, store_training_data,
     X_train = if (store_training_data) X else NULL,
     y_train = if (store_training_data) y else NULL,
     discretization_metadata = discretization_metadata,
+    min_leaf_subgroup_fraction = subgroup_fraction,
     is_regression = is_regression
   )
 
