@@ -340,3 +340,199 @@ test_that("collapse_transitions() errors on a real fit where the transition band
   ct <- as_coordinate_tree(fit, X, y)
   expect_error(collapse_transitions(ct), "genuine further(\\s|\\n)+split|chained")
 })
+
+# ---------------------------------------------------------------------------
+# refine_tree_cuts() -- the off-grid threshold-moving step. Run AFTER
+# collapse_transitions() in every test here, matching the documented
+# pipeline order.
+# ---------------------------------------------------------------------------
+
+test_that("refine_tree_cuts recovers a known off-grid boundary far more accurately than the grid", {
+  # THE core value proposition of Stage B, per theory.tex's motivation: the
+  # grid floors threshold error at O(n^{-1/3}); the exact scan attains
+  # O(n^{-1}). Deliberately choose a true cutoff that does NOT land on a
+  # grid cutpoint and confirm refinement moves substantially closer to it.
+  set.seed(20260901)
+  n <- 2000
+  X <- data.frame(x1 = runif(n))
+  true_cut <- 0.4123456
+  y <- ifelse(X$x1 <= true_cut, 0, 3) + rnorm(n, sd = 0.05)
+
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 2L)
+  ct <- as_coordinate_tree(fit, X, y)
+  grid_error <- abs(ct$cut - true_cut)
+
+  collapsed <- collapse_transitions(ct)$tree
+  ref <- refine_tree_cuts(collapsed, X, y)
+  refined_error <- abs(ref$tree$cut - true_cut)
+
+  expect_lt(refined_error, grid_error)
+  expect_lt(refined_error, 0.01)   # should land within ~1% of the truth
+})
+
+test_that("refine_tree_cuts never increases training SSE (monotonicity)", {
+  set.seed(20260901)
+  n <- 1000
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.35, 0, 2) + ifelse(X$x2 <= 0.65, 0, 1) + rnorm(n, sd = 0.1)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 10L, max_depth = 2L)
+  ct <- as_coordinate_tree(fit, X, y)
+  collapsed <- collapse_transitions(ct)$tree
+  ref <- refine_tree_cuts(collapsed, X, y)
+
+  rows <- ref$refined[!is.na(ref$refined$sse_before), ]
+  if (nrow(rows) > 0) {
+    expect_true(all(rows$sse_after <= rows$sse_before + 1e-9))
+  }
+})
+
+test_that("refine_tree_cuts's min_leaf_n floor prevents any leaf from ending up empty", {
+  set.seed(42)
+  n <- 300
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.5, ifelse(X$x2 <= 0.5, 0, 1), 2) + rnorm(n, sd = 0.02)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.001,
+                   discretize_bins = 12L, max_depth = 2L)
+  ct <- as_coordinate_tree(fit, X, y)
+  collapsed <- collapse_transitions(ct)$tree
+
+  check_min_leaf <- function(node, min_n) {
+    if (identical(node$kind, "leaf")) {
+      expect_gte(node$n, min_n)
+      return(invisible())
+    }
+    check_min_leaf(node$left, min_n)
+    check_min_leaf(node$right, min_n)
+  }
+
+  for (mln in c(1L, 5L, 20L)) {
+    ref <- refine_tree_cuts(collapsed, X, y, min_leaf_n = mln)
+    check_min_leaf(ref$tree, mln)
+  }
+})
+
+test_that("refine_tree_cuts distinguishes too_few_rows_at_node from min_leaf_n_infeasible", {
+  # An artificially huge min_leaf_n relative to the data hits the coarse
+  # too_few_rows_at_node gate (2*min_leaf_n > n_node) before any candidate
+  # is even considered.
+  set.seed(20260901)
+  n <- 100
+  X <- data.frame(x1 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 6L, max_depth = 1L)
+  ct <- as_coordinate_tree(fit, X, y)
+
+  ref <- refine_tree_cuts(ct, X, y, min_leaf_n = 1000L)
+  expect_false(ref$refined$refined[[1]])
+  expect_equal(ref$refined$reason[[1]], "too_few_rows_at_node")
+  expect_equal(ref$tree$cut, ct$cut)   # grid cut retained unchanged
+
+  # min_leaf_n_infeasible specifically -- the coarse gate PASSES (enough
+  # total rows), but NO candidate can achieve min_leaf_n on BOTH sides.
+  # Hand-built rather than via a real fit: fit_tree()/GOSDT choosing to
+  # split at exactly two distinct covariate values on demand isn't
+  # reliably controllable, so construct the coordinate tree directly.
+  # Exactly 2 distinct x1 values (20 rows at 0.1, 5 rows at 0.9) means
+  # exactly 2 candidates exist; splitting at either leaves one side with
+  # only 5 (or 0) rows -- below min_leaf_n = 10 -- while the coarse gate
+  # (2*10 = 20 <= n_node = 25) passes.
+  fixture <- list(
+    kind = "split", id = 1L, coord = "x1", cut = 0.5,
+    grid_cuts = 0.5, collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
+    left  = list(kind = "leaf", id = 2L),
+    right = list(kind = "leaf", id = 3L)
+  )
+  X3 <- data.frame(x1 = c(rep(0.1, 20), rep(0.9, 5)))
+  y3 <- c(rep(0, 20), rep(1, 5))
+
+  ref3 <- refine_tree_cuts(fixture, X3, y3, min_leaf_n = 10L)
+  expect_false(ref3$refined$refined[[1]])
+  expect_equal(ref3$refined$reason[[1]], "min_leaf_n_infeasible")
+  expect_equal(ref3$tree$cut, fixture$cut)
+})
+
+test_that("scan_cutoff's tie-break prefers the candidate closest to incumbent_cut, then smallest", {
+  # Hand-constructed exact tie: xj = c(1,2,3), y = c(0,10,0) gives IDENTICAL
+  # total SSE = 50 whether the cut falls at x=1 or x=2. The pre-port
+  # behavior (strict `<` comparison over an ascending sweep) always picked
+  # the smallest candidate regardless of the incumbent; this locks in the
+  # new, documented rule instead.
+  xj <- c(1, 2, 3); y <- c(0, 10, 0)
+  lid_left <- c(1, 1, 1); lid_right <- c(2, 2, 2); K <- 2
+
+  res_near2 <- scan_cutoff(xj, y, lid_left, lid_right, K,
+                            candidates = c(1, 2), incumbent_cut = 1.8)
+  expect_equal(res_near2$cut, 2)
+  expect_equal(res_near2$all_candidates$sse, c(50, 50))
+
+  res_near1 <- scan_cutoff(xj, y, lid_left, lid_right, K,
+                            candidates = c(1, 2), incumbent_cut = 1.2)
+  expect_equal(res_near1$cut, 1)
+})
+
+test_that("refine_tree_cuts is exactly invariant to a global additive shift of y (centering correctness)", {
+  # SSE is exactly invariant to shifting y by one constant across all rows
+  # (a standard identity: within-group variance is shift-invariant). This
+  # locks in that the internal y-centering (added to avoid catastrophic
+  # cancellation for y far from zero) does not change the result at all --
+  # only where the near-zero risk of losing precision arises.
+  set.seed(20260901)
+  n <- 800
+  X <- data.frame(x1 = runif(n))
+  true_cut <- 0.37
+  y <- ifelse(X$x1 <= true_cut, 0, 2) + rnorm(n, sd = 0.05)
+
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 1L)
+  ct <- as_coordinate_tree(fit, X, y)
+  ref <- refine_tree_cuts(ct, X, y)
+
+  shift <- 1e6
+  y_shifted <- y + shift
+  fit2 <- fit_tree(X, y_shifted, loss_function = "squared_error", regularization = 0.01,
+                    discretize_bins = 8L, max_depth = 1L)
+  ct2 <- as_coordinate_tree(fit2, X, y_shifted)
+  ref2 <- refine_tree_cuts(ct2, X, y_shifted)
+
+  expect_equal(ref$tree$cut, ref2$tree$cut, tolerance = 1e-6)
+  # Root is a split node here (max_depth = 1), not a leaf -- compare LEAF
+  # predictions via the walk engine, not a $prediction field that only
+  # exists on leaves.
+  preds1 <- coord_tree_predict(ref$tree, X)
+  preds2 <- coord_tree_predict(ref2$tree, X)
+  expect_equal(preds1 + shift, preds2, tolerance = 1e-4)
+})
+
+test_that("full pipeline (as_coordinate_tree -> collapse_transitions -> refine_tree_cuts) produces a walkable, improved-fit tree", {
+  set.seed(20260901)
+  n <- 1500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4123, 0, 3) + ifelse(X$x2 <= 0.6789, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 2L)
+  ct <- as_coordinate_tree(fit, X, y)
+  collapsed <- collapse_transitions(ct)$tree
+  ref <- refine_tree_cuts(collapsed, X, y)
+
+  preds_grid    <- coord_tree_predict(ct, X)
+  preds_refined <- coord_tree_predict(ref$tree, X)
+  sse_grid    <- sum((y - preds_grid)^2)
+  sse_refined <- sum((y - preds_refined)^2)
+
+  expect_true(all(is.finite(preds_refined)))
+  expect_lte(sse_refined, sse_grid + 1e-6)
+
+  # Every leaf still carries valid, non-empty stats.
+  check_leaf <- function(node) {
+    if (identical(node$kind, "leaf")) {
+      expect_gt(node$n, 0L)
+      expect_true(is.finite(node$prediction))
+      return(invisible())
+    }
+    check_leaf(node$left); check_leaf(node$right)
+  }
+  check_leaf(ref$tree)
+})

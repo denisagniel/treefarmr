@@ -374,18 +374,27 @@ as_coordinate_tree <- function(model, X, y, tree_index = 1L) {
       s  <- sum(yl)
       ss <- sum(yl * yl)
       pred <- s / n_leaf
-      # ABSOLUTE, not relative, tolerance: confirmed by direct inspection of
-      # a raw fitted tree's JSON that the C++ solver serializes leaf
-      # predictions rounded to a fixed number of DECIMAL PLACES (~6dp,
-      # observed absolute error up to ~3e-7), not significant figures. A
-      # relative-tolerance check (base all.equal()'s default) fails on
-      # small-magnitude leaf means even though the discrepancy is exactly
-      # this known, harmless serialization rounding -- e.g. a leaf mean of
-      # -0.0026303 stored as "-0.00263" is a ~1e-4 RELATIVE difference but
-      # only ~3e-7 in absolute terms. 1e-5 comfortably covers the observed
-      # rounding with margin; a genuine X/y mismatch would differ by orders
-      # of magnitude more than this.
-      if (abs(pred - node$original_prediction) >= 1e-5) {
+      # COMBINED absolute+relative tolerance (the standard atol + rtol *
+      # |value| pattern), not either alone -- confirmed necessary by direct
+      # measurement across magnitudes, not assumed. The C++ solver's own
+      # stored leaf values disagree with an independently-computed R-side
+      # mean by an amount that scales with magnitude in a way neither a
+      # fixed absolute nor a fixed relative tolerance alone covers safely:
+      # observed ~3e-7 ABSOLUTE at a leaf mean near zero (-0.0026303 stored
+      # as -0.00263 -- a LARGE ~1e-4 relative difference a relative-only
+      # check would wrongly reject), and observed ~0.03 ABSOLUTE at a leaf
+      # mean of ~1e6 (1000001.0293 stored as the bare integer 1000001 -- a
+      # tiny ~3e-8 relative difference a fixed-1e-5-absolute check would
+      # wrongly reject, discovered when testing the y-centering invariant
+      # at a deliberately large offset). Both observations are comfortably
+      # explained by ~1e-7 relative precision (consistent with the solver
+      # storing/accumulating leaf values in single, not double, precision
+      # internally) -- atol=1e-4 + rtol=1e-4 covers both with a full 3
+      # orders of magnitude of margin, while a genuine X/y mismatch would
+      # differ by far more than either term.
+      atol <- 1e-4; rtol <- 1e-4
+      tol <- atol + rtol * max(abs(pred), abs(node$original_prediction))
+      if (abs(pred - node$original_prediction) > tol) {
         cli::cli_abort(c(
           "as_coordinate_tree: leaf {node$id}'s data-derived mean ({pred}) \\
            disagrees with the fitted model's own stored prediction \\
@@ -632,4 +641,380 @@ collapse_transitions <- function(tree, max_iter = NULL) {
      iterations (a structural bound on the number of split nodes) -- this \\
      indicates a bug in the detector, not a legitimate input."
   )
+}
+
+# ---------------------------------------------------------------------------
+# Off-grid threshold refinement (refine_tree_cuts()). Run AFTER
+# collapse_transitions() on the same tree -- refinement must never see a
+# still-uncollapsed transition pair, since collapse's detection relies on
+# grid-exact cuts (see collapse_transitions()'s roxygen).
+# ---------------------------------------------------------------------------
+
+#' Number of leaves in a coordinate-space (sub)tree
+#' @keywords internal
+coord_tree_count_leaves <- function(node) {
+  if (identical(node$kind, "leaf")) return(1L)
+  coord_tree_count_leaves(node$left) + coord_tree_count_leaves(node$right)
+}
+
+#' Position (1..K) of the leaf each row of `X` reaches under a (sub)tree
+#'
+#' Bookkeeping-only positional index (NOT the node schema's own `id`) for
+#' [scan_cutoff()]'s per-leaf running sufficient statistics arrays, which
+#' only need a dense 1..K index local to the two subtrees being compared at
+#' one split -- ported near-verbatim from the original.
+#'
+#' @keywords internal
+coord_tree_leaf_index <- function(node, X) {
+  if (identical(node$kind, "leaf")) return(rep(1L, nrow(X)))
+  n_left <- coord_tree_count_leaves(node$left)
+  ifelse(X[[node$coord]] <= node$cut,
+         coord_tree_leaf_index(node$left, X),
+         n_left + coord_tree_leaf_index(node$right, X))
+}
+
+#' Row indices of `X` reaching the node at `path`, under the tree's CURRENT cuts
+#'
+#' Walks from the root using whatever cut each ancestor CURRENTLY holds
+#' (grid value if not yet refined this pass, refined value if it is) -- see
+#' [refine_tree_cuts()]'s roxygen for why this asymmetry is safe and
+#' intentional, not a bug.
+#'
+#' @keywords internal
+coord_tree_rows_at <- function(tree, X, path) {
+  idx <- seq_len(nrow(X))
+  node <- tree
+  for (step in path) {
+    keep <- if (identical(step, "left")) {
+      X[[node$coord]][idx] <= node$cut
+    } else {
+      X[[node$coord]][idx] > node$cut
+    }
+    idx <- idx[keep]
+    node <- node[[step]]
+  }
+  idx
+}
+
+#' All cuts on `coord` anywhere within a coordinate-space subtree
+#'
+#' Used by [node_bracket()] to find the nearest OTHER split on the same
+#' coordinate inside a node's own children.
+#'
+#' @keywords internal
+coord_tree_cuts_on <- function(node, coord) {
+  if (identical(node$kind, "leaf")) return(numeric(0))
+  c(if (identical(node$coord, coord)) node$cut else numeric(0),
+    coord_tree_cuts_on(node$left,  coord),
+    coord_tree_cuts_on(node$right, coord))
+}
+
+#' Identifying bracket for the split at `path`
+#'
+#' @description
+#' The nearest other same-coordinate cut in this node's OWN subtree, open at
+#' both ends (+/-Inf if none). This bounds IDENTIFICATION -- isolating
+#' exactly one true boundary from any other -- not LOCALIZATION, which is
+#' [scan_cutoff()]'s job. Ancestor bounds are not computed here because the
+#' row set [refine_tree_cuts()] passes in is already restricted to the
+#' ancestor-consistent range (via [coord_tree_rows_at()]) -- adding an
+#' explicit ancestor bound here would be redundant, not merely harmless.
+#'
+#' @param tree Full coordinate-space tree (current -- possibly partially
+#'   refined by earlier, shallower calls in the same [refine_tree_cuts()] pass).
+#' @param path Path to the split node.
+#' @return List(lo, hi): an open interval, +/-Inf at either end if no
+#'   bounding descendant cut exists on that side.
+#' @keywords internal
+node_bracket <- function(tree, path) {
+  node  <- coord_tree_node_at(tree, path)
+  below <- coord_tree_cuts_on(node$left,  node$coord)
+  above <- coord_tree_cuts_on(node$right, node$coord)
+  list(lo = if (length(below)) max(below) else -Inf,
+       hi = if (length(above)) min(above) else  Inf)
+}
+
+#' Candidate cutoffs for a node: observed values strictly inside the bracket
+#'
+#' @description
+#' \code{br} (from [node_bracket()]) is the identifying bracket: open at
+#' both ends, strict inequalities. A candidate EQUAL to a bounding
+#' descendant cut would empty one of that descendant's children, so it is
+#' excluded, not merely redundant. The node's own grid cutpoint(s)
+#' (\code{node$grid_cuts} -- length 1 normally, length 2 if
+#' \code{collapsed}) are always added as candidates when they fall inside
+#' the bracket, so [refine_tree_cuts()] never scores worse than its
+#' pre-refinement starting point at an ORDINARY node (this guarantee is
+#' intentionally NOT claimed at a \code{collapsed} node -- see
+#' [collapse_transitions()]'s docs: the collapsed starting cut is a
+#' midpoint, not a value that was ever actually fit).
+#'
+#' @keywords internal
+bracket_candidates <- function(xj, node, br) {
+  v  <- xj[xj > br$lo & xj < br$hi]
+  gc <- node$grid_cuts
+  gc <- gc[gc > br$lo & gc < br$hi]
+  sort(unique(c(v, gc)))
+}
+
+#' Exact empirical-risk-minimizing cutoff over observed values inside a bracket
+#'
+#' @description
+#' Sweeps the candidate cut upward. At each distinct candidate value all
+#' rows at or below it belong to the left subtree, so rows migrate from the
+#' right subtree's leaves to the left subtree's leaves monotonically and
+#' per-leaf sufficient statistics update incrementally -- O(\eqn{|S| \log|S|}
+#' + \code{#candidates}) per node instead of O(\eqn{|S|} * \code{#candidates}).
+#' Ties in \code{xj} are handled correctly because \code{candidates} is
+#' already deduplicated to unique observed values (by [bracket_candidates()])
+#' and every row sharing a candidate's value migrates together in the same
+#' sweep step, never split across it.
+#'
+#' \strong{Tie-break among candidates with equal (within \code{sse_tol}) risk}:
+#' prefer the one closest to \code{incumbent_cut}, then the smallest value --
+#' deterministic and reproducible, unlike the strict \code{<} comparison this
+#' was ported from (which silently preferred whichever tied candidate the
+#' ascending sweep visited first, with no stated rationale).
+#'
+#' @param xj Coordinate values of the rows reaching this node.
+#' @param y Outcomes of those rows (should be pre-centered by the caller --
+#'   see [refine_tree_cuts()] -- SSE is exactly invariant to a global
+#'   additive shift, and centering avoids catastrophic cancellation in
+#'   \code{sumsq - sum^2/n} when \code{y} is far from zero).
+#' @param lid_left,lid_right Leaf position (1..K) each row would take under
+#'   the left / right subtree, on a common 1..K id space.
+#' @param K Total number of leaf positions.
+#' @param candidates Ascending candidate cutoffs (observed values in the
+#'   bracket, plus the incumbent grid cut(s)).
+#' @param incumbent_cut The node's cut BEFORE this call (for the tie-break
+#'   and for computing \code{sse_before}).
+#' @param sse_tol Absolute SSE difference below which two candidates are
+#'   considered tied (not a difference worth preferring on risk alone).
+#' @return List(cut, sse, sse_before, n_candidates, all_candidates
+#'   (data.frame(candidate, sse))).
+#' @keywords internal
+scan_cutoff <- function(xj, y, lid_left, lid_right, K, candidates,
+                         incumbent_cut, sse_tol = 1e-9) {
+  stopifnot(length(candidates) >= 1L)
+  ord <- order(xj, method = "radix")   # stable, platform-independent order
+  xs  <- xj[ord]; ys <- y[ord]
+  lL  <- lid_left[ord]; lR <- lid_right[ord]
+
+  cnt <- tabulate(lR, nbins = K)
+  s   <- numeric(K); ss <- numeric(K)
+  for (k in which(cnt > 0L)) {
+    sel <- lR == k
+    s[[k]]  <- sum(ys[sel]); ss[[k]] <- sum(ys[sel] * ys[sel])
+  }
+
+  sse_now <- function() {
+    # Clamp tiny negative SSE (floating-point noise, not a real negative
+    # variance) to exactly 0 rather than letting it propagate.
+    terms <- ifelse(cnt > 0L, ss - s^2 / pmax(cnt, 1L), 0)
+    sum(pmax(terms, 0))
+  }
+
+  best_cut <- NA_real_; best_sse <- Inf
+  sse_before <- NA_real_
+  all_sse <- numeric(length(candidates))
+  pos <- 1L; m <- length(xs)
+
+  for (ci in seq_along(candidates)) {
+    cand <- candidates[[ci]]
+    while (pos <= m && xs[[pos]] <= cand) {
+      kR <- lR[[pos]]; kL <- lL[[pos]]; yv <- ys[[pos]]
+      cnt[[kR]] <- cnt[[kR]] - 1L; s[[kR]] <- s[[kR]] - yv; ss[[kR]] <- ss[[kR]] - yv * yv
+      cnt[[kL]] <- cnt[[kL]] + 1L; s[[kL]] <- s[[kL]] + yv; ss[[kL]] <- ss[[kL]] + yv * yv
+      pos <- pos + 1L
+    }
+    v <- sse_now()
+    all_sse[[ci]] <- v
+    if (isTRUE(all.equal(cand, incumbent_cut, tolerance = .Machine$double.eps^0.5))) {
+      sse_before <- v
+    }
+    if (v < best_sse - sse_tol) {
+      best_sse <- v; best_cut <- cand
+    } else if (abs(v - best_sse) <= sse_tol) {
+      # Tied within tolerance: prefer closer to incumbent_cut, then smaller.
+      if (abs(cand - incumbent_cut) < abs(best_cut - incumbent_cut) ||
+          (abs(cand - incumbent_cut) == abs(best_cut - incumbent_cut) && cand < best_cut)) {
+        best_sse <- min(best_sse, v); best_cut <- cand
+      }
+    }
+  }
+
+  list(cut = best_cut, sse = best_sse, sse_before = sse_before,
+       n_candidates = length(candidates),
+       all_candidates = data.frame(candidate = candidates, sse = all_sse))
+}
+
+#' Refine every split threshold of a coordinate-space tree, root first
+#'
+#' @description
+#' Top-down: the root is refined first, then children are refined on the
+#' row sets induced by the already-refined ancestors. One pass -- this is a
+#' bracket refinement, not an alternating-minimization search.
+#'
+#' Each node's bracket is recomputed from the CURRENT tree at the moment it
+#' is refined ([node_bracket()]), not stored statically: refining an
+#' ancestor first means a later same-coordinate descendant's row set
+#' ([coord_tree_rows_at()]) is already filtered by the ancestor's REFINED
+#' cut, while a not-yet-refined descendant node still contributes its GRID
+#' cut as the bounding value seen by its parent. This asymmetry is
+#' monotone-safe and requires no second pass, because after
+#' [collapse_transitions()] any two same-coordinate splits that remain
+#' distinct nodes are separated by the (Sep) margin, not by one grid atom --
+#' do not "fix" this into an alternating minimization.
+#'
+#' \strong{Robustness fixes relative to the ported original} (Oracle
+#' consult, plan file's Milestone A addendum, §Q4): \code{min_leaf_n} as an
+#' explicit floor on every candidate (protects against a refined ancestor
+#' cut leaving a DESCENDANT leaf with zero rows -- the original had a
+#' node-local \code{< 2} guard only, not a floor propagated through the
+#' candidate set); a deterministic tie-break in [scan_cutoff()]; \code{y}
+#' centered once, globally, before any scan (SSE-exact, removes a
+#' catastrophic-cancellation risk for \code{y} far from zero); a full
+#' \code{refined} log with \code{sse_before}/\code{sse_after} per node.
+#'
+#' @param tree Coordinate-space tree from [as_coordinate_tree()], already
+#'   passed through [collapse_transitions()].
+#' @param X,y Training data. \code{y} is centered internally (once, by its
+#'   overall mean) before any SSE is computed; leaf \code{prediction}s in
+#'   the RETURNED tree are on the ORIGINAL scale (the centering is undone
+#'   before values are written back).
+#' @param min_leaf_n Integer floor on rows per side of every candidate cut
+#'   (default \code{1L} -- no floor beyond "non-empty"). Set higher to
+#'   guard against unstable leaf means.
+#' @return List(tree, refined) where \code{refined} is a data.frame with one
+#'   row per split: \code{path, coord, grid_cut_lo, grid_cut_hi, incumbent_cut,
+#'   refined_cut, bracket_lo, bracket_hi, n_node, n_candidates, sse_before,
+#'   sse_after, collapsed, refined, reason}.
+#' @keywords internal
+refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
+  if (!is.data.frame(X) && !is.matrix(X)) {
+    cli::cli_abort("refine_tree_cuts: {.arg X} must be a data.frame or matrix.")
+  }
+  if (is.matrix(X)) X <- as.data.frame(X)
+  if (nrow(X) != length(y)) {
+    cli::cli_abort(
+      "refine_tree_cuts: nrow(X) ({nrow(X)}) must equal length(y) ({length(y)})."
+    )
+  }
+  min_leaf_n <- as.integer(min_leaf_n)
+  if (is.na(min_leaf_n) || min_leaf_n < 1L) {
+    cli::cli_abort("refine_tree_cuts: {.arg min_leaf_n} must be a positive integer.")
+  }
+
+  y <- as.numeric(y)
+  y_mean <- mean(y)
+  y_centered <- y - y_mean   # SSE-exact shift; see roxygen and scan_cutoff() docs
+
+  paths <- coord_tree_split_paths(tree)
+  paths <- paths[order(vapply(paths, length, integer(1)))]   # root-first
+
+  log_rows <- list()
+
+  for (p in paths) {
+    idx  <- coord_tree_rows_at(tree, X, p)
+    node <- coord_tree_node_at(tree, p)
+    br   <- node_bracket(tree, p)
+
+    grid_lo <- if (length(node$grid_cuts) >= 1L) node$grid_cuts[[1L]] else NA_real_
+    grid_hi <- if (length(node$grid_cuts) >= 2L) node$grid_cuts[[2L]] else NA_real_
+    base_row <- function(refined_cut, sse_before, sse_after, n_cand, refined, reason) {
+      data.frame(
+        path = paste(p, collapse = "/"), coord = node$coord,
+        grid_cut_lo = grid_lo, grid_cut_hi = grid_hi,
+        incumbent_cut = node$cut, refined_cut = refined_cut,
+        bracket_lo = br$lo, bracket_hi = br$hi,
+        n_node = length(idx), n_candidates = n_cand,
+        sse_before = sse_before, sse_after = sse_after,
+        collapsed = isTRUE(node$collapsed), refined = refined, reason = reason,
+        stringsAsFactors = FALSE
+      )
+    }
+
+    if (length(idx) < 2L * min_leaf_n) {
+      log_rows[[length(log_rows) + 1L]] <- base_row(
+        node$cut, NA_real_, NA_real_, 0L, FALSE, "too_few_rows_at_node"
+      )
+      next
+    }
+
+    Xn <- X[idx, , drop = FALSE]
+    yn <- y_centered[idx]
+    xj <- Xn[[node$coord]]
+
+    cands_raw <- bracket_candidates(xj, node, br)
+    if (length(cands_raw) == 0L) {
+      log_rows[[length(log_rows) + 1L]] <- base_row(
+        node$cut, NA_real_, NA_real_, 0L, FALSE, "no_candidates_in_bracket"
+      )
+      next
+    }
+
+    # min_leaf_n floor: exclude any candidate that would leave either side
+    # of THIS split with fewer than min_leaf_n rows. By induction (root-
+    # first, one node at a time, using each node's ACTUAL realised row set)
+    # this is sufficient to guarantee every eventual LEAF has >= min_leaf_n
+    # rows -- the "descendant left empty by an ancestor's refined cut"
+    # failure mode Oracle's consult flagged as highest priority.
+    n_leq <- vapply(cands_raw, function(c) sum(xj <= c), integer(1))
+    n_gt  <- length(xj) - n_leq
+    feasible_cand <- cands_raw[n_leq >= min_leaf_n & n_gt >= min_leaf_n]
+
+    if (length(feasible_cand) == 0L) {
+      log_rows[[length(log_rows) + 1L]] <- base_row(
+        node$cut, NA_real_, NA_real_, 0L, FALSE, "min_leaf_n_infeasible"
+      )
+      next
+    }
+
+    n_left  <- coord_tree_count_leaves(node$left)
+    lid_left  <- coord_tree_leaf_index(node$left,  Xn)
+    lid_right <- n_left + coord_tree_leaf_index(node$right, Xn)
+    K <- n_left + coord_tree_count_leaves(node$right)
+
+    res <- scan_cutoff(xj, yn, lid_left, lid_right, K, feasible_cand,
+                        incumbent_cut = node$cut)
+
+    log_rows[[length(log_rows) + 1L]] <- base_row(
+      res$cut, res$sse_before, res$sse, res$n_candidates,
+      !isTRUE(all.equal(res$cut, node$cut, tolerance = .Machine$double.eps^0.5)),
+      "refined"
+    )
+
+    node$cut <- res$cut
+    tree <- coord_tree_set_node_at(tree, p, node)
+  }
+
+  # Re-attach leaf statistics on the ORIGINAL y scale: refinement can move
+  # rows between leaves, so every leaf's n/prediction/stats must be
+  # recomputed from the FINAL tree, not carried over from as_coordinate_tree().
+  leaf_ids <- coord_tree_assign(tree, X)
+  attach_final_stats <- function(node) {
+    if (identical(node$kind, "leaf")) {
+      rows <- which(leaf_ids == node$id)
+      n_leaf <- length(rows)
+      if (n_leaf == 0L) {
+        cli::cli_abort(c(
+          "refine_tree_cuts: leaf {node$id} has zero rows after refinement.",
+          "i" = "This should be prevented by the min_leaf_n floor applied \\
+                 at every split; its occurrence indicates a bug in that \\
+                 floor's propagation, not a legitimate outcome."
+        ))
+      }
+      yl <- y[rows]   # ORIGINAL scale, not centered
+      node$n <- n_leaf
+      node$prediction <- mean(yl)
+      node$stats <- list(n = n_leaf, sum = sum(yl), sumsq = sum(yl * yl))
+      return(node)
+    }
+    node$left  <- attach_final_stats(node$left)
+    node$right <- attach_final_stats(node$right)
+    node
+  }
+  tree <- attach_final_stats(tree)
+
+  list(tree = tree, refined = do.call(rbind, log_rows))
 }
