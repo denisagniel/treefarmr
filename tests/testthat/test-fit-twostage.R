@@ -534,3 +534,150 @@ test_that("fit_twostage() rejects mismatched nrow(X)/length(y)", {
   y <- rnorm(n - 1)
   expect_error(fit_twostage(X, y, leaf_budget = 2), "nrow")
 })
+
+# ---------------------------------------------------------------------------
+# print/summary/predict S3 methods (Milestone E sub-step E4).
+#
+# IMPORTANT, discovered during this sub-step and fixed in R/zzz.R: NAMESPACE's
+# declarative S3method() registration for these three methods does NOT take
+# effect under `pkgload::load_all()` (the mechanism `devtools::test()` uses)
+# -- confirmed empirically that generic dispatch (`print(res)`) silently
+# falls through to `print.default` in that environment, even though a REAL
+# `R CMD INSTALL` + `library()` load dispatches correctly (verified directly:
+# `methods("print")` lists the method after install, and `print(res)`
+# produces the expected formatted output). `.onLoad()` now explicitly
+# re-registers these three methods via `registerS3method()`, which fixes the
+# INSTALLED-package case but does not change `load_all()`'s own behavior
+# (a pkgload limitation, not a bug in this package). These tests therefore
+# call the S3 methods DIRECTLY BY NAME (exercising the exact same function
+# bodies real dispatch would call) rather than through generic `print()`/
+# `summary()`/`predict()`, so they pass reliably under `devtools::test()`.
+# ---------------------------------------------------------------------------
+
+test_that("print.optimaltrees_twostage_fit() reports the full disclosure on a successful fit", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                        m_ladder = c(8, 16),
+                                        time_budget = 60, fit_time_limit = 20))
+
+  out <- capture.output(print.optimaltrees_twostage_fit(res))
+  txt <- paste(out, collapse = "\n")
+
+  expect_match(txt, "certified\\s+TRUE")
+  expect_match(txt, "certified_full_class\\s+FALSE")
+  expect_match(txt, "depth_sufficient = FALSE BY DESIGN, not a fit failure")
+  expect_match(txt, "STABLE")
+  expect_match(txt, "inside the validated staged range")
+  expect_match(txt, "LOCAL ONLY")
+})
+
+test_that("print.optimaltrees_twostage_fit() correctly frames a leaf_budget SMALLER than {4,8}", {
+  # Regression test for a real messaging bug caught while manually verifying
+  # this sub-step: the original disclosure text assumed "outside the range"
+  # always meant LARGER (and therefore more expensive) than 8, and
+  # incorrectly told the user to "expect materially worse" cost for
+  # leaf_budget = 2 -- backwards, since a smaller budget should be at least
+  # as tractable, not worse.
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 2, lambda_n = 0.05,
+                                        m_ladder = c(8, 16),
+                                        time_budget = 60, fit_time_limit = 20,
+                                        depth_budget = 2))
+
+  out <- capture.output(print.optimaltrees_twostage_fit(res))
+  txt <- paste(out, collapse = "\n")
+
+  expect_match(txt, "smaller than the validated staged range")
+  expect_match(txt, "at least as tractable")
+  expect_no_match(txt, "expect materially worse")
+})
+
+test_that("print.optimaltrees_twostage_fit() correctly frames a leaf_budget LARGER than {4,8}", {
+  # Constructs a SYNTHETIC result (real model, hand-edited leaf_budget) to
+  # exercise the >8 disclosure branch without an actual leaf_budget = 20
+  # Stage-A search (never benchmarked in this repo -- see Milestone D --
+  # and potentially very slow; the print method's formatting logic is a
+  # pure function of the list's fields, so this tests it directly without
+  # needing the real, expensive computation).
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                        m_ladder = c(8, 16),
+                                        time_budget = 60, fit_time_limit = 20))
+  res$leaf_budget <- 20L
+
+  out <- capture.output(print.optimaltrees_twostage_fit(res))
+  txt <- paste(out, collapse = "\n")
+  expect_match(txt, "OUTSIDE the validated staged range")
+  expect_match(txt, "expect materially worse")
+  expect_no_match(txt, "at least as tractable")
+})
+
+test_that("print.optimaltrees_twostage_fit() aborts branch is unreached when no rung completed", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(
+    X, y, leaf_budget = 20, lambda_n = 0.05, m_ladder = c(8, 16),
+    time_budget = 5, fit_time_limit = 10   # exhausted before any fit -- fast
+  ))
+
+  out <- capture.output(print.optimaltrees_twostage_fit(res))
+  txt <- paste(out, collapse = "\n")
+  expect_match(txt, "No rung completed")
+  expect_match(txt, "any_rung_completed")
+})
+
+test_that("summary.optimaltrees_twostage_fit() prints the ladder trace in addition to print()'s output", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 2, lambda_n = 0.05,
+                                        m_ladder = c(8, 16),
+                                        time_budget = 60, fit_time_limit = 20,
+                                        depth_budget = 2))
+
+  out <- capture.output(summary.optimaltrees_twostage_fit(res))
+  txt <- paste(out, collapse = "\n")
+  expect_match(txt, "certified")             # print()'s own content
+  expect_match(txt, "Ladder trace:")
+  expect_match(txt, "topology_stable_vs_prev")   # a ladder_topologies column name
+})
+
+test_that("predict.optimaltrees_twostage_fit() delegates to the winning RefinedTreeModel", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                        m_ladder = c(8, 16),
+                                        time_budget = 60, fit_time_limit = 20))
+
+  preds_via_fit   <- predict.optimaltrees_twostage_fit(res, X)
+  preds_via_model <- predict(res$model, X)
+  expect_equal(preds_via_fit, preds_via_model)
+})
+
+test_that("predict.optimaltrees_twostage_fit() aborts cleanly when no rung completed", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+  res <- suppressMessages(fit_twostage(
+    X, y, leaf_budget = 2, lambda_n = 0.05, m_ladder = c(8, 16),
+    time_budget = 5, fit_time_limit = 10, depth_budget = 2
+  ))
+
+  expect_null(res$model)
+  expect_error(predict.optimaltrees_twostage_fit(res, X), "no rung completed")
+})

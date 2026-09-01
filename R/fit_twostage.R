@@ -778,6 +778,7 @@ fit_twostage <- function(X, y, leaf_budget,
   depth_sufficient     <- if (is.null(r)) FALSE else isTRUE(r$depth_sufficient)
   feasible             <- if (is.null(r)) FALSE else (isTRUE(r$feasible_A) && isTRUE(r$feasible_refined))
   stage_b_local_margin <- if (is.null(r)) NA_real_ else r$local_margin
+  local_certified      <- if (is.null(r)) NA else isTRUE(r$local_certified)
   budget_slack         <- if (is.null(r)) NA_integer_ else r$budget_slack
   lambda_binding       <- if (is.null(r)) NA else isTRUE(r$lambda_binding)
   n_transition_leaves_collapsed <- if (is.null(r)) NA_integer_ else r$n_collapses
@@ -788,7 +789,7 @@ fit_twostage <- function(X, y, leaf_budget,
     budget_respected   = isTRUE(!is.na(n_leaves_collapsed) && n_leaves_collapsed <= budgets$leaf_budget),
     feasible           = isTRUE(feasible),
     stage_a_converged  = if (is.null(r)) FALSE else !isTRUE(r$stage_a_truncated),
-    local_certificate  = if (is.null(r)) FALSE else isTRUE(r$local_certified),
+    local_certificate  = isTRUE(local_certified),
     topology_stable    = isTRUE(topology_stable) && n_rungs_completed >= 2L
   )
   certified <- all(checks)
@@ -802,7 +803,7 @@ fit_twostage <- function(X, y, leaf_budget,
       lambda_case = lambda_case, gap = gap, n_leaves_collapsed = n_leaves_collapsed,
       max_depth = budgets$d_A, depth_required = budgets$depth_required_A,
       depth_sufficient = depth_sufficient, feasible = feasible,
-      stage_b_local_margin = stage_b_local_margin,
+      stage_b_local_margin = stage_b_local_margin, local_certified = local_certified,
       budget_slack = budget_slack, lambda_binding = lambda_binding,
       topology_stable = topology_stable, n_rungs_completed = n_rungs_completed,
       n_transition_leaves_collapsed = n_transition_leaves_collapsed,
@@ -815,4 +816,174 @@ fit_twostage <- function(X, y, leaf_budget,
     ),
     class = "optimaltrees_twostage_fit"
   )
+}
+
+# ---------------------------------------------------------------------------
+# Sub-step E4: print/summary/predict S3 methods. This completes Milestone E.
+# ---------------------------------------------------------------------------
+
+#' @keywords internal
+.twostage_fmt <- function(x, digits = 3) {
+  if (length(x) == 0L || all(is.na(x))) return("NA")
+  if (is.logical(x)) return(as.character(x))
+  format(x, digits = digits)
+}
+
+#' Print a `fit_twostage()` result
+#'
+#' @description
+#' Leads with WHY `certified_full_class` is `FALSE` when it is (per the
+#' default depth cap) -- the point Oracle's consult made explicitly: a
+#' reader must never come away thinking the default cap represents a fit
+#' FAILURE. States every guaranteed check individually (not just the
+#' aggregate `certified`), whether `leaf_budget` sits inside the
+#' empirically-validated `{4, 8}` staged range (decision #5 -- disclose,
+#' never silently gate), and the disclaimer categories `theory.tex`
+#' explicitly does NOT let this mechanism assert (`ass:global`, the `(Grid)`
+#' condition, `L^cont_j <= leaf_budget`; the local certificate is LOCAL
+#' ONLY -- `prop:greedy` is a proven counterexample to it implying global
+#' optimality).
+#'
+#' @param x An `optimaltrees_twostage_fit`, from [fit_twostage()].
+#' @param ... Unused.
+#' @return `x`, invisibly.
+#' @export
+print.optimaltrees_twostage_fit <- function(x, ...) {
+  cat(sprintf("<fit_twostage> leaf_budget = %s, stop_reason = %s\n",
+              x$leaf_budget, x$stop_reason))
+
+  if (is.null(x$model)) {
+    cat(sprintf("  No rung completed -- model is NULL; predict() on this object will abort.\n"))
+    cat(sprintf("  certified = FALSE, reason: %s\n", x$reason))
+    cat(sprintf("  Ladder attempted %d rung(s); see $ladder_topologies for what each one hit.\n",
+                nrow(x$ladder_topologies)))
+    return(invisible(x))
+  }
+
+  cat(sprintf("  m_used = %s (rungs completed: %d of %d attempted)\n",
+              x$m_used, x$n_rungs_completed, nrow(x$ladder_topologies)))
+  cat("\n")
+  cat(sprintf("  certified              %-5s\n", x$certified))
+  cat(sprintf("  |- lambda_case         %-4s (lambda = %s; gap %s)\n",
+              x$lambda_case, .twostage_fmt(x$model@lambda), .twostage_fmt(x$gap)))
+  cat(sprintf("  |- leaves              %s <= %s  (%s transition leaves collapsed; slack %s)\n",
+              x$n_leaves_collapsed, x$leaf_budget,
+              x$n_transition_leaves_collapsed, x$budget_slack))
+  cat(sprintf("  |- feasible            %-5s (re-checked on the REFINED tree, group-aware)\n",
+              x$feasible))
+  cat(sprintf("  |- local certificate   %-4s (margin %s at lambda = %s)\n",
+              if (isTRUE(x$local_certified)) "PASS" else "FAIL",
+              .twostage_fmt(x$stage_b_local_margin), .twostage_fmt(x$model@lambda)))
+  cat(sprintf("  \\- topology            %s\n",
+              if (isTRUE(x$topology_stable)) {
+                "STABLE (agreed across >= 2 completed rungs)"
+              } else {
+                sprintf("not established (%d rung(s) completed)", x$n_rungs_completed)
+              }))
+  if (!is.na(x$reason)) {
+    cat(sprintf("\n  certified = FALSE, reason: %s\n", x$reason))
+  }
+
+  cat(sprintf("\n  certified_full_class   %-5s (= certified && depth_sufficient)\n",
+              x$certified_full_class))
+  if (!isTRUE(x$depth_sufficient)) {
+    if (identical(x$d_0_source, "default_balanced")) {
+      cat("\n  depth_sufficient = FALSE BY DESIGN, not a fit failure.\n")
+      cat(sprintf(
+        "  depth_budget = NULL used the STAGED cap d_0 = ceiling(log2(%d)) = %d,\n",
+        x$leaf_budget, x$d_0
+      ))
+      cat(sprintf(
+        "  so Stage A searched to depth %d. Full compliance over the transition-leaf-\n",
+        x$max_depth
+      ))
+      cat(sprintf(
+        "  inflated class needs depth %d (a %d-leaf chain), which is not the\n",
+        x$depth_required, x$L_A
+      ))
+      cat("  computational regime this default is validated for. Deep chain-shaped\n")
+      cat("  topologies were therefore EXCLUDED from the search.\n")
+      cat("    -> every check above applies to the DECLARED class.\n")
+      cat("    -> for the full-class claim, re-run with depth_budget = \"full\".\n")
+    } else {
+      cat("\n  depth_sufficient = FALSE (an explicit, deliberately restricted depth_budget was used).\n")
+    }
+  }
+
+  cat("\n")
+  if (x$leaf_budget %in% c(4L, 8L)) {
+    cat(sprintf("  Leaf budget %d is inside the validated staged range {4, 8}.\n", x$leaf_budget))
+  } else if (x$leaf_budget < 4L) {
+    # Smaller than the validated range: NOT separately benchmarked, but
+    # Stage-A cost is monotone increasing in leaf_budget (via L_A/d_A), so
+    # a genuinely smaller budget is expected to be at least as tractable
+    # as leaf_budget = 4 -- the "expect materially worse" framing below is
+    # specifically about the OTHER direction and would be misleading here.
+    cat(sprintf(
+      "  Leaf budget %d is smaller than the validated staged range {4, 8} -- not\n",
+      x$leaf_budget
+    ))
+    cat("  separately benchmarked, but Stage-A cost is monotone increasing in\n")
+    cat("  leaf_budget, so this is expected to be at least as tractable as leaf_budget = 4.\n")
+  } else {
+    cat(sprintf(
+      "  Leaf budget %d is OUTSIDE the validated staged range {4, 8}. No cost or\n",
+      x$leaf_budget
+    ))
+    cat("  correctness evidence exists in this package above leaf_budget = 8 -- measured\n")
+    cat(sprintf(
+      "  Stage-A cost grew 64s -> 307s across p = 5 -> 20 AT leaf_budget = 8 alone (d_A = %d\n",
+      x$max_depth
+    ))
+    cat("  here); expect materially worse. `time_budget` is your only guard.\n")
+  }
+
+  cat("\n  NOT guaranteed: m_used, topology_stable, budget_slack, lambda_binding.\n")
+  cat("  DISCLAIMED: ass:global over the full continuum class, the (Grid) condition,\n")
+  cat("  L^cont_j <= leaf_budget. The local certificate is LOCAL ONLY (theory.tex's\n")
+  cat("  prop:greedy is a proven counterexample) -- it is NOT global optimality.\n")
+
+  invisible(x)
+}
+
+#' Summarize a `fit_twostage()` result: the print output plus the full ladder trace
+#'
+#' @description
+#' [print.optimaltrees_twostage_fit()] plus the complete
+#' `$ladder_topologies` data.frame -- every rung attempted, including
+#' refused/timed-out ones, with the fields recorded at that rung.
+#'
+#' @param object An `optimaltrees_twostage_fit`, from [fit_twostage()].
+#' @param ... Unused.
+#' @return `object`, invisibly.
+#' @export
+summary.optimaltrees_twostage_fit <- function(object, ...) {
+  print(object)
+  cat("\nLadder trace:\n")
+  print(object$ladder_topologies)
+  invisible(object)
+}
+
+#' Predict from a `fit_twostage()` result
+#'
+#' @description
+#' Delegates to the winning rung's [RefinedTreeModel] `predict` method.
+#' Aborts loudly, rather than returning garbage, when no rung ever
+#' completed (`$model` is `NULL`) -- check `$stop_reason` and
+#' `$ladder_topologies` for why.
+#'
+#' @param object An `optimaltrees_twostage_fit`, from [fit_twostage()].
+#' @param newdata Data.frame or matrix with the coordinates `object$model`
+#'   splits on.
+#' @param ... Forwarded to `predict(object$model, newdata, ...)`.
+#' @return Numeric vector of predictions.
+#' @export
+predict.optimaltrees_twostage_fit <- function(object, newdata, ...) {
+  if (is.null(object$model)) {
+    cli::cli_abort(c(
+      "predict.optimaltrees_twostage_fit: no rung completed -- {.arg model} is NULL.",
+      "i" = "stop_reason was {.val {object$stop_reason}}; see {.code object$ladder_topologies} for why every rung failed."
+    ))
+  }
+  predict(object$model, newdata, ...)
 }
