@@ -13,6 +13,10 @@ RefinedTreeModel(
   n_train = integer(0),
   training_risk = numeric(0),
   min_leaf_n = 1L,
+  lambda = numeric(0),
+  objective_scale = "mse",
+  max_depth = integer(0),
+  max_leaves = integer(0),
   format_version = 1L
 )
 }
@@ -59,6 +63,30 @@ Properties:
 - training_risk: total training SSE of the refined tree.
 - min_leaf_n: the floor that was enforced during refinement (see
   [refine_tree_cuts()]); re-checked by the validator below.
+- lambda: the regularization value [fit_tree()] fitted \code{source}
+  with (\code{source@regularization}), on \code{source}'s own
+  mean-normalized scale -- NOT yet converted to a raw-SSE-scale
+  per-leaf penalty (see \code{objective_scale} and
+  \code{\link{certify_local_optimality}}, which does that conversion).
+- objective_scale: how \code{lambda} combines with the raw SSE-scale
+  penalized objective the local-optimality certificate evaluates.
+  \code{"mse"} (default, matching [fit_tree()]'s own documented
+  mean-normalized objective \eqn{n^{-1}\sum_i L(y_i,f(x_i)) +
+  \lambda\card{\mathrm{leaves}}}): the SSE-scale per-leaf penalty is
+  \code{n_train * lambda}. \code{"sse"}: \code{lambda} is already on
+  the raw-SSE scale and is used as-is. Getting this wrong silently
+  makes the certificate's pass/fail threshold wrong by a factor of
+  \code{n_train} -- see [certify_local_optimality()]'s roxygen for why
+  this is not a free-form tuning knob.
+- max_depth,max_leaves: the Stage-A model-class constraints \code{source}
+  was fit under (\code{NULL} = uncapped for that constraint). NOT
+  recoverable from \code{source} itself -- [OptimalTreesModel] does not
+  retain them post-fit -- so [refine_tree()] requires the CALLER to pass
+  the same values used at the original [fit_tree()] call. Used by
+  [certify_local_optimality()]'s \code{add} perturbation to correctly
+  mark an out-of-class candidate split \code{n_infeasible} rather than
+  a certificate failure (an ADD that would exceed the class \code{source}
+  was fit over says nothing about \code{source}'s optimality IN that class).
 - format_version: integer, currently \code{1L}.
 
 All properties are validated on creation and modification -- in

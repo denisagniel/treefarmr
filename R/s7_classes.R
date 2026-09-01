@@ -240,6 +240,30 @@ new_optimal_trees_model <- function(loss_function,
 #' - training_risk: total training SSE of the refined tree.
 #' - min_leaf_n: the floor that was enforced during refinement (see
 #'   [refine_tree_cuts()]); re-checked by the validator below.
+#' - lambda: the regularization value [fit_tree()] fitted \code{source}
+#'   with (\code{source@regularization}), on \code{source}'s own
+#'   mean-normalized scale -- NOT yet converted to a raw-SSE-scale
+#'   per-leaf penalty (see \code{objective_scale} and
+#'   \code{\link{certify_local_optimality}}, which does that conversion).
+#' - objective_scale: how \code{lambda} combines with the raw SSE-scale
+#'   penalized objective the local-optimality certificate evaluates.
+#'   \code{"mse"} (default, matching [fit_tree()]'s own documented
+#'   mean-normalized objective \eqn{n^{-1}\sum_i L(y_i,f(x_i)) +
+#'   \lambda\card{\mathrm{leaves}}}): the SSE-scale per-leaf penalty is
+#'   \code{n_train * lambda}. \code{"sse"}: \code{lambda} is already on
+#'   the raw-SSE scale and is used as-is. Getting this wrong silently
+#'   makes the certificate's pass/fail threshold wrong by a factor of
+#'   \code{n_train} -- see [certify_local_optimality()]'s roxygen for why
+#'   this is not a free-form tuning knob.
+#' - max_depth,max_leaves: the Stage-A model-class constraints \code{source}
+#'   was fit under (\code{NULL} = uncapped for that constraint). NOT
+#'   recoverable from \code{source} itself -- [OptimalTreesModel] does not
+#'   retain them post-fit -- so [refine_tree()] requires the CALLER to pass
+#'   the same values used at the original [fit_tree()] call. Used by
+#'   [certify_local_optimality()]'s \code{add} perturbation to correctly
+#'   mark an out-of-class candidate split \code{n_infeasible} rather than
+#'   a certificate failure (an ADD that would exceed the class \code{source}
+#'   was fit over says nothing about \code{source}'s optimality IN that class).
 #' - format_version: integer, currently \code{1L}.
 #'
 #' All properties are validated on creation and modification -- in
@@ -262,6 +286,10 @@ RefinedTreeModel <- S7::new_class(
     n_train = S7::class_integer,
     training_risk = S7::class_double,
     min_leaf_n = S7::new_property(S7::class_integer, default = 1L),
+    lambda = S7::class_double,
+    objective_scale = S7::new_property(S7::class_character, default = "mse"),
+    max_depth = S7::new_property(S7::new_union(S7::class_integer, NULL), default = NULL),
+    max_leaves = S7::new_property(S7::new_union(S7::class_integer, NULL), default = NULL),
     format_version = S7::new_property(S7::class_integer, default = 1L)
   ),
 
@@ -275,11 +303,31 @@ RefinedTreeModel <- S7::new_class(
     if (self@min_leaf_n < 1L) {
       return("@min_leaf_n must be a positive integer")
     }
+    if (!is.finite(self@lambda) || self@lambda < 0) {
+      return("@lambda must be a non-negative finite number")
+    }
+    if (!self@objective_scale %in% c("mse", "sse")) {
+      return("@objective_scale must be 'mse' or 'sse'")
+    }
+    if (!(length(self@max_depth) == 0L ||
+          (length(self@max_depth) == 1L && self@max_depth >= 1L))) {
+      return("@max_depth must be NULL or a positive integer scalar")
+    }
+    if (!(length(self@max_leaves) == 0L ||
+          (length(self@max_leaves) == 1L && self@max_leaves >= 1L))) {
+      return("@max_leaves must be NULL or a positive integer scalar")
+    }
     if (!is.finite(self@training_risk) || self@training_risk < 0) {
       return("@training_risk must be a non-negative finite number")
     }
-    if (length(self@coords) == 0L) {
-      return("@coords must be non-empty")
+    # @coords must be non-empty only when the tree actually has a split to
+    # reference one -- a genuine single-leaf stump (a degenerate but valid
+    # RefinedTreeModel: no coordinate is used at all) legitimately has
+    # coords = character(0). Rejecting that outright was a Milestone A
+    # oversight, not a deliberate constraint (discovered 2026-09-01 writing
+    # Milestone B's certificate tests against a hand-built stump).
+    if (length(self@coords) == 0L && !identical(self@tree$kind, "leaf")) {
+      return("@coords must be non-empty when @tree has any split")
     }
 
     # Recursive structural check over the coordinate-space tree: schema,

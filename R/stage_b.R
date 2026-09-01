@@ -1068,12 +1068,24 @@ coord_tree_training_sse <- function(tree, X, y) {
 #'   explicitly, and verified to reconcile with \code{model}'s own
 #'   discretization -- see [as_coordinate_tree()]).
 #' @param min_leaf_n Integer floor on rows per side of every refined cut
-#'   (default \code{1L}). Passed through to [refine_tree_cuts()].
+#'   (default \code{1L}). Passed through to [refine_tree_cuts()], and
+#'   recorded on the returned model for [certify_local_optimality()].
 #' @param tree_index Which tree in \code{model@trees} to refine (default
 #'   \code{1L}; only relevant for a Rashomon set).
+#' @param max_depth,max_leaves The Stage-A model-class constraints
+#'   \code{model} was originally fit under (\code{NULL}, the default,
+#'   means that constraint was uncapped). \strong{Not recoverable from
+#'   \code{model} itself} -- \code{OptimalTreesModel} does not retain
+#'   \code{max_depth}/\code{max_leaves} post-fit -- so pass the SAME
+#'   values used at the original [fit_tree()] call if you plan to run
+#'   [certify_local_optimality()] on the result; otherwise its \code{add}
+#'   perturbation cannot distinguish an out-of-class candidate split (which
+#'   should be marked infeasible, not a certificate failure) from an
+#'   in-class one.
 #' @return A [RefinedTreeModel].
 #' @export
-refine_tree <- function(model, X, y, min_leaf_n = 1L, tree_index = 1L) {
+refine_tree <- function(model, X, y, min_leaf_n = 1L, tree_index = 1L,
+                         max_depth = NULL, max_leaves = NULL) {
   ct <- as_coordinate_tree(model, X, y, tree_index = tree_index)
   collapsed <- collapse_transitions(ct)
   refined <- refine_tree_cuts(collapsed$tree, X, y, min_leaf_n = min_leaf_n)
@@ -1086,7 +1098,10 @@ refine_tree <- function(model, X, y, min_leaf_n = 1L, tree_index = 1L) {
     refinement_log = refined$refined,
     n_train = nrow(if (is.matrix(X)) as.data.frame(X) else X),
     training_risk = coord_tree_training_sse(refined$tree, X, y),
-    min_leaf_n = as.integer(min_leaf_n)
+    min_leaf_n = as.integer(min_leaf_n),
+    lambda = model@regularization,
+    max_depth = if (is.null(max_depth)) NULL else as.integer(max_depth),
+    max_leaves = if (is.null(max_leaves)) NULL else as.integer(max_leaves)
   )
 }
 

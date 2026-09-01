@@ -4,7 +4,15 @@
 \alias{refine_tree}
 \title{Run Stage B (off-grid threshold refinement) on a fitted model}
 \usage{
-refine_tree(model, X, y, min_leaf_n = 1L, tree_index = 1L)
+refine_tree(
+  model,
+  X,
+  y,
+  min_leaf_n = 1L,
+  tree_index = 1L,
+  max_depth = NULL,
+  max_leaves = NULL
+)
 }
 \arguments{
 \item{model}{A fitted \code{OptimalTreesModel} (S7), from [fit_tree()]
@@ -15,10 +23,22 @@ explicitly, and verified to reconcile with \code{model}'s own
 discretization -- see [as_coordinate_tree()]).}
 
 \item{min_leaf_n}{Integer floor on rows per side of every refined cut
-(default \code{1L}). Passed through to [refine_tree_cuts()].}
+(default \code{1L}). Passed through to [refine_tree_cuts()], and
+recorded on the returned model for [certify_local_optimality()].}
 
 \item{tree_index}{Which tree in \code{model@trees} to refine (default
 \code{1L}; only relevant for a Rashomon set).}
+
+\item{max_depth, max_leaves}{The Stage-A model-class constraints
+\code{model} was originally fit under (\code{NULL}, the default,
+means that constraint was uncapped). \strong{Not recoverable from
+\code{model} itself} -- \code{OptimalTreesModel} does not retain
+\code{max_depth}/\code{max_leaves} post-fit -- so pass the SAME
+values used at the original [fit_tree()] call if you plan to run
+[certify_local_optimality()] on the result; otherwise its \code{add}
+perturbation cannot distinguish an out-of-class candidate split (which
+should be marked infeasible, not a certificate failure) from an
+in-class one.}
 }
 \value{
 A [RefinedTreeModel].

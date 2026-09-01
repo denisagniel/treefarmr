@@ -598,7 +598,7 @@ test_that("RefinedTreeModel's validator rejects invalid trees", {
   # Valid construction succeeds.
   expect_s7_class(
     RefinedTreeModel(tree = good_tree, coords = "x1", loss = "squared_error",
-                      n_train = 100L, training_risk = 1.0),
+                      n_train = 100L, training_risk = 1.0, lambda = 0.1),
     RefinedTreeModel
   )
 
@@ -606,7 +606,7 @@ test_that("RefinedTreeModel's validator rejects invalid trees", {
   bad_dup <- mk_split(1L, "x1", 0.5, mk_leaf(1L), mk_leaf(3L))
   expect_error(
     RefinedTreeModel(tree = bad_dup, coords = "x1", loss = "squared_error",
-                      n_train = 100L, training_risk = 1.0),
+                      n_train = 100L, training_risk = 1.0, lambda = 0.1),
     "duplicate node id"
   )
 
@@ -614,14 +614,14 @@ test_that("RefinedTreeModel's validator rejects invalid trees", {
   bad_nleaf <- mk_split(1L, "x1", 0.5, mk_leaf(2L, n = 0), mk_leaf(3L))
   expect_error(
     RefinedTreeModel(tree = bad_nleaf, coords = "x1", loss = "squared_error",
-                      n_train = 100L, training_risk = 1.0, min_leaf_n = 1L),
+                      n_train = 100L, training_risk = 1.0, min_leaf_n = 1L, lambda = 0.1),
     "below min_leaf_n"
   )
 
   # coord not declared in @coords.
   expect_error(
     RefinedTreeModel(tree = good_tree, coords = "x2", loss = "squared_error",
-                      n_train = 100L, training_risk = 1.0),
+                      n_train = 100L, training_risk = 1.0, lambda = 0.1),
     "not in @coords"
   )
 
@@ -634,14 +634,14 @@ test_that("RefinedTreeModel's validator rejects invalid trees", {
   )
   expect_error(
     RefinedTreeModel(tree = bad_bracket, coords = "x1", loss = "squared_error",
-                      n_train = 100L, training_risk = 1.0),
+                      n_train = 100L, training_risk = 1.0, lambda = 0.1),
     "identifying bracket"
   )
 
   # Wrong loss (Milestone A scope is squared_error only).
   expect_error(
     RefinedTreeModel(tree = good_tree, coords = "x1", loss = "log_loss",
-                      n_train = 100L, training_risk = 1.0),
+                      n_train = 100L, training_risk = 1.0, lambda = 0.1),
     "squared_error"
   )
 })
