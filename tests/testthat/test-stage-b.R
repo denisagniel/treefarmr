@@ -84,6 +84,27 @@ test_that("as_coordinate_tree rejects models with no continuous covariates", {
   expect_error(as_coordinate_tree(fit_bin, Xb, yb), "nothing (for|to) (S|s)tage B")
 })
 
+test_that("build_coord_node's non-continuous-column abort carries the retriable binary-split class (Milestone E sub-step E0b)", {
+  # A caller escalating grid resolution (fit_twostage()'s m-ladder) needs to
+  # distinguish "the solver split on a binary column -- a different m will
+  # not help" from an ordinary R error. See the plan file's Milestone E
+  # addendum, Q5.4. Needs a MIXED binary/continuous design where the split
+  # actually lands on the binary column -- an all-binary X instead hits
+  # bin_lookup()'s own (unclassed, different) "all features are binary"
+  # abort before build_coord_node() is ever reached.
+  set.seed(20260901)
+  n <- 300
+  x_bin <- rbinom(n, 1, 0.5)
+  x_cont <- runif(n)
+  y <- ifelse(x_bin == 1, 10, 0) + rnorm(n, sd = 0.01)
+  X <- data.frame(x_bin = x_bin, x_cont = x_cont)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.1,
+                   max_depth = 1L, discretize_bins = 4L)
+
+  err <- tryCatch(as_coordinate_tree(fit, X, y), error = function(e) e)
+  expect_true(inherits(err, "optimaltrees_stage_b_binary_split"))
+})
+
 test_that("as_coordinate_tree rejects X that doesn't reconcile with the model's discretization", {
   set.seed(20260901)
   n <- 300
@@ -283,6 +304,35 @@ test_that("collapse_transitions aborts loudly on a chained (three-way) collapse"
   expect_error(collapse_transitions(fixture_chained), "chained")
 })
 
+test_that("collapse_transitions's chained-collapse abort carries the retriable class, not the degenerate-split one (Milestone E sub-step E0b)", {
+  fixture_chained <- mk_split(
+    id = 1L, "Xc", k_lo = 5L, cut = 0.5,
+    left  = mk_leaf(2L),
+    right = mk_split(3L, "Xc", k_lo = 6L, cut = 0.6,
+                      left  = mk_split(4L, "Xc", k_lo = 7L, cut = 0.55,
+                                        left = mk_leaf(5L), right = mk_leaf(6L)),
+                      right = mk_leaf(7L))
+  )
+  err <- tryCatch(collapse_transitions(fixture_chained), error = function(e) e)
+  expect_true(inherits(err, "optimaltrees_collapse_unsupported"))
+})
+
+test_that("collapse_transitions's degenerate-split abort is NOT the retriable class (a real bug, not a refusal)", {
+  # The counterpart to the two tests above: a fit_twostage()-style caller
+  # that catches only "optimaltrees_collapse_unsupported" must NOT
+  # accidentally swallow this one and silently retry at a different m --
+  # it indicates a bin_lookup()/branch-orientation bug, not an ordinary
+  # transition-leaf refusal.
+  fixture_degenerate <- mk_split(
+    id = 1L, "Xc", k_lo = 6L, cut = 0.6,
+    left  = mk_leaf(2L),
+    right = mk_split(3L, "Xc", k_lo = 5L, cut = 0.5,
+                      left = mk_leaf(4L), right = mk_leaf(5L))
+  )
+  err <- tryCatch(collapse_transitions(fixture_degenerate), error = function(e) e)
+  expect_false(inherits(err, "optimaltrees_collapse_unsupported"))
+})
+
 test_that("collapse_transitions's structural max_iter bound is generous by default but errors when artificially starved", {
   fixture <- mk_split(
     id = 1L, "Xc", k_lo = 5L, cut = 0.5,
@@ -339,6 +389,18 @@ test_that("collapse_transitions() errors on a real fit where the transition band
                    discretize_bins = 16L, max_depth = 3L)
   ct <- as_coordinate_tree(fit, X, y)
   expect_error(collapse_transitions(ct), "genuine further(\\s|\\n)+split|chained")
+})
+
+test_that("the cross-coordinate sandwiched-split abort also carries the retriable class (Milestone E sub-step E0b)", {
+  set.seed(20260901)
+  n <- 500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 16L, max_depth = 3L)
+  ct <- as_coordinate_tree(fit, X, y)
+  err <- tryCatch(collapse_transitions(ct), error = function(e) e)
+  expect_true(inherits(err, "optimaltrees_collapse_unsupported"))
 })
 
 # ---------------------------------------------------------------------------

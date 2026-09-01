@@ -284,11 +284,41 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   otherwise fire for such a `max_depth`. Ignored (and an error) if
 #'   `max_depth` is left `NULL`, since there is then nothing to declare a
 #'   restriction of.
+#' @param fit_time_limit `NULL` (default, no per-fit cap) or a positive
+#'   number of seconds. Passed as `time_limit` to every internal [fit_tree()]
+#'   call (see the C++ solver's `Configuration::time_limit`: the
+#'   branch-and-bound loop checks it directly and returns its current best
+#'   INCUMBENT tree when exceeded, rather than nothing -- there is no
+#'   `R_CheckUserInterrupt()` anywhere in this package's C++ source, so a
+#'   fit already in flight cannot otherwise be stopped from R). A capped fit
+#'   may not be the certified global optimum; check `any_truncated` in the
+#'   return value. \strong{Never omitted once set here}: `Configuration` is
+#'   PROCESS-GLOBAL, so every fit -- including ones with `time_limit`
+#'   unset -- silently inherits whatever value the previous `fit_tree()`
+#'   call anywhere in this R session last configured (confirmed
+#'   empirically, 2026-09-01). This function therefore always passes
+#'   `time_limit` explicitly (`0L`, meaning unlimited, when both this and
+#'   `deadline` are `NULL`), and callers must never pass `time_limit`
+#'   through `...` -- doing so errors, since two conflicting values would
+#'   both land in the same JSON config field.
+#' @param deadline `NULL` (default) or a `POSIXct` absolute time. Layer 2 of
+#'   a wall-clock budget spanning potentially many internal fits (bisection
+#'   can call [fit_tree()] up to `2 * tol_iter + 1` times): before EACH
+#'   fit, if `Sys.time()` has already passed `deadline`, this function
+#'   aborts (class `"optimaltrees_deadline_exceeded"`) rather than starting
+#'   another fit it cannot afford to finish. When both `deadline` and
+#'   `fit_time_limit` are set, each fit's own `time_limit` is
+#'   `min(fit_time_limit, time remaining until deadline)`, so the very last
+#'   fit that fits inside the deadline is not itself allowed to overrun it.
 #' @param ... Additional arguments passed to [fit_tree()]. Since `max_depth`
 #'   is a named formal argument above (not left to `...`), passing
 #'   `max_depth = ` here is impossible in practice -- R's own argument
 #'   matching always binds it to the formal parameter first, even when
-#'   forwarded through an intermediate wrapper's `...`.
+#'   forwarded through an intermediate wrapper's `...`. The same is true of
+#'   `time_limit`, but that one IS possible to smuggle through `...` (it is
+#'   not a formal here), so it is checked and rejected explicitly instead --
+#'   see `fit_time_limit`'s roxygen for why this function must own that
+#'   argument unconditionally.
 #'
 #' @return A list:
 #'   \item{fit}{The fitted `OptimalTreesModel`.}
@@ -316,6 +346,21 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   \item{depth_sufficient}{`TRUE` iff `max_depth >= depth_required`, i.e.
 #'     the search was NOT depth-restricted below full compliance.}
 #'   \item{depth_restricted}{Echoes the `depth_restricted` argument.}
+#'   \item{n_fits}{Total number of internal [fit_tree()] calls made across
+#'     the whole `bisect_lambda_to_budget()` call (case (ii): `1L`;
+#'     otherwise `2L` or more).}
+#'   \item{any_truncated}{`TRUE` iff ANY of those fits hit `fit_time_limit`
+#'     (or the time remaining until `deadline`) before the branch-and-bound
+#'     search converged (solver status `1`, per `treefarms_status_cpp()`).
+#'     A truncated fit's incumbent is not proven optimal, which breaks the
+#'     monotone-leaf-count premise `certified` relies on for that
+#'     particular fit -- callers building on this function (e.g.
+#'     `fit_twostage()`'s ladder) should treat `any_truncated = TRUE` as
+#'     its own failure mode, distinct from `certified = FALSE`, not paper
+#'     over it.}
+#'   \item{fit_log}{Data.frame, one row per internal fit, in call order:
+#'     `lambda`, `secs` (wall-clock time for that fit), `solver_status`
+#'     (`0` converged, `1` truncated).}
 #'
 #' @export
 bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
@@ -325,12 +370,27 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
                                      hi_init = max(2 * lambda_n, 0.01),
                                      hi_growth = 4, tol_iter = 40,
                                      max_depth = NULL, depth_restricted = FALSE,
+                                     fit_time_limit = NULL, deadline = NULL,
                                      ...) {
   if (!is.numeric(leaf_budget) || length(leaf_budget) != 1 || leaf_budget < 1) {
     stop("bisect_lambda_to_budget: `leaf_budget` must be a positive integer.",
          call. = FALSE)
   }
   leaf_budget <- as.integer(leaf_budget)
+
+  # `time_limit` must never arrive via `...`: this function has to control
+  # it unconditionally on every internal fit (see `fit_time_limit`'s
+  # roxygen -- Configuration is process-global, so it cannot be left
+  # unset either), and a caller-supplied `time_limit` in `...` would land
+  # in the SAME fit_tree() call alongside this function's own, producing
+  # two conflicting values for one JSON config field with no defined
+  # winner.
+  if ("time_limit" %in% names(list(...))) {
+    stop("bisect_lambda_to_budget: pass a wall-clock budget via ",
+         "`fit_time_limit` and/or `deadline`, not `time_limit` through ",
+         "`...` -- this function must own `time_limit` on every internal ",
+         "fit_tree() call.", call. = FALSE)
+  }
 
   # Two distinct depth thresholds -- never conflate them (2026-09-01 Oracle
   # consult, quality_reports/plans/2026-09-01_two-stage-package-defaults-
@@ -445,12 +505,53 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
     out$depth_required <- depth_required
     out$depth_sufficient <- depth_sufficient
     out$depth_restricted <- isTRUE(depth_restricted)
+    out$n_fits <- length(fit_status)
+    out$any_truncated <- any(fit_status != 0L)
+    out$fit_log <- data.frame(lambda = fit_lambdas, secs = fit_secs,
+                               solver_status = fit_status)
     out
   }
 
+  # Wall-clock-guard bookkeeping (2026-09-01, Milestone E sub-step E0):
+  # one row accumulates per internal fit_tree() call, across the whole
+  # bisection, for `fit_log`/`any_truncated`/`n_fits` above.
+  fit_status  <- integer(0)
+  fit_lambdas <- numeric(0)
+  fit_secs    <- numeric(0)
+
   fit_and_check <- function(lambda) {
+    # Layer 2 of the wall-clock guard (fit_time_limit/deadline roxygen):
+    # nothing can interrupt a fit already in flight -- zero
+    # R_CheckUserInterrupt() calls anywhere in optimaltrees/src/ (confirmed
+    # 2026-09-01) -- so refusing to START one we cannot afford is the only
+    # enforcement point available at this layer. This check runs before
+    # EVERY fit, including the very first (`fit_and_check(lambda_n)` below).
+    tl <- 0L
+    if (!is.null(deadline)) {
+      remaining <- as.numeric(difftime(deadline, Sys.time(), units = "secs"))
+      if (remaining <= 0) {
+        cli::cli_abort(
+          "bisect_lambda_to_budget: deadline exceeded after {length(fit_status)} fit(s); refusing to start another fit.",
+          class = "optimaltrees_deadline_exceeded"
+        )
+      }
+      tl <- max(1L, as.integer(floor(min(fit_time_limit %||% Inf, remaining))))
+    } else if (!is.null(fit_time_limit)) {
+      tl <- max(1L, as.integer(fit_time_limit))
+    }
+
+    t0 <- Sys.time()
+    # ALWAYS pass time_limit explicitly, including the unlimited value 0L --
+    # see fit_time_limit's roxygen for why omitting it is unsafe (the C++
+    # solver's Configuration is process-global and would otherwise inherit
+    # whatever a PRIOR, unrelated fit_tree() call in this session last set).
     fit <- fit_tree(X, y, loss_function = loss_function,
-                     regularization = lambda, max_depth = max_depth, ...)
+                     regularization = lambda, max_depth = max_depth,
+                     time_limit = tl, ...)
+    fit_status  <<- c(fit_status, treefarms_status_cpp())
+    fit_lambdas <<- c(fit_lambdas, lambda)
+    fit_secs    <<- c(fit_secs, as.numeric(difftime(Sys.time(), t0, units = "secs")))
+
     n_leaves <- count_tree_leaves(fit)
     # check_leaf_feasibility()/assign_leaf_ids() map the fitted tree's split
     # feature indices onto whatever X they are given directly, which only

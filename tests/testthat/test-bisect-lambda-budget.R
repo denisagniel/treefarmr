@@ -226,6 +226,99 @@ test_that("bisect_lambda_to_budget's continuous-covariate path is exercised acro
   expect_true(res$feasible)
 })
 
+# ---------------------------------------------------------------------------
+# Wall-clock guard (2026-09-01, Milestone E sub-step E0). fit_time_limit and
+# deadline are additive/backward-compatible: every test above this section
+# passes unchanged with both left NULL. See
+# quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md
+# Milestone E addendum for the full design (Oracle-consulted) and why the
+# guard has to be threaded INTO this function rather than wrapped around it
+# (nothing in optimaltrees/src/ calls R_CheckUserInterrupt(), so a fit
+# already in flight cannot be stopped from R -- refusing to START one we
+# cannot afford is the only enforcement point available between fits).
+# ---------------------------------------------------------------------------
+
+test_that("a deadline already in the past aborts before any fit is attempted", {
+  set.seed(20260901)
+  n <- 300
+  X <- data.frame(x1 = rbinom(n, 1, 0.5), x2 = rbinom(n, 1, 0.5))
+  y <- rbinom(n, 1, plogis(3 * (X$x1 - 0.5)))
+
+  err <- tryCatch({
+    bisect_lambda_to_budget(X, y, leaf_budget = 4, loss_function = "log_loss",
+                             deadline = Sys.time() - 1)
+    NULL
+  }, error = function(e) e)
+
+  expect_true(inherits(err, "optimaltrees_deadline_exceeded"))
+  expect_match(conditionMessage(err), "deadline exceeded")
+})
+
+test_that("time_limit cannot be smuggled through ... -- it must go through fit_time_limit/deadline", {
+  set.seed(20260901)
+  n <- 200
+  X <- data.frame(x1 = rbinom(n, 1, 0.5))
+  y <- rbinom(n, 1, 0.5)
+
+  expect_error(
+    bisect_lambda_to_budget(X, y, leaf_budget = 1, time_limit = 30),
+    "fit_time_limit"
+  )
+})
+
+test_that("fit_time_limit/deadline present but never binding leaves results unchanged", {
+  # A generous fit_time_limit on a trivial, fast fit must not truncate or
+  # otherwise alter the result -- confirms the new machinery is a pure
+  # addition with no behavior change absent an actual overrun.
+  set.seed(20260901)
+  n <- 300
+  X <- data.frame(x1 = rbinom(n, 1, 0.5), x2 = rbinom(n, 1, 0.5))
+  y <- rbinom(n, 1, plogis(3 * (X$x1 - 0.5)))
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, loss_function = "log_loss",
+                                  fit_time_limit = 300,
+                                  deadline = Sys.time() + 300)
+  expect_equal(res$max_depth, 3L)
+  expect_true(res$n_leaves <= 4L)
+  expect_false(res$any_truncated)
+})
+
+test_that("fit_log/n_fits/any_truncated are populated and consistent, case (ii) (no search)", {
+  set.seed(20260901)
+  n <- 300
+  X <- data.frame(x1 = rbinom(n, 1, 0.5), x2 = rbinom(n, 1, 0.5))
+  y <- rbinom(n, 1, plogis(3 * (X$x1 - 0.5)))
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, loss_function = "log_loss")
+  expect_false(res$used_search)
+  expect_equal(res$n_fits, 1L)
+  expect_false(res$any_truncated)
+  expect_s3_class(res$fit_log, "data.frame")
+  expect_equal(nrow(res$fit_log), 1L)
+  expect_setequal(names(res$fit_log), c("lambda", "secs", "solver_status"))
+  expect_equal(res$fit_log$lambda[[1]], 0.1)   # bisect_lambda_to_budget's default lambda_n
+  expect_true(res$fit_log$secs[[1]] >= 0)
+  expect_equal(res$fit_log$solver_status[[1]], 0L)
+})
+
+test_that("fit_log/n_fits track every fit across a real bisection, case (iii)/search", {
+  # Same 3-way parity DGP as the pre-existing bisection test above: forces
+  # used_search = TRUE, so fit_log must have more than one row, one per
+  # fit_and_check() call actually made.
+  set.seed(20260901)
+  n <- 400
+  x1 <- rbinom(n, 1, 0.5); x2 <- rbinom(n, 1, 0.5); x3 <- rbinom(n, 1, 0.5)
+  X <- data.frame(x1 = x1, x2 = x2, x3 = x3)
+  y <- as.integer(xor(xor(x1, x2), x3))
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, lambda_n = 1e-6,
+                                  loss_function = "log_loss")
+  expect_true(res$used_search)
+  expect_gt(res$n_fits, 1L)
+  expect_equal(nrow(res$fit_log), res$n_fits)
+  expect_false(res$any_truncated)
+})
+
 test_that("bisect_lambda_to_budget accepts a matrix X with continuous covariates", {
   set.seed(20260901)
   n <- 300

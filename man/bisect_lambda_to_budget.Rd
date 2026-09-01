@@ -19,6 +19,8 @@ bisect_lambda_to_budget(
   tol_iter = 40,
   max_depth = NULL,
   depth_restricted = FALSE,
+  fit_time_limit = NULL,
+  deadline = NULL,
   ...
 )
 }
@@ -89,11 +91,43 @@ otherwise fire for such a `max_depth`. Ignored (and an error) if
 `max_depth` is left `NULL`, since there is then nothing to declare a
 restriction of.}
 
+\item{fit_time_limit}{`NULL` (default, no per-fit cap) or a positive
+number of seconds. Passed as `time_limit` to every internal [fit_tree()]
+call (see the C++ solver's `Configuration::time_limit`: the
+branch-and-bound loop checks it directly and returns its current best
+INCUMBENT tree when exceeded, rather than nothing -- there is no
+`R_CheckUserInterrupt()` anywhere in this package's C++ source, so a
+fit already in flight cannot otherwise be stopped from R). A capped fit
+may not be the certified global optimum; check `any_truncated` in the
+return value. \strong{Never omitted once set here}: `Configuration` is
+PROCESS-GLOBAL, so every fit -- including ones with `time_limit`
+unset -- silently inherits whatever value the previous `fit_tree()`
+call anywhere in this R session last configured (confirmed
+empirically, 2026-09-01). This function therefore always passes
+`time_limit` explicitly (`0L`, meaning unlimited, when both this and
+`deadline` are `NULL`), and callers must never pass `time_limit`
+through `...` -- doing so errors, since two conflicting values would
+both land in the same JSON config field.}
+
+\item{deadline}{`NULL` (default) or a `POSIXct` absolute time. Layer 2 of
+a wall-clock budget spanning potentially many internal fits (bisection
+can call [fit_tree()] up to `2 * tol_iter + 1` times): before EACH
+fit, if `Sys.time()` has already passed `deadline`, this function
+aborts (class `"optimaltrees_deadline_exceeded"`) rather than starting
+another fit it cannot afford to finish. When both `deadline` and
+`fit_time_limit` are set, each fit's own `time_limit` is
+`min(fit_time_limit, time remaining until deadline)`, so the very last
+fit that fits inside the deadline is not itself allowed to overrun it.}
+
 \item{...}{Additional arguments passed to [fit_tree()]. Since `max_depth`
 is a named formal argument above (not left to `...`), passing
 `max_depth = ` here is impossible in practice -- R's own argument
 matching always binds it to the formal parameter first, even when
-forwarded through an intermediate wrapper's `...`.}
+forwarded through an intermediate wrapper's `...`. The same is true of
+`time_limit`, but that one IS possible to smuggle through `...` (it is
+not a formal here), so it is checked and rejected explicitly instead --
+see `fit_time_limit`'s roxygen for why this function must own that
+argument unconditionally.}
 }
 \value{
 A list:
@@ -122,6 +156,21 @@ A list:
   \item{depth_sufficient}{`TRUE` iff `max_depth >= depth_required`, i.e.
     the search was NOT depth-restricted below full compliance.}
   \item{depth_restricted}{Echoes the `depth_restricted` argument.}
+  \item{n_fits}{Total number of internal [fit_tree()] calls made across
+    the whole `bisect_lambda_to_budget()` call (case (ii): `1L`;
+    otherwise `2L` or more).}
+  \item{any_truncated}{`TRUE` iff ANY of those fits hit `fit_time_limit`
+    (or the time remaining until `deadline`) before the branch-and-bound
+    search converged (solver status `1`, per `treefarms_status_cpp()`).
+    A truncated fit's incumbent is not proven optimal, which breaks the
+    monotone-leaf-count premise `certified` relies on for that
+    particular fit -- callers building on this function (e.g.
+    `fit_twostage()`'s ladder) should treat `any_truncated = TRUE` as
+    its own failure mode, distinct from `certified = FALSE`, not paper
+    over it.}
+  \item{fit_log}{Data.frame, one row per internal fit, in call order:
+    `lambda`, `secs` (wall-clock time for that fit), `solver_status`
+    (`0` converged, `1` truncated).}
 }
 \description{
 Recovers the leaf-budget-constrained selector

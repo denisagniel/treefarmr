@@ -188,7 +188,17 @@ build_coord_node <- function(node, lk, md) {
     coord <- lk$coord[[j]]
     k     <- lk$k[[j]]
     if (is.na(k)) {
-      cli::cli_abort("build_coord_node: split lands on a non-continuous column ('{coord}'); nothing to refine.")
+      # Classed (2026-09-01, Milestone E): a caller orchestrating a search
+      # over multiple discretization resolutions (fit_twostage()'s m-ladder)
+      # needs to distinguish "the solver picked a binary-passthrough column
+      # to split on -- a different m will not help, since the column is
+      # binary regardless of resolution" from an ordinary R error. Escalate
+      # at most once on this class, then stop (Oracle consult, plan file's
+      # Milestone E addendum, Q5.4) -- not a retriable-forever condition.
+      cli::cli_abort(
+        "build_coord_node: split lands on a non-continuous column ('{coord}'); nothing to refine.",
+        class = "optimaltrees_stage_b_binary_split"
+      )
     }
     cut <- md$features[[coord]]$thresholds[[k]]
 
@@ -561,7 +571,13 @@ collapse_transitions <- function(tree, max_iter = NULL) {
                    it feeds were not derived for. Handling it silently \\
                    would be an unproven claim; this error is the honest \\
                    alternative until it is."
-          ))
+          # Classed (2026-09-01, Milestone E): this is the "ordinary case, a
+          # different grid resolution may resolve it" refusal (Oracle
+          # consult, plan file's Milestone E addendum, sub-step E0b) --
+          # distinct from the degenerate-split aborts below, which indicate
+          # a genuine bin_lookup()/branch-orientation BUG and must NOT be
+          # silently retried by a caller escalating m.
+          ), class = "optimaltrees_collapse_unsupported")
         }
         k_parent <- P$k_lo; k_child <- C$k_lo
         d <- k_child - k_parent
@@ -613,7 +629,9 @@ collapse_transitions <- function(tree, max_iter = NULL) {
                expected outcome once more than one coordinate carries \\
                signal and depth exceeds 2, not a bug report."
             }
-          ))
+          # Classed (2026-09-01, Milestone E): same retriable-refusal class
+          # as the adjacency abort above -- see that comment.
+          ), class = "optimaltrees_collapse_unsupported")
         }
 
         k_lo <- min(k_parent, k_child); k_hi <- max(k_parent, k_child)
