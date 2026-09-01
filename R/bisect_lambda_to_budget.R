@@ -349,18 +349,41 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   \item{n_fits}{Total number of internal [fit_tree()] calls made across
 #'     the whole `bisect_lambda_to_budget()` call (case (ii): `1L`;
 #'     otherwise `2L` or more).}
-#'   \item{any_truncated}{`TRUE` iff ANY of those fits hit `fit_time_limit`
-#'     (or the time remaining until `deadline`) before the branch-and-bound
-#'     search converged (solver status `1`, per `treefarms_status_cpp()`).
-#'     A truncated fit's incumbent is not proven optimal, which breaks the
-#'     monotone-leaf-count premise `certified` relies on for that
-#'     particular fit -- callers building on this function (e.g.
+#'   \item{any_truncated}{`TRUE` iff ANY internal fit hit its actual
+#'     `time_limit` before the branch-and-bound search converged --
+#'     derived from comparing the SOLVER's own internal timer against the
+#'     `time_limit` requested for that specific fit, NOT from solver
+#'     status. \strong{This is a corrected definition, 2026-09-01}: the raw
+#'     `GOSDT::status` field (`treefarms_status_cpp()`) is NOT a timeout
+#'     signal -- confirmed by reading `src/optimizer.cpp` directly and by
+#'     direct experiment: `status = 1` fires whenever the reported
+#'     objective-boundary gap has not closed to EXACTLY zero when the
+#'     search's queue empties, which happens ROUTINELY on ordinary, fast,
+#'     fully-unconstrained multi-leaf fits (observed: `status = 1` on a
+#'     0.46-second squared_error fit with no `time_limit` at all), for
+#'     reasons having nothing to do with time. A genuine timeout instead
+#'     reports the solver's internal elapsed time essentially exactly at
+#'     the requested limit (observed: `time_limit = 2` truncation reports
+#'     `2.001` seconds). A truncated fit's incumbent is not proven optimal,
+#'     which breaks the monotone-leaf-count premise `certified` relies on
+#'     for that particular fit -- callers building on this function (e.g.
 #'     `fit_twostage()`'s ladder) should treat `any_truncated = TRUE` as
 #'     its own failure mode, distinct from `certified = FALSE`, not paper
 #'     over it.}
 #'   \item{fit_log}{Data.frame, one row per internal fit, in call order:
-#'     `lambda`, `secs` (wall-clock time for that fit), `solver_status`
-#'     (`0` converged, `1` truncated).}
+#'     `lambda`, `secs` (R-side wall-clock time for that fit, includes
+#'     data-marshalling overhead), `solver_status` (raw `GOSDT::status` --
+#'     `0` iff the reported optimality gap closed to exactly zero; `1`
+#'     otherwise, for reasons that may or may not be time-related, see
+#'     `any_truncated` above -- a genuinely informative optimality-gap
+#'     diagnostic in its own right, just not this function's truncation
+#'     signal), `solver_time` (the solver's own internal timer,
+#'     `treefarms_status_cpp()`'s sibling `treefarms_time_cpp()` -- more
+#'     precise than `secs` for comparing against `time_limit_requested`),
+#'     `time_limit_requested` (the actual per-fit `time_limit` this
+#'     function passed to [fit_tree()] for that row -- `0L` means
+#'     unlimited was requested for that specific fit), `truncated`
+#'     (logical, this row's contribution to `any_truncated`).}
 #'
 #' @export
 bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
@@ -506,18 +529,24 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
     out$depth_sufficient <- depth_sufficient
     out$depth_restricted <- isTRUE(depth_restricted)
     out$n_fits <- length(fit_status)
-    out$any_truncated <- any(fit_status != 0L)
+    out$any_truncated <- any(fit_truncated)
     out$fit_log <- data.frame(lambda = fit_lambdas, secs = fit_secs,
-                               solver_status = fit_status)
+                               solver_status = fit_status,
+                               solver_time = fit_solver_time,
+                               time_limit_requested = fit_tl,
+                               truncated = fit_truncated)
     out
   }
 
   # Wall-clock-guard bookkeeping (2026-09-01, Milestone E sub-step E0):
   # one row accumulates per internal fit_tree() call, across the whole
   # bisection, for `fit_log`/`any_truncated`/`n_fits` above.
-  fit_status  <- integer(0)
-  fit_lambdas <- numeric(0)
-  fit_secs    <- numeric(0)
+  fit_status      <- integer(0)
+  fit_lambdas     <- numeric(0)
+  fit_secs        <- numeric(0)
+  fit_solver_time <- numeric(0)
+  fit_tl          <- integer(0)
+  fit_truncated   <- logical(0)
 
   fit_and_check <- function(lambda) {
     # Layer 2 of the wall-clock guard (fit_time_limit/deadline roxygen):
@@ -548,9 +577,33 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
     fit <- fit_tree(X, y, loss_function = loss_function,
                      regularization = lambda, max_depth = max_depth,
                      time_limit = tl, ...)
-    fit_status  <<- c(fit_status, treefarms_status_cpp())
-    fit_lambdas <<- c(fit_lambdas, lambda)
-    fit_secs    <<- c(fit_secs, as.numeric(difftime(Sys.time(), t0, units = "secs")))
+    # solver_status (GOSDT::status, from the C++ backend) is NOT a timeout
+    # signal, despite the initial design assumption -- confirmed directly by
+    # reading src/optimizer.cpp: `complete()` is purely `uncertainty() == 0`
+    # (the reported objective-boundary gap closing to EXACTLY zero) and the
+    # search loop exits on `!complete() || timeout() || queue.size() == 0`;
+    # an emptied queue with a nonzero recorded gap sets status = 1 for
+    # reasons having NOTHING to do with time_limit. Verified empirically,
+    # 2026-09-01: an ordinary, fast (0.46s), fully-unconstrained
+    # squared_error fit reports solver_status = 1 (verbose output logs
+    # "Optimal Solution Search Complete" and a nonzero "Optimality Gap" in
+    # the SAME breath), while a genuine time_limit = 2 truncation reports
+    # solver_time = 2.001 -- essentially exactly at the requested limit.
+    # `truncated` below is therefore derived from comparing the SOLVER's
+    # OWN internal timer against the limit ACTUALLY requested for this
+    # fit, not from solver_status; solver_status is kept in `fit_log` as a
+    # separate, genuinely informative optimality-gap diagnostic, not this
+    # field's signal.
+    solver_status <- treefarms_status_cpp()
+    solver_time   <- treefarms_time_cpp()
+    truncated     <- tl > 0L && solver_time >= (tl - 0.5)
+
+    fit_status      <<- c(fit_status, solver_status)
+    fit_lambdas     <<- c(fit_lambdas, lambda)
+    fit_secs        <<- c(fit_secs, as.numeric(difftime(Sys.time(), t0, units = "secs")))
+    fit_solver_time <<- c(fit_solver_time, solver_time)
+    fit_tl          <<- c(fit_tl, tl)
+    fit_truncated   <<- c(fit_truncated, truncated)
 
     n_leaves <- count_tree_leaves(fit)
     # check_leaf_feasibility()/assign_leaf_ids() map the fitted tree's split

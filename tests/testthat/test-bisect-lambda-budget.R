@@ -295,10 +295,14 @@ test_that("fit_log/n_fits/any_truncated are populated and consistent, case (ii) 
   expect_false(res$any_truncated)
   expect_s3_class(res$fit_log, "data.frame")
   expect_equal(nrow(res$fit_log), 1L)
-  expect_setequal(names(res$fit_log), c("lambda", "secs", "solver_status"))
+  expect_setequal(names(res$fit_log),
+                   c("lambda", "secs", "solver_status", "solver_time",
+                     "time_limit_requested", "truncated"))
   expect_equal(res$fit_log$lambda[[1]], 0.1)   # bisect_lambda_to_budget's default lambda_n
   expect_true(res$fit_log$secs[[1]] >= 0)
   expect_equal(res$fit_log$solver_status[[1]], 0L)
+  expect_equal(res$fit_log$time_limit_requested[[1]], 0L)   # no fit_time_limit/deadline set
+  expect_false(res$fit_log$truncated[[1]])
 })
 
 test_that("fit_log/n_fits track every fit across a real bisection, case (iii)/search", {
@@ -317,6 +321,62 @@ test_that("fit_log/n_fits track every fit across a real bisection, case (iii)/se
   expect_gt(res$n_fits, 1L)
   expect_equal(nrow(res$fit_log), res$n_fits)
   expect_false(res$any_truncated)
+})
+
+# ---------------------------------------------------------------------------
+# Regression tests for a REAL bug caught while writing this milestone's own
+# tests (2026-09-01): `any_truncated` was originally defined from raw
+# `solver_status` alone (GOSDT::status != 0). Confirmed by reading
+# src/optimizer.cpp directly AND by direct experiment that this is WRONG --
+# `status = 1` fires whenever the branch-and-bound's queue empties with a
+# nonzero recorded objective-boundary gap, which happens ROUTINELY on
+# ordinary, fast, fully-unconstrained multi-leaf fits (observed:
+# `status = 1` on a 0.46s squared_error fit with NO time_limit at all),
+# for reasons having nothing to do with time. Fixed by comparing the
+# solver's own internal timer against the time_limit actually requested for
+# that fit, instead. Both directions covered below: an ordinary fit must
+# NOT be flagged truncated even when solver_status happens to be 1, and a
+# genuine timeout MUST be flagged even though solver_status is
+# indistinguishable from the ordinary case by itself.
+# ---------------------------------------------------------------------------
+
+test_that("any_truncated is FALSE on an ordinary fast fit even when solver_status is 1 (the routine non-zero-gap case)", {
+  set.seed(4)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                  loss_function = "squared_error",
+                                  max_depth = 4L, discretize_bins = 8L,
+                                  fit_time_limit = 300)
+  # This exact DGP/config is confirmed (2026-09-01) to report
+  # solver_status = 1 on every fit here -- the whole point of this test is
+  # that any_truncated must NOT follow solver_status directly.
+  expect_true(any(res$fit_log$solver_status != 0L))
+  expect_false(res$any_truncated)
+  expect_true(all(res$fit_log$solver_time < 300 * 0.5))   # nowhere near the limit
+})
+
+test_that("any_truncated is TRUE on a genuine time_limit truncation", {
+  # A deliberately slow, high-dimensional misclassification search
+  # (unconstrained lambda, moderate depth) with a tight fit_time_limit --
+  # confirmed directly (2026-09-01) to reproducibly truncate at ~1s.
+  set.seed(2)
+  n <- 2000
+  X <- data.frame(matrix(rbinom(n * 30, 1, 0.5), nrow = n))
+  y <- rbinom(n, 1, 0.5)
+
+  res <- suppressWarnings(
+    bisect_lambda_to_budget(X, y, leaf_budget = 2, max_depth = 6L,
+                             depth_restricted = TRUE,
+                             loss_function = "misclassification",
+                             lambda_n = 0.001, fit_time_limit = 1L)
+  )
+  expect_true(res$any_truncated)
+  expect_true(any(res$fit_log$truncated))
+  expect_true(all(res$fit_log$time_limit_requested[res$fit_log$truncated] == 1L))
+  expect_true(all(res$fit_log$solver_time[res$fit_log$truncated] >= 0.5))
 })
 
 test_that("bisect_lambda_to_budget accepts a matrix X with continuous covariates", {

@@ -212,3 +212,216 @@ NULL
 
   list(m_ladder = kept, dropped_rungs = dropped_rungs, m_max_supported = m_max_supported)
 }
+
+# ---------------------------------------------------------------------------
+# Sub-step E2: single-rung runner + group-aware refined-feasibility check.
+# Everything below computes facts about ONE m-ladder rung in isolation --
+# Stage A, Stage B, the refined-leaf floor re-check, and the local
+# certificate. Cross-rung comparison (compare_topology() against the
+# PREVIOUS rung), the ladder's stop conditions, and final result assembly
+# (which rung's model wins, certified/certified_full_class) are E3's job,
+# not this one's -- they need state spanning multiple rungs, which this
+# function deliberately does not carry.
+# ---------------------------------------------------------------------------
+
+#' Refined-tree leaf-size feasibility, group-aware (Oracle consult, Q5.3)
+#'
+#' @description
+#' `bisect_lambda_to_budget()`'s own `feasible` field describes the STAGE-A
+#' tree against the discretized design -- it says nothing about the
+#' RETURNED (refined) tree, because Stage B moves cuts and therefore changes
+#' leaf membership and leaf sizes. Reusing Stage A's `feasible` for a field
+#' describing the object `fit_twostage()` actually returns would be a lie.
+#'
+#' This closes a second, independent gap Oracle's consult flagged as
+#' previously unflagged anywhere in the plan: [refine_tree_cuts()]'s
+#' `min_leaf_n` floor has NO `group`/`m_n_group` awareness at all -- only
+#' the total floor is enforced during refinement. For `doubletree`'s
+#' propensity-tree use case (the entire reason the group floor exists --
+#' see [check_leaf_feasibility()]), refinement can therefore genuinely
+#' break the group floor even when the total floor holds. This function
+#' re-derives leaf assignments from the REFINED tree and checks both floors
+#' directly, rather than trusting any upstream field.
+#'
+#' @param refined A [RefinedTreeModel].
+#' @param X Data.frame or matrix with the coordinates `refined` splits on.
+#' @param group,group_value,m_n,m_n_group Same semantics as
+#'   [check_leaf_feasibility()]/[bisect_lambda_to_budget()].
+#' @return A single logical.
+#' @keywords internal
+.refined_leaf_floor_ok <- function(refined, X, group, group_value, m_n, m_n_group) {
+  ids <- leaf_assignments(refined, X)
+  n_tab <- table(ids)
+  ok <- all(n_tab >= m_n)
+  if (!is.null(group)) {
+    g <- table(factor(ids[group == group_value], levels = names(n_tab)))
+    ok <- ok && all(as.integer(g) >= m_n_group)
+  }
+  ok
+}
+
+#' Run one `m`-ladder rung: Stage A -> Stage B -> feasibility -> certificate
+#'
+#' @description
+#' Computes everything `fit_twostage()`'s ladder needs about a SINGLE grid
+#' resolution `m`, in isolation from every other rung. Never throws for the
+#' two ORDINARY refusal outcomes this composition can hit (a
+#' `collapse_transitions()` refusal, or a Stage-A deadline exhaustion) --
+#' both are reported via `status`/`reason`, since a caller escalating the
+#' ladder needs to distinguish them from a genuine bug (an unclassed error
+#' still propagates normally, on purpose: see the classed-condition design
+#' in `collapse_transitions()`/`build_coord_node()`, sub-step E0b).
+#'
+#' `max_leaves` is deliberately `NULL` on the [refine_tree()] call (never
+#' `L_A`) -- Stage A has no native leaf-count cap (`bisect_lambda_to_budget()`
+#' exists precisely because one was rejected on cache-fragmentation grounds),
+#' so `L_A` is a target hit by tuning lambda, not a class boundary. Capping
+#' `max_leaves` here would silently let [certify_local_optimality()]'s
+#' `add` perturbation ignore a genuinely objective-improving split that WAS
+#' in Stage A's search space and lost on the penalized objective -- double-
+#' counting what lambda already prices in (Oracle consult, Q5.1).
+#'
+#' The local certificate is evaluated TWICE: once at the fit's own
+#' (possibly bisected) `lambda` -- this is what gates `certified` -- and
+#' once at the analyst's declared `lambda_n`, reported only. `refine_tree()`
+#' records `lambda = res_A$fit@regularization`, which in case (i) (bisection
+#' raised lambda above `lambda_n`) is LARGER than `lambda_n`, making
+#' `certified` at that lambda a WEAKER claim than at `lambda_n` (harder for
+#' a perturbation to look improving against a bigger per-leaf penalty) --
+#' an honest artifact of certifying the objective Stage A actually
+#' minimized, invisible unless both are reported (Oracle consult, Q5.2).
+#'
+#' @param X,y Training data.
+#' @param m Grid resolution (`discretize_bins`) for this rung.
+#' @param leaf_budget The ANALYST's declared leaf budget (for `budget_slack`
+#'   only -- Stage A itself is run against `L_A`, not this value).
+#' @param L_A,d_A,depth_restricted_A The already-resolved (once, outside the
+#'   ladder loop -- they do not depend on `m`) working budgets from
+#'   [.twostage_resolve_budgets()].
+#' @param lambda_n,m_n,group,group_value,m_n_group,min_leaf_n Forwarded to
+#'   [bisect_lambda_to_budget()]/[refine_tree()]; see their own docs.
+#' @param fit_time_limit,deadline,tol_iter Forwarded to
+#'   [bisect_lambda_to_budget()]; see its own docs for `fit_time_limit`/
+#'   `deadline`.
+#' @param ... Additional arguments forwarded to [bisect_lambda_to_budget()]
+#'   (and, through it, to [fit_tree()]).
+#' @return A list (one record for `fit_twostage()`'s `ladder_topologies`
+#'   table): `m`, `status` (`"ok"`, `"stage_a_deadline"`,
+#'   `"collapse_unsupported"`, or `"stage_b_binary_split"` -- only `"ok"`
+#'   populates the remaining fields beyond this and `n_leaves_A`/
+#'   `n_fits`/`stage_a_truncated`, which are set whenever Stage A itself
+#'   completed), `n_leaves_A`, `lambda`, `lambda_case` (one of `"i"`,
+#'   `"ii"`, `"iii"`, `"infeasible"`), `gap`, `feasible_A`, `n_fits`,
+#'   `stage_a_truncated`, `lambda_binding` (`n_leaves_A >= L_A`, the
+#'   Milestone-D-signature diagnostic), `n_collapses`,
+#'   `n_leaves_collapsed`, `budget_slack` (`leaf_budget - n_leaves_collapsed`),
+#'   `feasible_refined` (group-aware, on the REFINED tree -- see
+#'   [.refined_leaf_floor_ok()]), `local_certified`, `local_margin`,
+#'   `local_certified_at_lambda_n`, `local_margin_at_lambda_n`,
+#'   `depth_sufficient` (echoed from Stage A), `topology_key` (from
+#'   [canonical_partition()], for E3's cross-rung comparison), `model` (the
+#'   [RefinedTreeModel], or `NULL` unless `status == "ok"`).
+#' @keywords internal
+.twostage_run_rung <- function(X, y, m, leaf_budget, L_A, d_A, depth_restricted_A,
+                                lambda_n, m_n, group = NULL, group_value = 0,
+                                m_n_group = m_n, min_leaf_n,
+                                fit_time_limit = NULL, deadline = NULL,
+                                tol_iter = 12L, ...) {
+  rec <- list(
+    m = as.integer(m), status = NA_character_,
+    n_leaves_A = NA_integer_, lambda = NA_real_, lambda_case = NA_character_,
+    gap = NA_real_, feasible_A = NA, n_fits = NA_integer_,
+    stage_a_truncated = NA, lambda_binding = NA,
+    n_collapses = NA_integer_, n_leaves_collapsed = NA_integer_,
+    budget_slack = NA_integer_, feasible_refined = NA,
+    local_certified = NA, local_margin = NA_real_,
+    local_certified_at_lambda_n = NA, local_margin_at_lambda_n = NA_real_,
+    depth_sufficient = NA, topology_key = NA_character_, model = NULL
+  )
+
+  # -- 1. STAGE A. A deadline abort is an ORDINARY outcome here (the ladder
+  #    decides what to do about it -- E3), not a bug to propagate raw. --------
+  res_A <- tryCatch(
+    bisect_lambda_to_budget(
+      X, y, leaf_budget = L_A, lambda_n = lambda_n,
+      max_depth = d_A, depth_restricted = depth_restricted_A,
+      loss_function = "squared_error",
+      m_n = m_n, group = group, group_value = group_value, m_n_group = m_n_group,
+      tol_iter = tol_iter, fit_time_limit = fit_time_limit, deadline = deadline,
+      discretize_bins = m, ...
+    ),
+    optimaltrees_deadline_exceeded = function(c) {
+      structure(list(msg = conditionMessage(c)), class = "twostage_stage_a_deadline")
+    }
+  )
+  if (inherits(res_A, "twostage_stage_a_deadline")) {
+    rec$status <- "stage_a_deadline"
+    return(rec)
+  }
+
+  rec$n_leaves_A <- res_A$n_leaves
+  rec$lambda <- res_A$lambda
+  rec$gap <- res_A$gap
+  rec$feasible_A <- res_A$feasible
+  rec$n_fits <- res_A$n_fits
+  rec$stage_a_truncated <- res_A$any_truncated
+  rec$lambda_binding <- res_A$n_leaves >= L_A
+  rec$depth_sufficient <- res_A$depth_sufficient
+  rec$lambda_case <- if (!isTRUE(res_A$feasible) || res_A$n_leaves > L_A) {
+    "infeasible"
+  } else if (isTRUE(res_A$certified)) {
+    if (isTRUE(all.equal(res_A$lambda, lambda_n))) "ii" else "i"
+  } else if (is.finite(res_A$gap)) {
+    "iii"
+  } else {
+    "infeasible"
+  }
+
+  # -- 2. STAGE B. Collapse/binary-split refusal is the ORDINARY case
+  #    (Milestone A sub-step 2's finding, confirmed routine once depth > 2
+  #    with 2+ informative coordinates) -- caught by CLASS (E0b), not by
+  #    string-matching, so an unrelated real bug still propagates raw. -------
+  refined <- tryCatch(
+    refine_tree(res_A$fit, X, y, min_leaf_n = min_leaf_n, tree_index = 1L,
+                max_depth = d_A, max_leaves = NULL),
+    optimaltrees_collapse_unsupported = function(c) {
+      structure(list(msg = conditionMessage(c)), class = "twostage_collapse_refused")
+    },
+    optimaltrees_stage_b_binary_split = function(c) {
+      structure(list(msg = conditionMessage(c)), class = "twostage_binary_split")
+    }
+  )
+  if (inherits(refined, "twostage_collapse_refused")) {
+    rec$status <- "collapse_unsupported"
+    return(rec)
+  }
+  if (inherits(refined, "twostage_binary_split")) {
+    rec$status <- "stage_b_binary_split"
+    return(rec)
+  }
+
+  rec$n_leaves_collapsed <- n_leaves(refined)
+  rec$n_collapses <- if (is.null(refined@refinement_log)) {
+    0L
+  } else {
+    sum(refined@refinement_log$collapsed, na.rm = TRUE)
+  }
+  rec$budget_slack <- as.integer(leaf_budget) - rec$n_leaves_collapsed
+
+  # -- 3. RE-CHECK feasibility on the REFINED tree, group-aware (Q5.3). -------
+  rec$feasible_refined <- .refined_leaf_floor_ok(refined, X, group, group_value,
+                                                   m_n, m_n_group)
+
+  # -- 4. LOCAL CERTIFICATE, twice (Q5.2). ------------------------------------
+  cert <- certify_local_optimality(refined, X, y)
+  rec$local_certified <- cert$certified
+  rec$local_margin <- cert$margin
+  cert_ln <- certify_local_optimality(refined, X, y, lambda = lambda_n)
+  rec$local_certified_at_lambda_n <- cert_ln$certified
+  rec$local_margin_at_lambda_n <- cert_ln$margin
+
+  rec$topology_key <- canonical_partition(refined@tree, X)$key
+  rec$status <- "ok"
+  rec$model <- refined
+  rec
+}

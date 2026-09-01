@@ -184,3 +184,201 @@ test_that("invalid n/m_n/m_ladder inputs are rejected", {
   expect_error(.twostage_validate_ladder(m_ladder = numeric(0), n = 2000, m_n = 1), "m_ladder")
   expect_error(.twostage_validate_ladder(m_ladder = c(16, NA), n = 2000, m_n = 1), "m_ladder")
 })
+
+# ---------------------------------------------------------------------------
+# .twostage_run_rung() (Milestone E sub-step E2). Runs a REAL Stage-A fit,
+# so these are the first genuinely slow(er) tests in this file -- kept
+# small (n in the low hundreds, few bins) and confirmed fast (<6s each) by
+# direct, isolated timing before being written, per this session's memory-
+# safety convention (§6 of the plan file: prototype small, run one at a
+# time, no parallelism).
+# ---------------------------------------------------------------------------
+
+test_that(".twostage_run_rung() completes an ordinary rung and populates every 'ok'-path field", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+
+  rec <- .twostage_run_rung(
+    X, y, m = 8L, leaf_budget = 4L, L_A = 7L, d_A = 4L, depth_restricted_A = TRUE,
+    lambda_n = 0.05, m_n = 1L, min_leaf_n = 1L
+  )
+
+  expect_equal(rec$status, "ok")
+  expect_equal(rec$m, 8L)
+  expect_true(rec$n_leaves_A <= 7L)
+  expect_true(rec$lambda_case %in% c("i", "ii", "iii", "infeasible"))
+  expect_type(rec$feasible_A, "logical")
+  expect_type(rec$stage_a_truncated, "logical")
+  expect_false(rec$stage_a_truncated)
+  expect_type(rec$lambda_binding, "logical")
+  expect_true(rec$n_leaves_collapsed <= rec$n_leaves_A)
+  expect_equal(rec$budget_slack, 4L - rec$n_leaves_collapsed)
+  expect_true(rec$feasible_refined)
+  expect_type(rec$local_certified, "logical")
+  expect_true(is.finite(rec$local_margin))
+  expect_type(rec$local_certified_at_lambda_n, "logical")
+  expect_true(is.finite(rec$local_margin_at_lambda_n))
+  expect_type(rec$depth_sufficient, "logical")
+  expect_type(rec$topology_key, "character")
+  expect_s7_class(rec$model, RefinedTreeModel)
+})
+
+test_that(".twostage_run_rung() sets max_leaves = NULL on the refined model, never L_A", {
+  # Q5.1: capping max_leaves at L_A would let certify_local_optimality()'s
+  # `add` perturbation silently ignore a genuinely improving split that WAS
+  # in Stage A's own search space -- double-counting what lambda already
+  # penalizes. Confirm the composition directly, not just by comment.
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+
+  rec <- .twostage_run_rung(
+    X, y, m = 8L, leaf_budget = 4L, L_A = 7L, d_A = 4L, depth_restricted_A = TRUE,
+    lambda_n = 0.05, m_n = 1L, min_leaf_n = 1L
+  )
+  expect_equal(rec$status, "ok")
+  expect_equal(length(rec$model@max_leaves), 0L)   # NULL, per the S7 integer(0) gotcha
+  expect_equal(rec$model@max_depth, 4L)            # d_A IS a real solver-enforced bound
+})
+
+test_that(".twostage_run_rung() runs the local certificate at both lambda and lambda_n when a real search occurred", {
+  # Forces used_search = TRUE (lambda_n deliberately overshoots leaf_budget
+  # = 3), so the returned fit's lambda != lambda_n -- Q5.2's case (i), where
+  # the two certificate evaluations are genuinely different claims.
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+
+  rec <- .twostage_run_rung(
+    X, y, m = 8L, leaf_budget = 3L, L_A = 3L, d_A = 4L, depth_restricted_A = TRUE,
+    lambda_n = 1e-6, m_n = 1L, min_leaf_n = 1L
+  )
+  expect_equal(rec$status, "ok")
+  expect_gt(rec$lambda, 1e-6)          # bisection raised it, confirming case (i)
+  expect_equal(rec$lambda_case, "i")
+  expect_type(rec$local_certified, "logical")
+  expect_type(rec$local_certified_at_lambda_n, "logical")
+  expect_true(is.finite(rec$local_margin))
+  expect_true(is.finite(rec$local_margin_at_lambda_n))
+})
+
+test_that(".twostage_run_rung() reports collapse_unsupported without erroring (the ordinary case)", {
+  # Same fixture/lambda as test-stage-b.R's dedicated "genuine cross-
+  # coordinate structure" test, routed through bisect_lambda_to_budget() at
+  # a leaf_budget large enough that lambda_n itself is accepted (no search),
+  # reproducing the exact same fit.
+  set.seed(20260901)
+  n <- 500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+
+  rec <- .twostage_run_rung(
+    X, y, m = 16L, leaf_budget = 8L, L_A = 8L, d_A = 3L, depth_restricted_A = TRUE,
+    lambda_n = 0.01, m_n = 1L, min_leaf_n = 1L
+  )
+  expect_equal(rec$status, "collapse_unsupported")
+  expect_null(rec$model)
+  # Stage A itself completed -- those fields are populated even on this refusal.
+  expect_false(is.na(rec$n_leaves_A))
+  expect_false(is.na(rec$n_fits))
+  # Everything Stage-B-dependent stays untouched (NA), not silently zero.
+  expect_true(is.na(rec$n_leaves_collapsed))
+  expect_true(is.na(rec$local_certified))
+})
+
+test_that(".twostage_run_rung() reports stage_b_binary_split without erroring", {
+  set.seed(20260901)
+  n <- 300
+  x_bin <- rbinom(n, 1, 0.5)
+  x_cont <- runif(n)
+  y <- ifelse(x_bin == 1, 10, 0) + rnorm(n, sd = 0.01)
+  X <- data.frame(x_bin = x_bin, x_cont = x_cont)
+
+  rec <- .twostage_run_rung(
+    X, y, m = 4L, leaf_budget = 2L, L_A = 2L, d_A = 1L, depth_restricted_A = FALSE,
+    lambda_n = 0.1, m_n = 1L, min_leaf_n = 1L
+  )
+  expect_equal(rec$status, "stage_b_binary_split")
+  expect_null(rec$model)
+})
+
+test_that(".twostage_run_rung() reports stage_a_deadline without ever starting a fit", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+
+  t0 <- Sys.time()
+  rec <- .twostage_run_rung(
+    X, y, m = 8L, leaf_budget = 4L, L_A = 7L, d_A = 4L, depth_restricted_A = TRUE,
+    lambda_n = 0.05, m_n = 1L, min_leaf_n = 1L,
+    deadline = Sys.time() - 1
+  )
+  elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  expect_equal(rec$status, "stage_a_deadline")
+  expect_null(rec$model)
+  expect_true(is.na(rec$n_leaves_A))   # Stage A never even ran
+  expect_lt(elapsed, 2)                # confirms no fit was attempted
+})
+
+# ---------------------------------------------------------------------------
+# .refined_leaf_floor_ok() -- the group-aware refined-tree feasibility
+# re-check (Oracle consult, Q5.3): Stage A's `feasible` describes the
+# discretized Stage-A tree, not the object fit_twostage() returns, and
+# refine_tree_cuts()'s min_leaf_n floor has NO group awareness at all.
+# ---------------------------------------------------------------------------
+
+test_that(".refined_leaf_floor_ok() passes when both the total and group floors hold", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.05,
+                   discretize_bins = 8L, max_depth = 4L)
+  refined <- refine_tree(fit, X, y, min_leaf_n = 1L, max_depth = 4L, max_leaves = NULL)
+
+  expect_true(.refined_leaf_floor_ok(refined, X, group = NULL, group_value = 0,
+                                       m_n = 1L, m_n_group = 1L))
+  # A group vector that is roughly balanced across leaves should also pass
+  # a modest group floor.
+  group <- rbinom(n, 1, 0.5)
+  expect_true(.refined_leaf_floor_ok(refined, X, group = group, group_value = 0,
+                                       m_n = 1L, m_n_group = 1L))
+})
+
+test_that(".refined_leaf_floor_ok() catches a group-floor violation the total floor misses", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.05,
+                   discretize_bins = 8L, max_depth = 4L)
+  refined <- refine_tree(fit, X, y, min_leaf_n = 1L, max_depth = 4L, max_leaves = NULL)
+
+  # Total floor: trivially satisfied at m_n = 1. Group floor: group = 1
+  # everywhere means group == 0 (the required subgroup) has ZERO members in
+  # every leaf -- the total floor cannot see this at all, since it never
+  # looks at group membership.
+  group_all_one <- rep(1L, n)
+  expect_true(.refined_leaf_floor_ok(refined, X, group = NULL, group_value = 0,
+                                       m_n = 1L, m_n_group = 1L))
+  expect_false(.refined_leaf_floor_ok(refined, X, group = group_all_one, group_value = 0,
+                                        m_n = 1L, m_n_group = 1L))
+})
+
+test_that(".refined_leaf_floor_ok() catches an ordinary total-floor violation", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.05,
+                   discretize_bins = 8L, max_depth = 4L)
+  refined <- refine_tree(fit, X, y, min_leaf_n = 1L, max_depth = 4L, max_leaves = NULL)
+
+  expect_false(.refined_leaf_floor_ok(refined, X, group = NULL, group_value = 0,
+                                        m_n = n, m_n_group = n))   # impossibly large floor
+})

@@ -159,18 +159,41 @@ A list:
   \item{n_fits}{Total number of internal [fit_tree()] calls made across
     the whole `bisect_lambda_to_budget()` call (case (ii): `1L`;
     otherwise `2L` or more).}
-  \item{any_truncated}{`TRUE` iff ANY of those fits hit `fit_time_limit`
-    (or the time remaining until `deadline`) before the branch-and-bound
-    search converged (solver status `1`, per `treefarms_status_cpp()`).
-    A truncated fit's incumbent is not proven optimal, which breaks the
-    monotone-leaf-count premise `certified` relies on for that
-    particular fit -- callers building on this function (e.g.
+  \item{any_truncated}{`TRUE` iff ANY internal fit hit its actual
+    `time_limit` before the branch-and-bound search converged --
+    derived from comparing the SOLVER's own internal timer against the
+    `time_limit` requested for that specific fit, NOT from solver
+    status. \strong{This is a corrected definition, 2026-09-01}: the raw
+    `GOSDT::status` field (`treefarms_status_cpp()`) is NOT a timeout
+    signal -- confirmed by reading `src/optimizer.cpp` directly and by
+    direct experiment: `status = 1` fires whenever the reported
+    objective-boundary gap has not closed to EXACTLY zero when the
+    search's queue empties, which happens ROUTINELY on ordinary, fast,
+    fully-unconstrained multi-leaf fits (observed: `status = 1` on a
+    0.46-second squared_error fit with no `time_limit` at all), for
+    reasons having nothing to do with time. A genuine timeout instead
+    reports the solver's internal elapsed time essentially exactly at
+    the requested limit (observed: `time_limit = 2` truncation reports
+    `2.001` seconds). A truncated fit's incumbent is not proven optimal,
+    which breaks the monotone-leaf-count premise `certified` relies on
+    for that particular fit -- callers building on this function (e.g.
     `fit_twostage()`'s ladder) should treat `any_truncated = TRUE` as
     its own failure mode, distinct from `certified = FALSE`, not paper
     over it.}
   \item{fit_log}{Data.frame, one row per internal fit, in call order:
-    `lambda`, `secs` (wall-clock time for that fit), `solver_status`
-    (`0` converged, `1` truncated).}
+    `lambda`, `secs` (R-side wall-clock time for that fit, includes
+    data-marshalling overhead), `solver_status` (raw `GOSDT::status` --
+    `0` iff the reported optimality gap closed to exactly zero; `1`
+    otherwise, for reasons that may or may not be time-related, see
+    `any_truncated` above -- a genuinely informative optimality-gap
+    diagnostic in its own right, just not this function's truncation
+    signal), `solver_time` (the solver's own internal timer,
+    `treefarms_status_cpp()`'s sibling `treefarms_time_cpp()` -- more
+    precise than `secs` for comparing against `time_limit_requested`),
+    `time_limit_requested` (the actual per-fit `time_limit` this
+    function passed to [fit_tree()] for that row -- `0L` means
+    unlimited was requested for that specific fit), `truncated`
+    (logical, this row's contribution to `any_truncated`).}
 }
 \description{
 Recovers the leaf-budget-constrained selector
