@@ -382,3 +382,155 @@ test_that(".refined_leaf_floor_ok() catches an ordinary total-floor violation", 
   expect_false(.refined_leaf_floor_ok(refined, X, group = NULL, group_value = 0,
                                         m_n = n, m_n_group = n))   # impossibly large floor
 })
+
+# ---------------------------------------------------------------------------
+# fit_twostage() (Milestone E sub-step E3): the m-ladder loop, stop
+# conditions, cross-rung compare_topology(), result assembly, and the
+# certified/certified_full_class split. Every fixture DGP below timed and
+# verified (<20s each, most well under 5s) in isolation before being
+# written, per this session's memory-safety convention.
+# ---------------------------------------------------------------------------
+
+test_that("fit_twostage() succeeds end to end: 2 stable rungs, certified and certified_full_class both TRUE", {
+  # leaf_budget = 2 is small enough that the default staged depth cap
+  # happens to COINCIDE with full compliance (d_0 = ceiling(log2(2)) = 1,
+  # d_A = min(2*1, depth_required_A = 2) = 2 = depth_required_A) --
+  # confirming certified_full_class is reachable, not just certified.
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+
+  res <- fit_twostage(X, y, leaf_budget = 2, lambda_n = 0.05, m_ladder = c(8, 16),
+                       time_budget = 60, fit_time_limit = 20, depth_budget = 2)
+
+  expect_s3_class(res, "optimaltrees_twostage_fit")
+  expect_true(res$certified)
+  expect_true(res$certified_full_class)
+  expect_true(res$depth_sufficient)
+  expect_true(is.na(res$reason))
+  expect_equal(res$stop_reason, "topology_stable")
+  expect_equal(res$n_rungs_completed, 2L)
+  expect_equal(res$m_used, 16L)              # the finer of the two stable rungs
+  expect_s7_class(res$model, RefinedTreeModel)
+  expect_equal(nrow(res$ladder_topologies), 2L)
+  expect_true(isTRUE(res$ladder_topologies$topology_stable_vs_prev[[2]]))
+  expect_equal(res$ladder_topologies$compared_to_m[[2]], 8L)
+})
+
+test_that("fit_twostage() reports certified TRUE but certified_full_class FALSE under the default depth cap", {
+  # The core distinction the whole Milestone-E design resolved this session
+  # (decision #2's actual mechanics): the DEFAULT depth_budget = NULL cap
+  # restricts below full compliance at leaf_budget = 4 (unlike the
+  # leaf_budget = 2 test above), so depth_sufficient/certified_full_class
+  # must be FALSE even though every other check passes.
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+
+  res <- expect_message(
+    fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05, m_ladder = c(8, 16),
+                 time_budget = 60, fit_time_limit = 20),
+    "STAGED cap"
+  )
+  expect_true(res$certified)
+  expect_false(res$certified_full_class)
+  expect_false(res$depth_sufficient)
+  expect_true(is.na(res$reason))
+  expect_equal(res$d_0_source, "default_balanced")
+})
+
+test_that("fit_twostage() with verbose = FALSE suppresses the depth-cap message", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+
+  expect_no_message(
+    fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05, m_ladder = c(8, 16),
+                 time_budget = 60, fit_time_limit = 20, verbose = FALSE)
+  )
+})
+
+test_that("fit_twostage() stops at budget_exhausted without attempting a single fit", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
+
+  t0 <- Sys.time()
+  res <- suppressMessages(fit_twostage(
+    X, y, leaf_budget = 2, lambda_n = 0.05, m_ladder = c(8, 16),
+    time_budget = 5, fit_time_limit = 10, depth_budget = 2
+  ))
+  elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+
+  expect_equal(res$stop_reason, "budget_exhausted")
+  expect_equal(res$n_rungs_completed, 0L)
+  expect_false(res$certified)
+  expect_equal(res$reason, "any_rung_completed")
+  expect_null(res$model)
+  expect_true(is.na(res$m_used))
+  expect_lt(elapsed, 2)   # confirms no fit was ever attempted
+})
+
+test_that("fit_twostage() escalates a stage_b_binary_split refusal exactly once, then stops", {
+  set.seed(1)
+  n <- 300
+  x_bin <- rbinom(n, 1, 0.5)
+  x_cont <- runif(n)
+  y <- ifelse(x_bin == 1, 10, 0) + rnorm(n, sd = 0.01)
+  X <- data.frame(x_bin = x_bin, x_cont = x_cont)
+
+  res <- suppressMessages(fit_twostage(
+    X, y, leaf_budget = 2, lambda_n = 0.1, m_ladder = c(4, 8, 16),
+    time_budget = 30, fit_time_limit = 10, depth_budget = 1
+  ))
+
+  expect_equal(res$stop_reason, "stage_b_binary_split")
+  expect_equal(res$n_rungs_completed, 0L)
+  # Escalated exactly once (m=4 -> m=8) and then stopped -- m=16 was never
+  # attempted, confirming this is NOT retried indefinitely across the
+  # whole ladder the way collapse_unsupported is.
+  expect_equal(res$ladder_topologies$m, c(4L, 8L))
+  expect_true(all(res$ladder_topologies$status == "stage_b_binary_split"))
+})
+
+test_that("fit_twostage() rejects loss_function other than squared_error", {
+  n <- 50
+  X <- data.frame(x1 = runif(n))
+  y <- rnorm(n)
+  expect_error(
+    fit_twostage(X, y, leaf_budget = 2, loss_function = "misclassification"),
+    "squared_error"
+  )
+})
+
+test_that("fit_twostage() rejects worker_limit != 1", {
+  n <- 50
+  X <- data.frame(x1 = runif(n))
+  y <- rnorm(n)
+  expect_error(fit_twostage(X, y, leaf_budget = 2, worker_limit = 2), "worker_limit")
+})
+
+test_that("fit_twostage() rejects an all-binary X before spending any Stage-A time", {
+  n <- 50
+  Xb <- data.frame(a = rbinom(n, 1, 0.5), b = rbinom(n, 1, 0.5))
+  y <- rnorm(n)
+  expect_error(fit_twostage(Xb, y, leaf_budget = 2), "continuous covariate")
+})
+
+test_that("fit_twostage() rejects non-numeric X columns", {
+  n <- 50
+  Xf <- data.frame(x1 = factor(sample(letters[1:3], n, replace = TRUE)))
+  y <- rnorm(n)
+  expect_error(fit_twostage(Xf, y, leaf_budget = 2), "numeric")
+})
+
+test_that("fit_twostage() rejects mismatched nrow(X)/length(y)", {
+  n <- 50
+  X <- data.frame(x1 = runif(n))
+  y <- rnorm(n - 1)
+  expect_error(fit_twostage(X, y, leaf_budget = 2), "nrow")
+})

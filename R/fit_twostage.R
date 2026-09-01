@@ -1,17 +1,25 @@
-#' fit_twostage() -- Milestone E, sub-step E1 (pure budget resolution)
+#' The two-stage tree estimator (Milestone E)
 #'
 #' @description
-#' `fit_twostage()` itself (the public orchestrating function -- the
-#' `m`-ladder loop, Stage A/B/certificate composition, `certified`/
-#' `certified_full_class`) is not yet built. This file currently holds only
-#' the PURE, no-fitting-required pieces of its design (Oracle-consulted; see
+#' This file implements `fit_twostage()`, the public orchestrating function
+#' for the "two-stage" tree estimator: Stage A (discrete grid search) then
+#' Stage B (off-grid threshold refinement), escalated across an `m`-ladder
+#' of grid resolutions with a local-optimality certificate and a real
+#' wall-clock cost guard. See [fit_twostage()] itself for the full
+#' argument/return contract, and
 #' `quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md`
-#' Milestone E addendum in the `global-scholars` project for the full
-#' architecture and the empirical findings behind it), per that consult's
-#' recommended implementation order (E0/E0b done; this is E1; E2-E4 remain).
+#' §4 in the `global-scholars` project (Oracle-consulted; every design
+#' decision below was verified empirically before being accepted) for the
+#' complete theory and design history.
+#'
+#' Built across five sub-steps (E0/E0b: wall-clock guard + classed
+#' conditions on `bisect_lambda_to_budget()`/`stage_b.R`; E1: pure budget
+#' resolution/ladder validation; E2: the single-rung runner; E3: the ladder
+#' loop and result assembly, [fit_twostage()] itself -- E4, print/summary
+#' methods, is the only piece not yet built).
 #'
 #' @keywords internal
-#' @name fit_twostage
+#' @name fit_twostage_internals
 NULL
 
 #' Resolve `fit_twostage()`'s per-call Stage-A budgets, before any fitting
@@ -424,4 +432,387 @@ NULL
   rec$status <- "ok"
   rec$model <- refined
   rec
+}
+
+# ---------------------------------------------------------------------------
+# Sub-step E3: the m-ladder loop, stop conditions, cross-rung topology
+# comparison, result assembly, and the certified / certified_full_class
+# split. This is the public entry point.
+# ---------------------------------------------------------------------------
+
+#' Fit a two-stage tree: discrete grid search, then off-grid refinement
+#'
+#' @description
+#' Orchestrates the full two-stage estimator (Milestone E; see
+#' `quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md`
+#' §4 in the `global-scholars` project for the full theory/design and its
+#' provenance -- an Oracle-consulted architecture, verified empirically
+#' before being accepted): an escalating `m`-ladder of grid resolutions,
+#' each rung running Stage A ([bisect_lambda_to_budget()] at the
+#' transition-leaf-inflated working budget), Stage B
+#' ([refine_tree()], off-grid threshold refinement), and the
+#' local-optimality certificate ([certify_local_optimality()]); stopping at
+#' the first rung whose collapsed topology agrees with the previous
+#' completed rung's ([compare_topology()]).
+#'
+#' \strong{Scope, disclosed}: regression (`loss_function = "squared_error"`)
+#' only, matching Milestones A/B. \strong{`certified` is LOCAL}: it
+#' certifies exactness over the DECLARED problem
+#' `(leaf_budget, depth_budget, m_used)`, per the returned fit's own local
+#' certificate -- it does NOT assert `ass:global` compliance over the full
+#' continuum class (`theory.tex`'s `prop:greedy` is a proven counterexample
+#' showing a distant topology can beat a locally-unimprovable one with zero
+#' one-split signal). `certified_full_class` additionally requires
+#' `depth_sufficient` -- see the `depth_budget` argument below for why this
+#' is `FALSE` on every default call, by design, not a fit failure.
+#'
+#' \strong{Cost guard, three layers} (Oracle consult; see
+#' [bisect_lambda_to_budget()]'s `fit_time_limit`/`deadline` for layers 1-2):
+#' a per-fit `fit_time_limit` inside the C++ solver; a `deadline` threaded
+#' into each rung's Stage-A search (so bisection cannot silently overrun the
+#' remaining budget); and `time_budget`, a SHRINKING budget across the whole
+#' ladder, checked before every rung starts. A rung that hits ITS OWN
+#' deadline, or whose Stage-A search truncated ANY internal fit (see
+#' `any_truncated` in [bisect_lambda_to_budget()]'s return value), STOPS the
+#' ladder immediately rather than escalating to a finer `m` -- Stage-A cost
+#' is monotone increasing in `m` (more discretized features per continuous
+#' coordinate), so a rung that could not finish guarantees every later rung
+#' cannot either; retrying would be a guaranteed-waste, exactly the
+#' "silently commit to hours" failure mode this guard exists to prevent.
+#'
+#' \strong{`collapse_transitions()` refusal is the ORDINARY case}, confirmed
+#' routine once search depth exceeds 2 with 2+ informative coordinates
+#' (Milestone A sub-step 2's finding) -- escalates to the next `m` rung,
+#' carrying the last SUCCESSFULLY COMPLETED rung's model forward across the
+#' skip (comparing `m = 16` to `m = 64` after `m = 32` refused is a
+#' STRONGER stability claim than comparing adjacent rungs, not an invalid
+#' one). A Stage-B binary-passthrough-split refusal
+#' (`"optimaltrees_stage_b_binary_split"`) escalates only ONCE, then stops
+#' -- if the solver keeps splitting on a binary column, a finer grid will
+#' not change that, and repeated escalation would be a guaranteed waste.
+#'
+#' @param X,y Training data. `X` must be numeric throughout (Stage B's
+#'   perturbation enumerators loop over every column and compare values
+#'   numerically) and have at least one continuous covariate (Stage B has
+#'   nothing to refine on an all-binary design -- checked up front, before
+#'   any Stage-A time is spent, though the AUTHORITATIVE check happens
+#'   per-rung against each fit's own discretization metadata).
+#' @param leaf_budget Integer, the analyst's declared leaf budget
+#'   (\eqn{\bar L}).
+#' @param depth_budget `NULL` (default), `"full"`, or a single positive
+#'   integer -- see [.twostage_resolve_budgets()] for the exact formula.
+#'   `NULL` resolves to the STAGED cap (\eqn{d_0 = \lceil\log_2(\bar
+#'   L)\rceil}), reproducing Milestone D's two measured, validated points
+#'   exactly; on this path `depth_sufficient` is `FALSE` and
+#'   `certified_full_class` can never be `TRUE`, by design -- pass an
+#'   explicit `depth_budget` (your own belief about the true tree's depth)
+#'   or `depth_budget = "full"` (full compliance over the inflated class;
+#'   cost grows superlinearly in `p`, per Milestone D's benchmark) to
+#'   change this.
+#' @param lambda_n Numeric, the analyst's declared regularization -- the
+#'   estimand `certified` is stated relative to. Tried first at every rung;
+#'   see [bisect_lambda_to_budget()].
+#' @param m_ladder Numeric vector of grid resolutions (`discretize_bins`) to
+#'   escalate through, ascending. Pruned against
+#'   `prop:parsimony-grid`'s rate condition by
+#'   [.twostage_validate_ladder()]; must retain at least 2 rungs
+#'   (`topology_stable` needs two completed rungs to compare).
+#' @param m_n,group,group_value,m_n_group Leaf-size floor(s); see
+#'   [check_leaf_feasibility()]/[bisect_lambda_to_budget()]. `group` is the
+#'   propensity-tree control-count use case (`doubletree::estimate_att()`'s
+#'   own requirement).
+#' @param min_leaf_n Integer or `NULL` (default). Stage-B's own floor,
+#'   passed to [refine_tree()]. `NULL` reuses `m_n` (the SAME total floor
+#'   Stage A enforces) -- passing a different value is possible but means
+#'   Stage A's and Stage B's floors diverge, which the `feasible` field's
+#'   re-derivation on the REFINED tree ([.refined_leaf_floor_ok()]) will
+#'   correctly reflect either way.
+#' @param loss_function Must be `"squared_error"` -- regression-only v1,
+#'   disclosed, not silently unsupported. Any other value errors immediately.
+#' @param time_budget Numeric, seconds, default `3600`. SHRINKING budget
+#'   across the WHOLE ladder call (not per rung) -- see the cost-guard
+#'   description above.
+#' @param fit_time_limit Numeric, seconds, default `600`. Per-fit cap inside
+#'   the C++ solver, forwarded to every [bisect_lambda_to_budget()] call.
+#'   Sized from Milestone D's own measurements (worst observed single fit:
+#'   307s at `leaf_budget = 8`, `p = 20`) -- large enough to never truncate
+#'   known-good work, small enough to bound a genuine blow-up.
+#' @param tol_iter Integer, default `12L`. Forwarded to
+#'   [bisect_lambda_to_budget()]'s own bisection-iteration cap (its own
+#'   default is `40`; `12` keeps a single rung's worst case near 25 fits
+#'   rather than 81).
+#' @param verbose Logical, default `TRUE`. Controls the depth-cap disclosure
+#'   message ([.twostage_emit_depth_message()]) and de-duplicated
+#'   high-dimensionality warnings from [fit_tree()] (at most one per rung,
+#'   not one per internal fit).
+#' @param ... Additional arguments forwarded to every rung's
+#'   [bisect_lambda_to_budget()] call (and, through it, to [fit_tree()]).
+#'   `worker_limit` other than `1` is rejected outright -- no parallel
+#'   execution (this project's own memory-safety rule).
+#'
+#' @return A list, class `"optimaltrees_twostage_fit"`:
+#'   \item{model}{The winning [RefinedTreeModel], or `NULL` if no rung
+#'     completed (`predict()` on this object must abort, not silently
+#'     return garbage -- see the S3 methods, sub-step E4).}
+#'   \item{m_used}{The grid resolution `model` came from.}
+#'   \item{certified}{`TRUE` iff EVERY one of: a rung completed;
+#'     `lambda_case %in% c("i","ii")`; `n_leaves_collapsed <= leaf_budget`;
+#'     `feasible` (re-derived on the refined tree, group-aware);
+#'     Stage A did not truncate any internal fit; the local certificate
+#'     passed (at the fit's own, possibly-bisected lambda); AND topology
+#'     agreed across >= 2 completed rungs. Certifies exactness over the
+#'     DECLARED problem -- see `certified_full_class` for the additional
+#'     depth requirement.}
+#'   \item{certified_full_class}{`certified && depth_sufficient`. `FALSE`
+#'     on every default `depth_budget = NULL` call, by design -- see that
+#'     argument's docs.}
+#'   \item{reason}{The single first-failing check name when `!certified`
+#'     (one of `any_rung_completed`, `lambda_case`, `budget_respected`,
+#'     `feasible`, `stage_a_converged`, `local_certificate`,
+#'     `topology_stable`), else `NA`.}
+#'   \item{lambda_case,gap,n_leaves_collapsed,max_depth,depth_required,depth_sufficient,feasible,stage_b_local_margin}{
+#'     The "guaranteed" field group from the winning rung (or `NA`/`FALSE`
+#'     defaults if none completed); see [.twostage_run_rung()].}
+#'   \item{budget_slack,lambda_binding}{`leaf_budget - n_leaves_collapsed`
+#'     and whether Stage A's leaf count actually bound `L_A` -- the
+#'     Milestone-D-signature diagnostics for "the budget did not
+#'     meaningfully constrain the fit."}
+#'   \item{topology_stable,n_rungs_completed}{Whether topology agreed
+#'     across any two adjacent completed rungs, and how many rungs reached
+#'     `status == "ok"` at all.}
+#'   \item{n_transition_leaves_collapsed}{From the winning rung.}
+#'   \item{stop_reason}{Why the ladder stopped: `"topology_stable"`
+#'     (success), `"stage_a_truncated"`, `"stage_a_deadline"`,
+#'     `"stage_b_binary_split"`, `"budget_exhausted"`, or
+#'     `"ladder_exhausted"`.}
+#'   \item{ladder_topologies}{Data.frame, one row per rung ATTEMPTED
+#'     (including refused/timed-out ones), for the disclosure print method
+#'     and manual inspection.}
+#'   \item{leaf_budget,L_A,d_A,depth_restricted_A,d_0,d_0_source,dropped_rungs}{
+#'     Echoed budget-resolution/ladder-validation inputs, for full disclosure.}
+#'   \item{elapsed_secs}{Total wall-clock time across the whole call.}
+#'
+#'   \strong{Explicitly NOT included} (present in the original plan
+#'   sketch's field list, never given a concrete formula in the
+#'   Oracle-consulted design that implements this function):
+#'   `snapping_cost_bound`, `est_topology_gap`. Omitted rather than
+#'   fabricated -- see the plan file's Milestone E addendum.
+#' @export
+fit_twostage <- function(X, y, leaf_budget,
+                          depth_budget = NULL,
+                          lambda_n = 0.1,
+                          m_ladder = c(16, 32, 64, 128),
+                          m_n = 1L, group = NULL, group_value = 0, m_n_group = m_n,
+                          min_leaf_n = NULL,
+                          loss_function = "squared_error",
+                          time_budget = 3600, fit_time_limit = 600,
+                          tol_iter = 12L,
+                          verbose = TRUE,
+                          ...) {
+  if (!identical(loss_function, "squared_error")) {
+    cli::cli_abort(c(
+      "fit_twostage: only {.val squared_error} is supported.",
+      "i" = "Stage B and the local-optimality certificate are regression-only v1 (Milestones A/B), disclosed as such -- classification is a separate, later milestone."
+    ))
+  }
+  if (!is.data.frame(X) && !is.matrix(X)) {
+    cli::cli_abort("fit_twostage: {.arg X} must be a data.frame or matrix.")
+  }
+  if (is.matrix(X)) X <- as.data.frame(X)
+  if (nrow(X) != length(y)) {
+    cli::cli_abort("fit_twostage: nrow(X) ({nrow(X)}) must equal length(y) ({length(y)}).")
+  }
+  if (ncol(X) < 1L) {
+    cli::cli_abort("fit_twostage: {.arg X} must have at least one covariate.")
+  }
+  if (!all(vapply(X, is.numeric, logical(1)))) {
+    cli::cli_abort("fit_twostage: every column of {.arg X} must be numeric.")
+  }
+  # Fast, informative pre-flight only -- NOT authoritative. Stage B's real
+  # check (bin_lookup()'s "all features are binary" abort) runs per-rung
+  # against each fit's own discretization metadata; this just avoids
+  # spending any Stage-A time on a design that can never reach Stage B.
+  n_unique <- vapply(X, function(col) length(unique(col)), integer(1))
+  if (all(n_unique <= 2L)) {
+    cli::cli_abort(c(
+      "fit_twostage: every column of {.arg X} has <= 2 distinct values (all-binary design).",
+      "i" = "Stage B has nothing to refine on an all-binary design -- at least one continuous covariate is required."
+    ))
+  }
+  worker_limit <- list(...)$worker_limit
+  if (!is.null(worker_limit) && !identical(as.integer(worker_limit), 1L)) {
+    cli::cli_abort("fit_twostage: {.arg worker_limit} must be 1 -- no parallel execution.")
+  }
+
+  n <- nrow(X)
+  budgets <- .twostage_resolve_budgets(leaf_budget, depth_budget, n)
+  .twostage_emit_depth_message(budgets, verbose = verbose)
+
+  min_leaf_n <- if (is.null(min_leaf_n)) as.integer(m_n) else as.integer(min_leaf_n)
+
+  ladder_spec <- .twostage_validate_ladder(m_ladder, n, m_n)
+  if (length(ladder_spec$dropped_rungs) > 0L && isTRUE(verbose)) {
+    cli::cli_inform(
+      "fit_twostage: dropped m_ladder rung(s) {paste(ladder_spec$dropped_rungs, collapse = ', ')} -- the sample cannot support them under m_n = o(n/r_n) (m_max_supported = {ladder_spec$m_max_supported})."
+    )
+  }
+
+  # Configuration is PROCESS-GLOBAL (see bisect_lambda_to_budget()'s
+  # fit_time_limit roxygen) -- reset it unconditionally on exit, or this
+  # call silently caps every later, unrelated fit_tree() call in this R
+  # session (doubletree included).
+  on.exit(
+    treefarms_configure_cpp(jsonlite::toJSON(list(time_limit = 0L), auto_unbox = TRUE)),
+    add = TRUE
+  )
+
+  ladder <- list()
+  prev_model <- NULL
+  prev_m <- NA_integer_
+  binary_split_streak <- 0L
+  t_start <- Sys.time()
+  stop_reason <- NA_character_
+
+  for (m in ladder_spec$m_ladder) {
+    elapsed_total <- as.numeric(difftime(Sys.time(), t_start, units = "secs"))
+    remaining <- time_budget - elapsed_total
+    if (remaining < fit_time_limit) {
+      stop_reason <- "budget_exhausted"
+      break
+    }
+    rung_deadline <- Sys.time() + remaining
+
+    warned_this_rung <- FALSE
+    rec <- withCallingHandlers(
+      .twostage_run_rung(
+        X, y, m = m, leaf_budget = budgets$leaf_budget,
+        L_A = budgets$L_A, d_A = budgets$d_A,
+        depth_restricted_A = budgets$depth_restricted_A,
+        lambda_n = lambda_n, m_n = m_n, group = group, group_value = group_value,
+        m_n_group = m_n_group, min_leaf_n = min_leaf_n,
+        fit_time_limit = fit_time_limit, deadline = rung_deadline,
+        tol_iter = tol_iter, ...
+      ),
+      warning = function(w) {
+        if (grepl("High-dimensional data detected", conditionMessage(w), fixed = TRUE)) {
+          if (!warned_this_rung && isTRUE(verbose)) {
+            cli::cli_inform("fit_twostage: rung m = {m} -- {conditionMessage(w)}")
+            warned_this_rung <<- TRUE
+          }
+          invokeRestart("muffleWarning")
+        }
+      }
+    )
+    rec$compared_to_m <- NA_integer_
+    rec$topology_stable_vs_prev <- NA
+    rec$refinement <- NA_character_
+    ladder[[length(ladder) + 1L]] <- rec
+    idx_this <- length(ladder)
+
+    if (identical(rec$status, "stage_a_deadline")) {
+      stop_reason <- "stage_a_deadline"
+      break
+    }
+    if (identical(rec$status, "collapse_unsupported")) {
+      binary_split_streak <- 0L
+      next
+    }
+    if (identical(rec$status, "stage_b_binary_split")) {
+      binary_split_streak <- binary_split_streak + 1L
+      if (binary_split_streak >= 2L) {
+        stop_reason <- "stage_b_binary_split"
+        break
+      }
+      next
+    }
+    binary_split_streak <- 0L
+    # status == "ok" from here on.
+    if (!is.null(prev_model)) {
+      cmp <- compare_topology(prev_model, rec$model, X)
+      ladder[[idx_this]]$compared_to_m <- prev_m
+      ladder[[idx_this]]$topology_stable_vs_prev <- isTRUE(cmp$topology_stable)
+      ladder[[idx_this]]$refinement <- cmp$refinement
+    }
+    if (isTRUE(rec$stage_a_truncated)) {
+      stop_reason <- "stage_a_truncated"
+      break
+    }
+    if (isTRUE(ladder[[idx_this]]$topology_stable_vs_prev)) {
+      stop_reason <- "topology_stable"
+      break
+    }
+    prev_model <- rec$model
+    prev_m <- m
+  }
+  if (is.na(stop_reason)) stop_reason <- "ladder_exhausted"
+
+  lad_df <- do.call(rbind, lapply(ladder, function(r) {
+    as.data.frame(r[setdiff(names(r), "model")], stringsAsFactors = FALSE)
+  }))
+
+  ok_idx <- which(vapply(ladder, function(r) identical(r$status, "ok"), logical(1)))
+  n_rungs_completed <- length(ok_idx)
+  # The LAST successfully completed rung wins -- when topology_stable
+  # triggered the stop, the two candidates are observationally equivalent
+  # (identical row partitions => identical leaf means => identical
+  # predictions/training risk); the finer m is the resolution the
+  # stability claim is anchored at. When the ladder ended for another
+  # reason, it is simply the best result obtained.
+  if (n_rungs_completed == 0L) {
+    r <- NULL
+    model <- NULL
+    m_used <- NA_integer_
+  } else {
+    i_ret <- max(ok_idx)
+    r <- ladder[[i_ret]]
+    model <- r$model
+    m_used <- r$m
+  }
+
+  topology_stable <- n_rungs_completed >= 2L &&
+    any(vapply(ladder[ok_idx], function(x) isTRUE(x$topology_stable_vs_prev), logical(1)))
+
+  lambda_case          <- if (is.null(r)) NA_character_ else r$lambda_case
+  gap                  <- if (is.null(r)) NA_real_ else r$gap
+  n_leaves_collapsed   <- if (is.null(r)) NA_integer_ else r$n_leaves_collapsed
+  depth_sufficient     <- if (is.null(r)) FALSE else isTRUE(r$depth_sufficient)
+  feasible             <- if (is.null(r)) FALSE else (isTRUE(r$feasible_A) && isTRUE(r$feasible_refined))
+  stage_b_local_margin <- if (is.null(r)) NA_real_ else r$local_margin
+  budget_slack         <- if (is.null(r)) NA_integer_ else r$budget_slack
+  lambda_binding       <- if (is.null(r)) NA else isTRUE(r$lambda_binding)
+  n_transition_leaves_collapsed <- if (is.null(r)) NA_integer_ else r$n_collapses
+
+  checks <- c(
+    any_rung_completed = n_rungs_completed > 0L,
+    lambda_case        = isTRUE(lambda_case %in% c("i", "ii")),
+    budget_respected   = isTRUE(!is.na(n_leaves_collapsed) && n_leaves_collapsed <= budgets$leaf_budget),
+    feasible           = isTRUE(feasible),
+    stage_a_converged  = if (is.null(r)) FALSE else !isTRUE(r$stage_a_truncated),
+    local_certificate  = if (is.null(r)) FALSE else isTRUE(r$local_certified),
+    topology_stable    = isTRUE(topology_stable) && n_rungs_completed >= 2L
+  )
+  certified <- all(checks)
+  certified_full_class <- certified && depth_sufficient
+  reason <- if (certified) NA_character_ else names(checks)[which(!checks)[[1]]]
+
+  structure(
+    list(
+      model = model, m_used = m_used,
+      certified = certified, certified_full_class = certified_full_class, reason = reason,
+      lambda_case = lambda_case, gap = gap, n_leaves_collapsed = n_leaves_collapsed,
+      max_depth = budgets$d_A, depth_required = budgets$depth_required_A,
+      depth_sufficient = depth_sufficient, feasible = feasible,
+      stage_b_local_margin = stage_b_local_margin,
+      budget_slack = budget_slack, lambda_binding = lambda_binding,
+      topology_stable = topology_stable, n_rungs_completed = n_rungs_completed,
+      n_transition_leaves_collapsed = n_transition_leaves_collapsed,
+      stop_reason = stop_reason, ladder_topologies = lad_df,
+      leaf_budget = budgets$leaf_budget, L_A = budgets$L_A, d_A = budgets$d_A,
+      depth_restricted_A = budgets$depth_restricted_A,
+      d_0 = budgets$d_0, d_0_source = budgets$d_0_source,
+      dropped_rungs = ladder_spec$dropped_rungs,
+      elapsed_secs = as.numeric(difftime(Sys.time(), t_start, units = "secs"))
+    ),
+    class = "optimaltrees_twostage_fit"
+  )
 }
