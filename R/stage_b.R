@@ -1018,3 +1018,184 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
 
   list(tree = tree, refined = do.call(rbind, log_rows))
 }
+
+# ---------------------------------------------------------------------------
+# Public entry point and consumer contract. Everything above this point is
+# internal machinery (`@keywords internal`); `refine_tree()`,
+# `RefinedTreeModel` (in R/s7_classes.R), its predict/print/summary
+# methods, and `leaf_assignments()`/`n_leaves()`/`split_table()` are the
+# supported public surface Milestone A promises -- doubletree and other
+# callers should use these, not reach into the coordinate-tree internals
+# directly.
+# ---------------------------------------------------------------------------
+
+#' Coordinate names actually used by splits in a coordinate-space tree
+#' @keywords internal
+coord_tree_coords_used <- function(node) {
+  if (identical(node$kind, "leaf")) return(character(0))
+  unique(c(node$coord,
+           coord_tree_coords_used(node$left),
+           coord_tree_coords_used(node$right)))
+}
+
+#' Total training risk (SSE) of a coordinate-space tree
+#' @keywords internal
+coord_tree_training_sse <- function(tree, X, y) {
+  preds <- coord_tree_predict(tree, X)
+  sum((as.numeric(y) - preds)^2)
+}
+
+#' Run Stage B (off-grid threshold refinement) on a fitted model
+#'
+#' @description
+#' The public entry point for Stage B: converts \code{model} to
+#' coordinate-space ([as_coordinate_tree()]), collapses transition-leaf
+#' pairs ([collapse_transitions()]), refines every remaining threshold to
+#' an exact, off-grid data value ([refine_tree_cuts()]), and wraps the
+#' result in a [RefinedTreeModel]. See \code{\link{stage_b}} for the
+#' overall mechanism and \code{quality_reports/plans/2026-09-01_two-stage-
+#' package-defaults-session.md} Milestone A in the \code{global-scholars}
+#' project for the design history.
+#'
+#' \strong{Scope, 2026-09-01 (Milestone A): regression (\code{squared_error})
+#' only}, enforced by [as_coordinate_tree()] (loudly rejects any other
+#' \code{loss_function}, not silently). Classification support is a
+#' separate, later milestone.
+#'
+#' @param model A fitted \code{OptimalTreesModel} (S7), from [fit_tree()]
+#'   with \code{loss_function = "squared_error"}.
+#' @param X,y The training data \code{model} was fit on (required
+#'   explicitly, and verified to reconcile with \code{model}'s own
+#'   discretization -- see [as_coordinate_tree()]).
+#' @param min_leaf_n Integer floor on rows per side of every refined cut
+#'   (default \code{1L}). Passed through to [refine_tree_cuts()].
+#' @param tree_index Which tree in \code{model@trees} to refine (default
+#'   \code{1L}; only relevant for a Rashomon set).
+#' @return A [RefinedTreeModel].
+#' @export
+refine_tree <- function(model, X, y, min_leaf_n = 1L, tree_index = 1L) {
+  ct <- as_coordinate_tree(model, X, y, tree_index = tree_index)
+  collapsed <- collapse_transitions(ct)
+  refined <- refine_tree_cuts(collapsed$tree, X, y, min_leaf_n = min_leaf_n)
+
+  RefinedTreeModel(
+    tree = refined$tree,
+    coords = coord_tree_coords_used(refined$tree),
+    loss = model@loss_function,
+    source = model,
+    refinement_log = refined$refined,
+    n_train = nrow(if (is.matrix(X)) as.data.frame(X) else X),
+    training_risk = coord_tree_training_sse(refined$tree, X, y),
+    min_leaf_n = as.integer(min_leaf_n)
+  )
+}
+
+#' Leaf assigned to each row of `newdata` by a `RefinedTreeModel`
+#'
+#' @param object A [RefinedTreeModel].
+#' @param newdata Data.frame or matrix with the coordinates \code{object}
+#'   splits on (\code{object@coords}), as raw (non-discretized) values.
+#' @return Integer vector of length \code{nrow(newdata)}: the leaf `id`
+#'   (see \code{\link{stage_b}}'s node schema) each row falls into.
+#' @export
+leaf_assignments <- function(object, newdata) {
+  if (!S7::S7_inherits(object, RefinedTreeModel)) {
+    cli::cli_abort("leaf_assignments: {.arg object} must be a RefinedTreeModel.")
+  }
+  newdata <- .refined_tree_check_newdata(object, newdata)
+  coord_tree_assign(object@tree, newdata)
+}
+
+#' Number of leaves in a `RefinedTreeModel`
+#' @param object A [RefinedTreeModel].
+#' @return Integer.
+#' @export
+n_leaves <- function(object) {
+  if (!S7::S7_inherits(object, RefinedTreeModel)) {
+    cli::cli_abort("n_leaves: {.arg object} must be a RefinedTreeModel.")
+  }
+  coord_tree_count_leaves(object@tree)
+}
+
+#' Flat table of every split in a `RefinedTreeModel`
+#'
+#' @param object A [RefinedTreeModel].
+#' @return Data.frame with one row per split: \code{id}, \code{coord},
+#'   \code{cut}, \code{collapsed}, \code{grid_cut_lo}, \code{grid_cut_hi}.
+#' @export
+split_table <- function(object) {
+  if (!S7::S7_inherits(object, RefinedTreeModel)) {
+    cli::cli_abort("split_table: {.arg object} must be a RefinedTreeModel.")
+  }
+  rows <- list()
+  walk <- function(node) {
+    if (identical(node$kind, "leaf")) return(invisible())
+    rows[[length(rows) + 1L]] <<- data.frame(
+      id = node$id, coord = node$coord, cut = node$cut,
+      collapsed = isTRUE(node$collapsed),
+      grid_cut_lo = if (length(node$grid_cuts) >= 1L) node$grid_cuts[[1L]] else NA_real_,
+      grid_cut_hi = if (length(node$grid_cuts) >= 2L) node$grid_cuts[[2L]] else NA_real_,
+      stringsAsFactors = FALSE
+    )
+    walk(node$left); walk(node$right)
+  }
+  walk(object@tree)
+  do.call(rbind, rows)
+}
+
+#' Validate `newdata` for a `RefinedTreeModel` (internal helper)
+#' @keywords internal
+.refined_tree_check_newdata <- function(object, newdata) {
+  if (!is.data.frame(newdata) && !is.matrix(newdata)) {
+    cli::cli_abort("{.arg newdata} must be a data.frame or matrix.")
+  }
+  if (is.matrix(newdata)) newdata <- as.data.frame(newdata)
+  missing_coords <- setdiff(object@coords, names(newdata))
+  if (length(missing_coords) > 0L) {
+    cli::cli_abort(
+      "newdata is missing coordinate(s) {.val {missing_coords}} that \\
+       {.arg object} splits on."
+    )
+  }
+  newdata
+}
+
+# Predict from a RefinedTreeModel. Walks the coordinate-space tree
+# DIRECTLY on newdata's raw (non-discretized) coordinate values -- no
+# binary design matrix, no @discretization_metadata step. This is the
+# whole reason RefinedTreeModel is a separate representation from
+# OptimalTreesModel (see its class docs): a refined, off-grid `cut` is
+# not expressible as a grid threshold at all.
+S7::method(predict, RefinedTreeModel) <- function(object, newdata, ...) {
+  newdata <- .refined_tree_check_newdata(object, newdata)
+  coord_tree_predict(object@tree, newdata)
+}
+
+# Print a RefinedTreeModel.
+S7::method(print, RefinedTreeModel) <- function(x, ...) {
+  cat("<RefinedTreeModel>\n")
+  cat(sprintf("  loss: %s | n_train: %d | n_leaves: %d | training_risk (SSE): %s\n",
+              x@loss, x@n_train, coord_tree_count_leaves(x@tree),
+              format(x@training_risk, digits = 6)))
+  cat(sprintf("  coords: %s | min_leaf_n: %d\n",
+              paste(x@coords, collapse = ", "), x@min_leaf_n))
+  n_refined <- if (!is.null(x@refinement_log)) sum(x@refinement_log$refined) else NA_integer_
+  n_collapsed <- if (!is.null(x@refinement_log)) sum(x@refinement_log$collapsed) else NA_integer_
+  cat(sprintf("  splits refined off-grid: %s | collapsed transition pairs: %s\n",
+              n_refined, n_collapsed))
+  invisible(x)
+}
+
+# Summarize a RefinedTreeModel: prints the model plus the full
+# @refinement_log -- the per-split checkable record of what moved, from
+# where, and by how much risk. DIAGNOSTIC AND PROVENANCE ONLY: this makes
+# no claim about global optimality, full ass:global compliance, or the
+# (Grid) condition -- see the plan file's Milestone A/§4.2 for the
+# explicit disclaimer categories fit_twostage() (a later milestone) will
+# surface formally.
+S7::method(summary, RefinedTreeModel) <- function(object, ...) {
+  print(object)
+  cat("\nRefinement log:\n")
+  print(object@refinement_log)
+  invisible(object)
+}

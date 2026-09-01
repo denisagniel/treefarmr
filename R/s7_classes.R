@@ -192,8 +192,173 @@ new_optimal_trees_model <- function(loss_function,
 
 
 # =============================================================================
-# Cross-Fitted Rashomon Class
+# Refined-Tree Model Class (Stage B: off-grid threshold refinement)
 # =============================================================================
+
+#' Off-Grid Refined Tree Model
+#'
+#' @description
+#' Result of running Stage B (off-grid threshold refinement, per
+#' \code{theory.tex}'s \code{prop:transition-leaves}) on a fitted
+#' \code{OptimalTreesModel} -- see [refine_tree()], the constructor.
+#'
+#' A DELIBERATELY SEPARATE class from \code{OptimalTreesModel}, not a
+#' subclass and not a variant metadata-patched onto the same
+#' representation -- see \code{quality_reports/plans/2026-09-01_two-stage-
+#' package-defaults-session.md} Milestone A in the \code{global-scholars}
+#' project for the full Oracle-consulted rationale, verified empirically
+#' before being accepted (the decisive finding: a fitted model's split
+#' nodes can reference the SAME binary-feature column index from more than
+#' one node, including sibling subtrees, so one refined cut per
+#' coordinate/threshold cannot be represented by patching
+#' \code{@discretization_metadata} -- confirmed directly on a real fit, not
+#' assumed). Subclassing \code{OptimalTreesModel} was also rejected: an
+#' inherited object would carry a \code{@trees} field that is stale for
+#' prediction (the original, un-refined, grid-thresholded tree) -- a
+#' silent-wrong-answer hazard a separate class avoids by construction (it
+#' simply has no such field at all).
+#'
+#' \strong{Scope, 2026-09-01 (Milestone A): regression (\code{squared_error})
+#' only}, matching [as_coordinate_tree()]'s scope -- see [refine_tree()].
+#'
+#' @details
+#' Properties:
+#' - tree: the coordinate-space tree (see \code{\link{stage_b}} for the
+#'   node schema), after collapse and refinement.
+#' - coords: character vector of coordinate names the tree splits on.
+#' - loss: loss function used to fit \code{source} (currently always
+#'   \code{"squared_error"} -- an honest single-value field, not a
+#'   placeholder for future generality it does not yet have).
+#' - source: the originating \code{OptimalTreesModel} -- provenance, and
+#'   the discretization/metadata escape hatch a caller needing the
+#'   pre-refinement fit can still reach.
+#' - refinement_log: data.frame, one row per split, from
+#'   [refine_tree_cuts()] -- the checkable claim of what moved, from where,
+#'   and by how much risk. See \code{\link{refine_tree_cuts}}'s
+#'   \code{@return} for the column list.
+#' - n_train: number of training rows the refinement was run against.
+#' - training_risk: total training SSE of the refined tree.
+#' - min_leaf_n: the floor that was enforced during refinement (see
+#'   [refine_tree_cuts()]); re-checked by the validator below.
+#' - format_version: integer, currently \code{1L}.
+#'
+#' All properties are validated on creation and modification -- in
+#' particular, every split's \code{cut} is re-checked to lie strictly
+#' inside its own recomputed identifying bracket (a Milestone E
+#' perturbation that violates this fails construction rather than
+#' returning silent garbage), and every leaf is re-checked against
+#' \code{min_leaf_n}.
+#' @export
+RefinedTreeModel <- S7::new_class(
+  name = "RefinedTreeModel",
+  package = NULL,
+
+  properties = list(
+    tree = S7::class_list,
+    coords = S7::class_character,
+    loss = S7::class_character,
+    source = S7::new_property(S7::class_any, default = NULL),
+    refinement_log = S7::new_property(S7::class_any, default = NULL),
+    n_train = S7::class_integer,
+    training_risk = S7::class_double,
+    min_leaf_n = S7::new_property(S7::class_integer, default = 1L),
+    format_version = S7::new_property(S7::class_integer, default = 1L)
+  ),
+
+  validator = function(self) {
+    if (!identical(self@loss, "squared_error")) {
+      return("@loss must be 'squared_error' (Milestone A scope)")
+    }
+    if (self@n_train < 1L) {
+      return("@n_train must be positive")
+    }
+    if (self@min_leaf_n < 1L) {
+      return("@min_leaf_n must be a positive integer")
+    }
+    if (!is.finite(self@training_risk) || self@training_risk < 0) {
+      return("@training_risk must be a non-negative finite number")
+    }
+    if (length(self@coords) == 0L) {
+      return("@coords must be non-empty")
+    }
+
+    # Recursive structural check over the coordinate-space tree: schema,
+    # unique ids, finiteness, coords all recognized, min_leaf_n honored,
+    # and every split's cut strictly inside its own recomputed bracket.
+    seen_ids <- new.env(parent = emptyenv())
+    seen_ids$ids <- integer(0)
+
+    check_node <- function(node) {
+      if (is.null(node$kind) || is.null(node$id)) {
+        return("every node must have `kind` and `id`")
+      }
+      if (node$id %in% seen_ids$ids) {
+        return(sprintf("duplicate node id %d -- ids must be unique", node$id))
+      }
+      seen_ids$ids <- c(seen_ids$ids, node$id)
+
+      if (identical(node$kind, "leaf")) {
+        if (is.null(node$prediction) || !is.finite(node$prediction)) {
+          return(sprintf("leaf %d: @prediction must be finite", node$id))
+        }
+        if (is.null(node$n) || node$n < self@min_leaf_n) {
+          return(sprintf(
+            "leaf %d: n = %s is below min_leaf_n = %d",
+            node$id, if (is.null(node$n)) "NULL" else node$n, self@min_leaf_n
+          ))
+        }
+        return(NULL)
+      }
+      if (!identical(node$kind, "split")) {
+        return(sprintf("node %d: unrecognized kind '%s'", node$id, node$kind))
+      }
+      if (!node$coord %in% self@coords) {
+        return(sprintf(
+          "split %d: coord '%s' is not in @coords", node$id, node$coord
+        ))
+      }
+      if (!is.finite(node$cut)) {
+        return(sprintf("split %d: @cut must be finite", node$id))
+      }
+      NULL
+    }
+
+    problem <- NULL
+    walk <- function(node) {
+      p <- check_node(node)
+      if (!is.null(p)) {
+        problem <<- p
+        return(invisible())
+      }
+      if (identical(node$kind, "split")) {
+        walk(node$left)
+        walk(node$right)
+      }
+    }
+    walk(self@tree)
+    if (!is.null(problem)) return(problem)
+
+    # Bracket-feasibility: recompute every split's identifying bracket from
+    # the CURRENT tree and assert its cut lies strictly inside. This is
+    # what gives Milestone E's later perturbations a free feasibility gate
+    # -- a bad perturbation fails construction here, not silently.
+    for (p in coord_tree_split_paths(self@tree)) {
+      node <- coord_tree_node_at(self@tree, p)
+      br <- node_bracket(self@tree, p)
+      if (!(node$cut > br$lo && node$cut < br$hi)) {
+        return(sprintf(
+          "split %d (coord '%s'): cut = %s is not strictly inside its own identifying bracket (%s, %s)",
+          node$id, node$coord, node$cut, br$lo, br$hi
+        ))
+      }
+    }
+
+    NULL
+  }
+)
+
+
+
 
 #' Cross-Fitted Rashomon Set Results
 #'

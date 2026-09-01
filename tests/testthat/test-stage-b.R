@@ -536,3 +536,125 @@ test_that("full pipeline (as_coordinate_tree -> collapse_transitions -> refine_t
   }
   check_leaf(ref$tree)
 })
+
+# ---------------------------------------------------------------------------
+# refine_tree() -- the public entry point -- and RefinedTreeModel's public
+# consumer contract (predict/print/summary, leaf_assignments/n_leaves/
+# split_table, and the class validator).
+# ---------------------------------------------------------------------------
+
+test_that("refine_tree() end to end recovers known off-grid boundaries and predicts sanely", {
+  set.seed(20260901)
+  n <- 1500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  true_cut1 <- 0.4123; true_cut2 <- 0.6789
+  y <- ifelse(X$x1 <= true_cut1, 0, 3) + ifelse(X$x2 <= true_cut2, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 2L)
+
+  rt <- fit |> refine_tree(X, y)
+  expect_s7_class(rt, RefinedTreeModel)
+  expect_equal(n_leaves(rt), 4L)
+  expect_setequal(rt@coords, c("x1", "x2"))
+  expect_equal(rt@n_train, n)
+
+  st <- split_table(rt)
+  expect_equal(nrow(st), 3L)   # 2 true boundaries, one split on each coordinate twice
+  x1_cuts <- st$cut[st$coord == "x1"]
+  x2_cuts <- st$cut[st$coord == "x2"]
+  expect_true(all(abs(x1_cuts - true_cut1) < 0.01))
+  expect_true(all(abs(x2_cuts - true_cut2) < 0.01))
+
+  preds <- predict(rt, X)
+  expect_true(all(is.finite(preds)))
+  la <- leaf_assignments(rt, X)
+  expect_equal(length(unique(la)), n_leaves(rt))
+})
+
+test_that("predict.RefinedTreeModel and leaf_assignments reject newdata missing a required coordinate", {
+  set.seed(20260901)
+  n <- 500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.6, 0, 1) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 2L)
+  rt <- refine_tree(fit, X, y)
+
+  expect_error(predict(rt, X[, "x1", drop = FALSE]), "missing coordinate")
+  expect_error(leaf_assignments(rt, X[, "x1", drop = FALSE]), "missing coordinate")
+})
+
+test_that("RefinedTreeModel's validator rejects invalid trees", {
+  mk_leaf <- function(id, pred = 0, n = 5) {
+    list(kind = "leaf", id = id, prediction = pred, n = n,
+         stats = list(n = n, sum = pred * n, sumsq = 0))
+  }
+  mk_split <- function(id, coord, cut, left, right) {
+    list(kind = "split", id = id, coord = coord, cut = cut, grid_cuts = cut,
+         collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_, left = left, right = right)
+  }
+  good_tree <- mk_split(1L, "x1", 0.5, mk_leaf(2L), mk_leaf(3L))
+
+  # Valid construction succeeds.
+  expect_s7_class(
+    RefinedTreeModel(tree = good_tree, coords = "x1", loss = "squared_error",
+                      n_train = 100L, training_risk = 1.0),
+    RefinedTreeModel
+  )
+
+  # Duplicate node id.
+  bad_dup <- mk_split(1L, "x1", 0.5, mk_leaf(1L), mk_leaf(3L))
+  expect_error(
+    RefinedTreeModel(tree = bad_dup, coords = "x1", loss = "squared_error",
+                      n_train = 100L, training_risk = 1.0),
+    "duplicate node id"
+  )
+
+  # min_leaf_n violation.
+  bad_nleaf <- mk_split(1L, "x1", 0.5, mk_leaf(2L, n = 0), mk_leaf(3L))
+  expect_error(
+    RefinedTreeModel(tree = bad_nleaf, coords = "x1", loss = "squared_error",
+                      n_train = 100L, training_risk = 1.0, min_leaf_n = 1L),
+    "below min_leaf_n"
+  )
+
+  # coord not declared in @coords.
+  expect_error(
+    RefinedTreeModel(tree = good_tree, coords = "x2", loss = "squared_error",
+                      n_train = 100L, training_risk = 1.0),
+    "not in @coords"
+  )
+
+  # Bracket infeasibility: a nested same-coordinate split whose cut lies
+  # outside what its own subtree position permits.
+  bad_bracket <- mk_split(
+    1L, "x1", 0.5,
+    left  = mk_split(2L, "x1", 0.6, mk_leaf(3L), mk_leaf(4L)),
+    right = mk_leaf(5L)
+  )
+  expect_error(
+    RefinedTreeModel(tree = bad_bracket, coords = "x1", loss = "squared_error",
+                      n_train = 100L, training_risk = 1.0),
+    "identifying bracket"
+  )
+
+  # Wrong loss (Milestone A scope is squared_error only).
+  expect_error(
+    RefinedTreeModel(tree = good_tree, coords = "x1", loss = "log_loss",
+                      n_train = 100L, training_risk = 1.0),
+    "squared_error"
+  )
+})
+
+test_that("print/summary on a RefinedTreeModel run without error and report the refinement log", {
+  set.seed(20260901)
+  n <- 500
+  X <- data.frame(x1 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 2) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 6L, max_depth = 1L)
+  rt <- refine_tree(fit, X, y)
+
+  expect_output(print(rt), "RefinedTreeModel")
+  expect_output(summary(rt), "Refinement log")
+})
