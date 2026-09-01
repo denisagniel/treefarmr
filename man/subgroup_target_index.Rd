@@ -14,10 +14,10 @@ Integer index, or `NULL` if `y` never takes the value `1` (in which
   case no `y == 1` indicator column exists to select).
 }
 \description{
-Resolves the value of the solver's `subgroup_column` setting that selects the
+Resolves the value of the solver's `subgroup_target_index` setting that selects the
 `y == 1` indicator. `Encoder::build()` (src/encoder.cpp) binarizes the outcome
 column into one indicator per distinct outcome value, ordered by the value's
-*string* representation (a `std::set<std::string>`), and `subgroup_column`
+*string* representation (a `std::set<std::string>`), and `subgroup_target_index`
 indexes that ordering. So for a 0/1 outcome, `1{y == 0}` is index 0 and
 `1{y == 1}` is index 1. Selecting the `y == 1` indicator is what makes
 `subgroup_min_count_0` a floor on control (`y == 0`) rows per leaf.

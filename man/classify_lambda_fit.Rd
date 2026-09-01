@@ -6,6 +6,15 @@
 \usage{
 classify_lambda_fit(fit, lambda, n_leaves, feasible, lambda_n, leaf_budget)
 }
+\arguments{
+\item{leaf_budget}{The budget the fit is being classified against. Callers
+under a declared depth restriction (see [bisect_lambda_to_budget()]'s
+`depth_restricted`) pass the *effective* budget
+(`min(leaf_budget, 2^max_depth)`), not the analyst's declared
+`leaf_budget`, so `gap` (case iii) is measured against what the
+depth-restricted search could actually have produced, not against a
+leaf count it structurally cannot reach.}
+}
 \description{
 Given a fit at some `lambda` with `n_leaves` leaves, determines whether it
 is *certified* to solve the theoretical selection rule

@@ -172,6 +172,13 @@ check_leaf_feasibility <- function(fit, X, m_n, group = NULL, group_value = 0,
 #' All three cases require `feasible` to hold; the lemma's premises do not
 #' apply otherwise.
 #'
+#' @param leaf_budget The budget the fit is being classified against. Callers
+#'   under a declared depth restriction (see [bisect_lambda_to_budget()]'s
+#'   `depth_restricted`) pass the *effective* budget
+#'   (`min(leaf_budget, 2^max_depth)`), not the analyst's declared
+#'   `leaf_budget`, so `gap` (case iii) is measured against what the
+#'   depth-restricted search could actually have produced, not against a
+#'   leaf count it structurally cannot reach.
 #' @keywords internal
 classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
                                  leaf_budget) {
@@ -239,7 +246,41 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   0.01)`), the multiplicative factor by which that bound is grown if it
 #'   also overshoots, and the maximum number of additional fits allowed in
 #'   the bisection phase (growth and bisection share this budget).
-#' @param ... Additional arguments passed to [fit_tree()].
+#' @param max_depth Integer or `NULL` (default). The search depth passed to
+#'   [fit_tree()]. **A feasible tree with exactly `leaf_budget` leaves can be
+#'   as deep as `leaf_budget - 1`** (a chain-shaped topology), NOT
+#'   `ceiling(log2(leaf_budget))` (a balanced tree, merely the *shallowest*
+#'   topology that can reach `leaf_budget` leaves at all) -- never conflate
+#'   the two. `NULL` (default) resolves to `leaf_budget - 1` (clamped to at
+#'   least `1L`), the depth required to search the *full* feasible class,
+#'   including chain-shaped topologies -- full theoretical compliance, no
+#'   restriction, no flag needed. Pass an explicit smaller `max_depth`
+#'   together with `depth_restricted = TRUE` to deliberately trade the
+#'   full-class guarantee for speed (see `depth_sufficient`/`depth_restricted`
+#'   in the return value). \strong{`max_depth = 0L` is rejected outright}: as
+#'   of the 2026-09-01 fix to `treefarms()`'s single-tree depth-cap safety
+#'   net, `0` no longer reliably means "unlimited" once the discretized
+#'   binary feature count exceeds 8 -- it silently hands control of the
+#'   search depth to that unrelated, feature-count-triggered heuristic
+#'   instead of to `leaf_budget`'s own requirement, exactly the gap this
+#'   function exists to close. An explicit `max_depth` below
+#'   `ceiling(log2(leaf_budget))` is also rejected unconditionally
+#'   (regardless of `depth_restricted`): at that depth `leaf_budget` leaves
+#'   are not merely restricted but *mechanically unattainable at any
+#'   regularization* -- a misconfiguration, not a tradeoff.
+#' @param depth_restricted Logical, default `FALSE`. Declares that an
+#'   explicit `max_depth` between `ceiling(log2(leaf_budget))` and
+#'   `leaf_budget - 1` is a deliberate, known restriction of the search to a
+#'   strict subclass of the feasible trees (excluding some deep,
+#'   chain-shaped topologies) -- required to silence the error that would
+#'   otherwise fire for such a `max_depth`. Ignored (and an error) if
+#'   `max_depth` is left `NULL`, since there is then nothing to declare a
+#'   restriction of.
+#' @param ... Additional arguments passed to [fit_tree()]. Since `max_depth`
+#'   is a named formal argument above (not left to `...`), passing
+#'   `max_depth = ` here is impossible in practice -- R's own argument
+#'   matching always binds it to the formal parameter first, even when
+#'   forwarded through an intermediate wrapper's `...`.
 #'
 #' @return A list:
 #'   \item{fit}{The fitted `OptimalTreesModel`.}
@@ -247,14 +288,26 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   \item{n_leaves}{Its leaf count.}
 #'   \item{feasible}{Whether the per-leaf size floor(s) are met.}
 #'   \item{certified}{`TRUE` iff the returned fit is proven (not just
-#'     observed) to solve the theoretical selection rule exactly.}
+#'     observed) to solve the theoretical selection rule exactly *over the
+#'     declared problem* `(leaf_budget, max_depth)`. The claim over the full,
+#'     depth-unrestricted feasible class additionally requires
+#'     `depth_sufficient`; assert `certified && depth_sufficient` for that
+#'     stronger guarantee.}
 #'   \item{gap}{Computable suboptimality slack when `certified` is `FALSE`
 #'     but the fit is otherwise feasible and within budget (the integer
-#'     leaf-count staircase skipped `leaf_budget`); `NA` if infeasible or
-#'     the budget could not be met at all; `0` when `certified`.}
+#'     leaf-count staircase skipped the effective budget,
+#'     `min(leaf_budget, 2^max_depth)`); `NA` if infeasible or the budget
+#'     could not be met at all; `0` when `certified`.}
 #'   \item{used_search}{`FALSE` if `lambda_n` alone already worked (the
 #'     asymptotically-typical case); `TRUE` if bisection beyond `lambda_n`
 #'     was needed.}
+#'   \item{leaf_budget}{The analyst's declared budget, echoed back.}
+#'   \item{max_depth}{The search depth actually used (never `0`).}
+#'   \item{depth_required}{`leaf_budget - 1` (clamped to at least `1L`), the
+#'     depth needed to cover the full feasible class.}
+#'   \item{depth_sufficient}{`TRUE` iff `max_depth >= depth_required`, i.e.
+#'     the search was NOT depth-restricted below full compliance.}
+#'   \item{depth_restricted}{Echoes the `depth_restricted` argument.}
 #'
 #' @export
 bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
@@ -262,16 +315,134 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
                                      m_n_group = m_n,
                                      loss_function = "misclassification",
                                      hi_init = max(2 * lambda_n, 0.01),
-                                     hi_growth = 4, tol_iter = 40, ...) {
+                                     hi_growth = 4, tol_iter = 40,
+                                     max_depth = NULL, depth_restricted = FALSE,
+                                     ...) {
   if (!is.numeric(leaf_budget) || length(leaf_budget) != 1 || leaf_budget < 1) {
     stop("bisect_lambda_to_budget: `leaf_budget` must be a positive integer.",
          call. = FALSE)
   }
   leaf_budget <- as.integer(leaf_budget)
 
+  # Two distinct depth thresholds -- never conflate them (2026-09-01 Oracle
+  # consult, quality_reports/plans/2026-09-01_two-stage-package-defaults-
+  # session.md §3.2):
+  #   depth_reachable: the shallowest depth at which `leaf_budget` leaves are
+  #     even POSSIBLE (a balanced tree of this depth has 2^depth_reachable >=
+  #     leaf_budget leaves). Below this, leaf_budget is mechanically
+  #     unattainable at ANY lambda -- a misconfiguration, not a tradeoff.
+  #   depth_required: the depth needed to cover the FULL feasible class,
+  #     including the worst-case chain-shaped topology (depth = leaf_budget -
+  #     1). Between depth_reachable and depth_required, leaf_budget is
+  #     attainable but the search excludes some feasible trees -- a real,
+  #     nameable restriction, never silent, only via depth_restricted = TRUE.
+  # Clamped to >= 1L: fit_tree()/treefarms() overload max_depth = 0 to mean
+  # "unlimited" (see the roxygen note above), so this function must never
+  # resolve to a literal 0 even for the degenerate leaf_budget = 1 case --
+  # depth 1 is a harmless superset (any depth-1 cap already permits a
+  # 1-leaf tree; it just doesn't additionally REQUIRE one).
+  depth_reachable <- max(as.integer(ceiling(log2(leaf_budget))), 1L)
+  depth_required <- max(leaf_budget - 1L, 1L)
+
+  # NB: no `"max_depth" %in% names(list(...))` guard here. Since `max_depth`
+  # is a formal parameter of this function (not left to flow through `...`),
+  # R's own argument matching binds any `max_depth =` argument to it directly
+  # -- including when forwarded through an intermediate wrapper's `...` --
+  # so it can never end up in this function's own `...` to begin with.
+  # Confirmed empirically (2026-09-01): a wrapper `g <- function(...)
+  # f(a = 1, ...)` called as `g(max_depth = 5)` still binds `max_depth` to
+  # `f`'s formal, not to `f`'s `...`.
+
+  if (is.null(max_depth)) {
+    if (isTRUE(depth_restricted)) {
+      stop("bisect_lambda_to_budget: `depth_restricted = TRUE` requires an ",
+           "explicit `max_depth` to restrict to; got `max_depth = NULL`. ",
+           "Pass a `max_depth` in [", depth_reachable, ", ", depth_required,
+           ") together with `depth_restricted = TRUE`.", call. = FALSE)
+    }
+    max_depth <- depth_required
+    depth_sufficient <- TRUE
+    if (depth_required > 8L) {
+      message(
+        "bisect_lambda_to_budget: leaf_budget = ", leaf_budget,
+        " requires searching to depth ", depth_required, " for full ",
+        "theoretical compliance (the worst-case chain-shaped topology) -- ",
+        "defaulting max_depth to ", depth_required, ". With ", ncol(X),
+        " raw covariate(s) (more after discretization), this bisection can ",
+        "run up to ", 2L * tol_iter + 1L, " fits, each searching an ",
+        "unbounded-feature-count tree at depth ", depth_required, " -- can ",
+        "be slow (see quality_reports/plans/2026-09-01_two-stage-package-",
+        "defaults-session.md §1.3 for measured costs at this scale). Pass a ",
+        "smaller `max_depth` together with `depth_restricted = TRUE` to ",
+        "trade the full-class guarantee for speed."
+      )
+    }
+  } else {
+    max_depth <- as.integer(max_depth)
+    if (max_depth == 0L) {
+      stop("bisect_lambda_to_budget: `max_depth = 0L` (\"unlimited\") is not ",
+           "accepted here. Since treefarms()'s single-tree depth-cap safety ",
+           "net auto-restricts to depth 2 once the discretized binary ",
+           "feature count exceeds 8, and fires precisely when ",
+           "max_depth == 0L, passing 0 here would silently hand control of ",
+           "the search depth to that unrelated heuristic instead of to ",
+           "leaf_budget's own requirement -- exactly the gap this function ",
+           "exists to close. Pass an explicit positive max_depth (",
+           depth_required, " for full compliance) instead.", call. = FALSE)
+    }
+    if (max_depth < depth_reachable) {
+      stop("bisect_lambda_to_budget: max_depth = ", max_depth, " is below ",
+           "the minimum depth at which leaf_budget = ", leaf_budget,
+           " leaves are even possible (need max_depth >= ceiling(log2(",
+           leaf_budget, ")) = ", depth_reachable, "; a depth-", max_depth,
+           " binary tree has at most 2^", max_depth, " = ",
+           2^max_depth, " leaves). leaf_budget is mechanically unreachable ",
+           "at ANY regularization with this max_depth, regardless of ",
+           "depth_restricted. Either raise max_depth to at least ",
+           depth_reachable, ", or lower leaf_budget to at most 2^max_depth ",
+           "= ", 2^max_depth, ".", call. = FALSE)
+    }
+    if (max_depth < depth_required && !isTRUE(depth_restricted)) {
+      stop("bisect_lambda_to_budget: max_depth = ", max_depth, " is below ",
+           "leaf_budget - 1 = ", depth_required, " (the depth of the ",
+           "worst-case chain-shaped topology with ", leaf_budget,
+           " leaves). Trees with ", leaf_budget, " leaves and depth > ",
+           max_depth, " ARE excluded from the search, so the returned fit ",
+           "would be a global optimum over a depth-restricted class only, ",
+           "not the full feasible class. leaf_budget = ", leaf_budget,
+           " remains mechanically attainable at this depth (2^max_depth = ",
+           2^max_depth, " >= leaf_budget), so this is a deliberate ",
+           "restriction, not a misconfiguration -- either raise max_depth ",
+           "to ", depth_required, " for full compliance, or pass ",
+           "`depth_restricted = TRUE` to declare the restriction ",
+           "deliberately.", call. = FALSE)
+    }
+    depth_sufficient <- max_depth >= depth_required
+  }
+
+  # Achievable leaf count given max_depth: a binary tree of depth max_depth
+  # has at most 2^max_depth leaves. The depth_reachable check above already
+  # guarantees 2^max_depth >= leaf_budget on every path that reaches this
+  # line, so effective_budget always equals leaf_budget in practice -- kept
+  # as an explicit min() (rather than assumed) so gap/the search target stay
+  # correct even if that invariant is ever loosened upstream.
+  effective_budget <- min(leaf_budget, as.integer(2^max_depth))
+
+  finalize <- function(fit, lambda, n_leaves, feasible, used_search) {
+    out <- classify_lambda_fit(fit, lambda, n_leaves, feasible, lambda_n,
+                                effective_budget)
+    out$used_search <- used_search
+    out$leaf_budget <- leaf_budget
+    out$max_depth <- max_depth
+    out$depth_required <- depth_required
+    out$depth_sufficient <- depth_sufficient
+    out$depth_restricted <- isTRUE(depth_restricted)
+    out
+  }
+
   fit_and_check <- function(lambda) {
     fit <- fit_tree(X, y, loss_function = loss_function,
-                     regularization = lambda, ...)
+                     regularization = lambda, max_depth = max_depth, ...)
     n_leaves <- count_tree_leaves(fit)
     feas <- check_leaf_feasibility(fit, X, m_n = m_n, group = group,
                                     group_value = group_value,
@@ -285,46 +456,42 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
   # the budget with probability tending to one -- no search is the
   # *expected* outcome, not a shortcut around the theory.
   r0 <- fit_and_check(lambda_n)
-  if (r0$n_leaves <= leaf_budget) {
-    out <- classify_lambda_fit(r0$fit, lambda_n, r0$n_leaves, r0$feasible,
-                                lambda_n, leaf_budget)
-    out$used_search <- FALSE
-    return(out)
+  if (r0$n_leaves <= effective_budget) {
+    return(finalize(r0$fit, lambda_n, r0$n_leaves, r0$feasible, FALSE))
   }
 
   # Fallback: bisect upward for the smallest lambda >= lambda_n giving
-  # <= leaf_budget leaves. Lemma "Monotone leaf count" makes this well
+  # <= effective_budget leaves. Lemma "Monotone leaf count" makes this well
   # posed: leaf count is weakly decreasing in lambda.
   lo <- lambda_n
   hi <- hi_init
   r_hi <- fit_and_check(hi)
   budget_iter <- 0L
-  while (r_hi$n_leaves > leaf_budget && budget_iter < tol_iter) {
+  while (r_hi$n_leaves > effective_budget && budget_iter < tol_iter) {
     hi <- hi * hi_growth
     r_hi <- fit_and_check(hi)
     budget_iter <- budget_iter + 1L
   }
-  if (r_hi$n_leaves > leaf_budget) {
+  if (r_hi$n_leaves > effective_budget) {
     warning("bisect_lambda_to_budget: could not reach leaf_budget = ",
             leaf_budget, " by growing lambda up to ", hi, "; returning the ",
             "most-regularized fit tried. Check whether leaf_budget * m_n ",
-            "is compatible with nrow(X).", call. = FALSE)
-    out <- classify_lambda_fit(r_hi$fit, hi, r_hi$n_leaves, r_hi$feasible,
-                                lambda_n, leaf_budget)
-    out$used_search <- TRUE
-    return(out)
+            "is compatible with nrow(X)", if (!depth_sufficient) {
+              paste0(", and note max_depth = ", max_depth, " is a ",
+                     "deliberate restriction below the full-compliance ",
+                     "depth of ", depth_required, " -- raising max_depth ",
+                     "may also help")
+            } else "", ".", call. = FALSE)
+    return(finalize(r_hi$fit, hi, r_hi$n_leaves, r_hi$feasible, TRUE))
   }
 
   best <- r_hi
   for (i in seq_len(tol_iter)) {
     mid <- sqrt(lo * hi)  # geometric bisection; scale is multiplicative
     r_mid <- fit_and_check(mid)
-    if (r_mid$n_leaves == leaf_budget) {
-      out <- classify_lambda_fit(r_mid$fit, mid, r_mid$n_leaves,
-                                  r_mid$feasible, lambda_n, leaf_budget)
-      out$used_search <- TRUE
-      return(out)
-    } else if (r_mid$n_leaves > leaf_budget) {
+    if (r_mid$n_leaves == effective_budget) {
+      return(finalize(r_mid$fit, mid, r_mid$n_leaves, r_mid$feasible, TRUE))
+    } else if (r_mid$n_leaves > effective_budget) {
       lo <- mid
     } else {
       hi <- mid
@@ -333,9 +500,6 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
   }
 
   # Lemma "Certificate for the computed selector", case (iii): the integer
-  # leaf-count staircase skipped leaf_budget exactly.
-  out <- classify_lambda_fit(best$fit, best$lambda, best$n_leaves,
-                              best$feasible, lambda_n, leaf_budget)
-  out$used_search <- TRUE
-  out
+  # leaf-count staircase skipped effective_budget exactly.
+  finalize(best$fit, best$lambda, best$n_leaves, best$feasible, TRUE)
 }

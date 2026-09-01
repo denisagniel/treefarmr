@@ -44,7 +44,7 @@ This is an R-side, post-fit check. The solver's
 `Configuration::minimum_captured_points` floor is a *total*-count floor with
 no group awareness (and is not threaded through from R). Since
 2026-08-20 the solver additionally enforces a group-aware floor natively via
-`subgroup_column` / `subgroup_min_count_0` / `subgroup_min_count_1` (passed
+`subgroup_target_index` / `subgroup_min_count_0` / `subgroup_min_count_1` (passed
 through `...` of [optimaltrees()]; see
 `quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md` in the
 `global-scholars` project), so when those are set this function is a cheap

@@ -17,6 +17,8 @@ bisect_lambda_to_budget(
   hi_init = max(2 * lambda_n, 0.01),
   hi_growth = 4,
   tol_iter = 40,
+  max_depth = NULL,
+  depth_restricted = FALSE,
   ...
 )
 }
@@ -47,7 +49,43 @@ tried if `lambda_n` overshoots the budget (default `max(2 * lambda_n,
 also overshoots, and the maximum number of additional fits allowed in
 the bisection phase (growth and bisection share this budget).}
 
-\item{...}{Additional arguments passed to [fit_tree()].}
+\item{max_depth}{Integer or `NULL` (default). The search depth passed to
+[fit_tree()]. **A feasible tree with exactly `leaf_budget` leaves can be
+as deep as `leaf_budget - 1`** (a chain-shaped topology), NOT
+`ceiling(log2(leaf_budget))` (a balanced tree, merely the *shallowest*
+topology that can reach `leaf_budget` leaves at all) -- never conflate
+the two. `NULL` (default) resolves to `leaf_budget - 1` (clamped to at
+least `1L`), the depth required to search the *full* feasible class,
+including chain-shaped topologies -- full theoretical compliance, no
+restriction, no flag needed. Pass an explicit smaller `max_depth`
+together with `depth_restricted = TRUE` to deliberately trade the
+full-class guarantee for speed (see `depth_sufficient`/`depth_restricted`
+in the return value). \strong{`max_depth = 0L` is rejected outright}: as
+of the 2026-09-01 fix to `treefarms()`'s single-tree depth-cap safety
+net, `0` no longer reliably means "unlimited" once the discretized
+binary feature count exceeds 8 -- it silently hands control of the
+search depth to that unrelated, feature-count-triggered heuristic
+instead of to `leaf_budget`'s own requirement, exactly the gap this
+function exists to close. An explicit `max_depth` below
+`ceiling(log2(leaf_budget))` is also rejected unconditionally
+(regardless of `depth_restricted`): at that depth `leaf_budget` leaves
+are not merely restricted but *mechanically unattainable at any
+regularization* -- a misconfiguration, not a tradeoff.}
+
+\item{depth_restricted}{Logical, default `FALSE`. Declares that an
+explicit `max_depth` between `ceiling(log2(leaf_budget))` and
+`leaf_budget - 1` is a deliberate, known restriction of the search to a
+strict subclass of the feasible trees (excluding some deep,
+chain-shaped topologies) -- required to silence the error that would
+otherwise fire for such a `max_depth`. Ignored (and an error) if
+`max_depth` is left `NULL`, since there is then nothing to declare a
+restriction of.}
+
+\item{...}{Additional arguments passed to [fit_tree()]. Since `max_depth`
+is a named formal argument above (not left to `...`), passing
+`max_depth = ` here is impossible in practice -- R's own argument
+matching always binds it to the formal parameter first, even when
+forwarded through an intermediate wrapper's `...`.}
 }
 \value{
 A list:
@@ -56,14 +94,26 @@ A list:
   \item{n_leaves}{Its leaf count.}
   \item{feasible}{Whether the per-leaf size floor(s) are met.}
   \item{certified}{`TRUE` iff the returned fit is proven (not just
-    observed) to solve the theoretical selection rule exactly.}
+    observed) to solve the theoretical selection rule exactly *over the
+    declared problem* `(leaf_budget, max_depth)`. The claim over the full,
+    depth-unrestricted feasible class additionally requires
+    `depth_sufficient`; assert `certified && depth_sufficient` for that
+    stronger guarantee.}
   \item{gap}{Computable suboptimality slack when `certified` is `FALSE`
     but the fit is otherwise feasible and within budget (the integer
-    leaf-count staircase skipped `leaf_budget`); `NA` if infeasible or
-    the budget could not be met at all; `0` when `certified`.}
+    leaf-count staircase skipped the effective budget,
+    `min(leaf_budget, 2^max_depth)`); `NA` if infeasible or the budget
+    could not be met at all; `0` when `certified`.}
   \item{used_search}{`FALSE` if `lambda_n` alone already worked (the
     asymptotically-typical case); `TRUE` if bisection beyond `lambda_n`
     was needed.}
+  \item{leaf_budget}{The analyst's declared budget, echoed back.}
+  \item{max_depth}{The search depth actually used (never `0`).}
+  \item{depth_required}{`leaf_budget - 1` (clamped to at least `1L`), the
+    depth needed to cover the full feasible class.}
+  \item{depth_sufficient}{`TRUE` iff `max_depth >= depth_required`, i.e.
+    the search was NOT depth-restricted below full compliance.}
+  \item{depth_restricted}{Echoes the `depth_restricted` argument.}
 }
 \description{
 Recovers the leaf-budget-constrained selector

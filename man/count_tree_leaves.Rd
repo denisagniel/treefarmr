@@ -55,11 +55,11 @@ Rashomon set enumeration. If NULL (default), resolved based on loss function:
 \item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
 of trees in the Rashomon set, which is the most effective control for
 preventing combinatorial explosion with many features. Default: 0 (no limit).
-\strong{Auto-cap:} for single-tree regression with many binary features (> 8)
-and \code{max_depth = 0}, the function auto-sets \code{max_depth = 2}
-(depth-2 trees) to prevent exponential search-space growth. Pass
-\code{max_depth = 0L} explicitly to disable and set \code{verbose = TRUE}
-to see the message.}
+\strong{Auto-cap:} for single-tree fits (regression or classification)
+with many binary features (> 8) and \code{max_depth = 0}, the function
+auto-sets \code{max_depth = 2} (depth-2 trees) to prevent exponential
+search-space growth. Pass \code{max_depth = 0L} explicitly to disable
+and set \code{verbose = TRUE} to see the message.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 
@@ -80,11 +80,12 @@ empirical quantiles and respects \code{discretize_bins}. "median" always
 produces exactly 1 threshold (median split) regardless of \code{discretize_bins}.}
 
 \item{discretize_bins}{Number of bins for quantile discretization. Default:
-\code{"adaptive"} (= \code{ceiling(n^(1/3))}, capped at \code{floor(log2(n)^2)};
-~8 bins at n=500, ~10 at n=1000). Use \code{"log"} for the legacy
-\code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"} for data-driven selection.
-Can also be a fixed integer >= 2. Only respected when \code{discretize_method = "quantiles"}.
-Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).}
+\code{"adaptive"} (= fixed 32 bins per coordinate, justified by fixed-sample
+topology-recovery margin condition; see \code{\link{compute_bin_count}}). Use
+\code{"log"} for the legacy \code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"}
+for data-driven selection. Can also be a fixed integer >= 2. Only respected when
+\code{discretize_method = "quantiles"}. Example: n_bins=4 creates 4 bins with
+3 thresholds (quartiles).}
 
 \item{discretize_thresholds}{Optional named list of custom thresholds
 (e.g., list(age = c(30, 50))).}

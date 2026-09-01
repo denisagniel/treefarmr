@@ -13,12 +13,12 @@ discretize_features(X, method = "median", n_bins = 2, thresholds = NULL)
 
 \item{n_bins}{Number of bins for quantile discretization (creates n_bins-1 thresholds).
 Can be numeric >= 2, or a character schedule: "adaptive" (default meaning) uses a
-theory-motivated polynomial rate that refines with n, \code{ceiling(n^(1/3))} capped
-for feasibility (see \code{\link{compute_bin_count}}); "log" reproduces the legacy
+fixed 32 bins per coordinate, justified by fixed-sample topology-recovery margin
+condition (see \code{\link{compute_bin_count}} for details); "log" reproduces the legacy
 \code{ceiling(log(n)/3)} schedule. Note "cv" (data-driven selection via
 \code{\link{select_bins_cv}}) must be resolved by the caller, which has the outcome y.
 For binary covariates no bins are created regardless. See \code{\link{compute_bin_count}}
-for the theory link (grid must refine polynomially to attain the continuous rate).}
+for the theory link and computational safety caveats.}
 
 \item{thresholds}{Optional named list of user-provided thresholds for specific features}
 }
