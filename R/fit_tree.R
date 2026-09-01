@@ -135,11 +135,11 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     n <- nrow(X)
     p_original <- ncol(X)
 
-    # Estimate number of bins (adaptive formula or user-specified)
+    # Estimate number of bins (fixed 32 or user-specified)
     # Check both dots and use optimaltrees default if not specified
     discretize_bins_param <- dots$discretize_bins
     if (is.null(discretize_bins_param)) {
-      # Match optimaltrees() default: "adaptive" = ceiling(n^(1/3)), capped
+      # Match optimaltrees() default: "adaptive" = fixed 32 bins per coordinate
       discretize_bins_param <- "adaptive"
     }
 

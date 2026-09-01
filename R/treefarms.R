@@ -39,11 +39,11 @@
 #' @param max_depth Integer. Maximum tree depth (0 = unlimited). Limits the depth
 #'   of trees in the Rashomon set, which is the most effective control for
 #'   preventing combinatorial explosion with many features. Default: 0 (no limit).
-#'   \strong{Auto-cap:} for single-tree regression with many binary features (> 8)
-#'   and \code{max_depth = 0}, the function auto-sets \code{max_depth = 2}
-#'   (depth-2 trees) to prevent exponential search-space growth. Pass
-#'   \code{max_depth = 0L} explicitly to disable and set \code{verbose = TRUE}
-#'   to see the message.
+#'   \strong{Auto-cap:} for single-tree fits (regression or classification)
+#'   with many binary features (> 8) and \code{max_depth = 0}, the function
+#'   auto-sets \code{max_depth = 2} (depth-2 trees) to prevent exponential
+#'   search-space growth. Pass \code{max_depth = 0L} explicitly to disable
+#'   and set \code{verbose = TRUE} to see the message.
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
 #'   Default: FALSE. Set to TRUE only if you need to access training data later.
@@ -58,11 +58,12 @@
 #'   empirical quantiles and respects \code{discretize_bins}. "median" always
 #'   produces exactly 1 threshold (median split) regardless of \code{discretize_bins}.
 #' @param discretize_bins Number of bins for quantile discretization. Default:
-#'   \code{"adaptive"} (= \code{ceiling(n^(1/3))}, capped at \code{floor(log2(n)^2)};
-#'   ~8 bins at n=500, ~10 at n=1000). Use \code{"log"} for the legacy
-#'   \code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"} for data-driven selection.
-#'   Can also be a fixed integer >= 2. Only respected when \code{discretize_method = "quantiles"}.
-#'   Example: n_bins=4 creates 4 bins with 3 thresholds (quartiles).
+#'   \code{"adaptive"} (= fixed 32 bins per coordinate, justified by fixed-sample
+#'   topology-recovery margin condition; see \code{\link{compute_bin_count}}). Use
+#'   \code{"log"} for the legacy \code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"}
+#'   for data-driven selection. Can also be a fixed integer >= 2. Only respected when
+#'   \code{discretize_method = "quantiles"}. Example: n_bins=4 creates 4 bins with
+#'   3 thresholds (quartiles).
 #' @param discretize_thresholds Optional named list of custom thresholds
 #'   (e.g., list(age = c(30, 50))).
 #' @param cart_lookahead Logical. Enable OSRT one-step lookahead bounds (Theorem 3.2).
@@ -773,19 +774,40 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
     y <- as.numeric(y)
   }
 
-  # Depth-cap safety net for single-tree regression with fine discretization.
-  # Without a depth limit, OSRT explores an exponential search space when
-  # regularization is small and the binary feature count is nontrivial —
-  # confirmed by probe: n=50,p=3,reg=0.01 times out; max_depth=2 (depth-2 trees)
-  # collapses to ~1s. This guard fires only for the single-tree regression path;
-  # the Rashomon path is already bounded (max_depth=3L in fit_nuisances_rashomon
-  # and the log-schedule gate in cross_fitted_rashomon).
-  if (single_tree && is_regression && max_depth == 0L && ncol(X) > 8L) {
+  # Depth-cap safety net for single-tree fits with fine discretization.
+  # Without a depth limit, GOSDT/OSRT explores an exponential search space
+  # when regularization is small and the binary feature count is nontrivial.
+  # Originally confirmed for regression only (probe: n=50,p=3,reg=0.01 times
+  # out; max_depth=2 collapses to ~1s). CONFIRMED to apply equally to
+  # classification (2026-09-01, quality_reports/plans/
+  # 2026-09-01_two-stage-package-defaults-session.md §3.1/§3.3): with the
+  # "adaptive" bin-count default now fixed at 32 (vs the old n-growing
+  # schedule, which kept n_bins small for the n=300-400 range where this was
+  # first hit), log_loss fits with unbounded depth blew up combinatorially
+  # at >=22 bins (n=400,p=2: 8 bins -> 0.19s, 12 bins -> 1.59s, 22 bins ->
+  # >40s unresolved; max_depth=2 made even 32 bins instant at 0.08s). The
+  # `is_regression` gate below was therefore dropped — this is a search-space
+  # blow-up mechanism common to both loss functions, not a regression-only
+  # concern. This guard fires only for the single-tree path; the Rashomon
+  # path is already bounded (max_depth=3L in fit_nuisances_rashomon and the
+  # log-schedule gate in cross_fitted_rashomon).
+  #
+  # The `ncol(X) > 8L` / `max_depth <- 2L` thresholds are the ORIGINAL
+  # regression-only calibration, reused as-is for classification for lack of
+  # a separate calibration. Revisit once §3.2's open design question (should
+  # the package default to a fixed, modest depth cap regardless of
+  # leaf_budget, with full-depth search as an explicit opt-in?) is resolved
+  # -- this guard is a stopgap, not that design.
+  if (single_tree && max_depth == 0L && ncol(X) > 8L) {
     max_depth <- 2L
     if (verbose) {
       cli::cli_inform(c(
         "Auto-set {.arg max_depth} = {.val 2} (depth-2 trees).",
-        "i" = "Reason: regression + {ncol(X)} binary features + unlimited depth can OOM.",
+        "i" = paste0(
+          "Reason: ", if (is_regression) "regression" else "classification",
+          " + {ncol(X)} binary features + unlimited depth can be extremely",
+          " slow (or, for regression, can OOM)."
+        ),
         "i" = "Pass {.code max_depth = 0L} explicitly to disable this cap."
       ))
     }

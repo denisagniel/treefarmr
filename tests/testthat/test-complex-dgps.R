@@ -375,14 +375,12 @@ test_that("R2 regression quadratic: OOS cor > 0.20 with new defaults", {
 # Non-decreasing: bins(100) <= bins(500) <= bins(2000)
 # ============================================================================
 
-test_that("adaptive bin formula: n_bins matches ceiling(n^(1/3)) polynomial default", {
-  # C-F2 changed the "adaptive" default from the legacy log schedule
-  # max(2, ceil(log(n)/3)) to the theory-motivated polynomial ceil(n^(1/3))
-  # (bounded by cap = ceil((log2 n)^2), floor 2). The old log formula is now the
-  # "log" schedule. This test tracks the DEFAULT, so it asserts the polynomial rate.
-  cap <- function(n) max(2L, ceiling((log2(max(n, 2)))^2))
+test_that("adaptive bin formula: n_bins returns fixed 32 (fixed-sample margin condition)", {
+  # Changed 2026-08-31: "adaptive" default now returns fixed 32 bins per coordinate,
+  # justified by fixed-sample topology-recovery margin condition (not asymptotic rate).
+  # This test verifies the fixed default is applied consistently.
   expected_bins_formula <- function(n) {
-    max(2L, min(cap(n), ceiling(n^(1 / 3))))
+    32L  # Fixed 32 bins, independent of n
   }
 
   n_vec <- c(100L, 500L, 2000L)
@@ -400,13 +398,13 @@ test_that("adaptive bin formula: n_bins matches ceiling(n^(1/3)) polynomial defa
       info = paste("discretization_metadata should not be NULL at n =", n_i))
     bins_vec[[i]] <- as.integer(meta$n_bins)
     expect_equal(bins_vec[[i]], expected_bins_formula(n_i),
-      info = paste("n_bins should match formula at n =", n_i))
+      info = paste("n_bins should be fixed 32 at n =", n_i))
   }
 
-  # Non-decreasing: bins should not decrease as n grows
-  for (i in seq_len(length(bins_vec) - 1L)) {
-    expect_lte(bins_vec[[i]], bins_vec[[i + 1L]],
-      label = paste("bins non-decreasing:", n_vec[[i]], "->", n_vec[[i + 1L]]))
+  # All should be 32 (constant, not non-decreasing growth)
+  for (i in seq_along(bins_vec)) {
+    expect_equal(bins_vec[[i]], 32L,
+      label = paste("bins should be 32 at n =", n_vec[[i]]))
   }
 })
 

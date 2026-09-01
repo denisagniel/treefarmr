@@ -6,19 +6,20 @@
 # retained "log" legacy schedule, the "cv" data-driven option, binary invariance,
 # and the cap/floor. See quality_reports/plans/2026-07-01_code-fix-discretization-refinement.md
 
-test_that("compute_bin_count: adaptive grows polynomially and beats log", {
+test_that("compute_bin_count: adaptive returns fixed 32 bins (fixed-sample margin condition)", {
   ns <- c(100, 500, 2000, 8000, 50000)
   adaptive <- vapply(ns, function(n) compute_bin_count("adaptive", n), integer(1))
   logbins  <- vapply(ns, function(n) compute_bin_count("log", n), integer(1))
 
-  # Monotone nondecreasing in n.
-  expect_true(all(diff(adaptive) >= 0))
-  # Polynomial dominates logarithmic for all but the smallest n.
-  expect_true(all(adaptive >= logbins))
-  expect_gt(adaptive[length(adaptive)], logbins[length(logbins)] * 3)
+  # Fixed 32 bins for all n (no growth with sample size).
+  expect_true(all(adaptive == 32L))
 
-  # Matches the closed form ceil(n^(1/3)) below the cap.
-  expect_equal(compute_bin_count("adaptive", 8000), as.integer(ceiling(8000^(1/3))))
+  # Log schedule still grows, but adaptive is now fixed.
+  expect_true(all(diff(logbins) >= 0))
+  expect_gt(logbins[length(logbins)], logbins[1])
+
+  # Adaptive (fixed 32) dominates log for large n.
+  expect_gt(adaptive[length(adaptive)], logbins[length(logbins)])
 })
 
 test_that("compute_bin_count: respects floor of 2 and an upper cap", {
