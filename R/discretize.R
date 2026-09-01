@@ -145,18 +145,50 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
 #' size \code{n}. This is the per-coordinate discretization resolution used to
 #' turn continuous covariates into binary features.
 #'
-#' \strong{Default: fixed 32 bins per coordinate.} The \code{"adaptive"} default
-#' (when \code{rho = NULL}) returns a fixed bin count of 32, justified by the
-#' fixed-sample topology-recovery margin condition:
-#' \deqn{m^* = \frac{2B}{c \cdot \underline{f} \cdot \varsigma} \left(\frac{\kappa_{\max}}{\kappa_{\min}}\right)^2}
-#' where \eqn{B} is the number of boundaries (nuisance functions), \eqn{c} is a
-#' constant, \eqn{\underline{f}} is the minimum density, \eqn{\varsigma} is the
-#' jump size, and \eqn{\kappa_{\max}/\kappa_{\min}} is the condition-number ratio.
-#' This margin condition does \emph{not} require asymptotic grid refinement; it
-#' holds for any fixed bin count large enough to separate the boundaries. Empirical
-#' validation (p ∈ {5, 10, 20, 40}, max_depth = 2) confirms 32 bins is safe:
-#' memory usage scales roughly linearly to mildly superlinearly (peak 1.1 GB at
-#' p=40, n=10000), with no out-of-memory failures.
+#' \strong{Default: fixed 32 bins per coordinate (PROVISIONAL, not a
+#' validated-safe constant).} The \code{"adaptive"} default (when
+#' \code{rho = NULL}) returns a fixed bin count of 32. This number is a
+#' working default to unblock development, not a calibrated or proven-safe
+#' quantity -- do not cite it as validated in any paper claim. Two reasons:
+#'
+#' \enumerate{
+#'   \item \strong{The figure itself is uncalibrated.} It comes from an
+#'     illustrative evaluation of the fixed-sample topology-recovery margin
+#'     condition below at ASSUMED, not calibrated-from-data, parameter values
+#'     (\eqn{B \le 4} boundaries, separation \eqn{\varsigma \ge 0.25}), plus a
+#'     single same-day empirical spot-check on one 5-boundary DGP: \eqn{m=16}
+#'     bins produced a wrong topology there (a true boundary fell inside one
+#'     grid atom, forcing an extra "transition leaf" -- see
+#'     \code{prop:transition-leaves} in \code{theory.tex}) while \eqn{m=32}
+#'     happened to work. That is a thin margin observed once, not a
+#'     guarantee that generalizes across the DGP class this package targets.
+#'   \item \strong{The margin condition and the transition-leaf mechanism
+#'     pull in opposite directions.} A coarser grid (fewer bins) increases
+#'     the rate at which true boundaries land inside a grid atom, which
+#'     mechanically inflates the search budget Stage A actually needs -- up
+#'     to \eqn{2\bar L - 1} leaves, not \eqn{\bar L} (see
+#'     \code{prop:transition-leaves}) -- independent of whether the margin
+#'     condition below is nominally satisfied at some assumed \eqn{B}.
+#'     Adjusting the bin count without re-deriving both effects jointly is
+#'     not a safe change.
+#' }
+#'
+#' \code{fit_twostage()} (planned; see
+#' \code{quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md}
+#' §4 in the \code{global-scholars} project) is meant to replace this fixed
+#' default with an escalating \eqn{m}-ladder plus a post-refinement
+#' local-optimality certificate -- the actual validated mechanism once built.
+#'
+#' \strong{What IS validated about 32, and what is not.} Separately,
+#' empirical feasibility testing (p \eqn{\in} \{5, 10, 20, 40\},
+#' \code{max_depth = 2}) confirmed that \emph{fitting} at 32 bins per
+#' coordinate does not exhaust memory: usage scaled roughly linearly to
+#' mildly superlinearly (peak 1.1 GB at p=40, n=10000), no out-of-memory
+#' failures. That result concerns computational feasibility only -- whether
+#' the fit runs without crashing -- and says nothing about whether 32 bins is
+#' sufficient to \emph{recover the true topology}, which is the separate,
+#' uncalibrated claim in point 1 above. Do not conflate "does not OOM" with
+#' "recovers the truth."
 #'
 #' \strong{Polynomial alternative.} Callers may pass an explicit \code{rho > 0}
 #' to use the legacy polynomial schedule \eqn{m_n = \lceil c\, n^{\rho}\rceil}.
@@ -164,17 +196,28 @@ discretize_features <- function(X, method = "median", n_bins = 2, thresholds = N
 #' asymptotic grid refinement is desired (e.g., very large n or inference targets
 #' requiring \eqn{h_n = o(n^{-1/2})}). See the polynomial-schedule details below.
 #'
-#' \strong{Grid-resolution requirement.} The fixed-bin default (32 per coordinate)
-#' satisfies the topology-recovery margin condition for any fixed leaf budget
-#' \eqn{\bar L}. The grid-resolution requirement depends on \eqn{\bar L} (the number
-#' of true boundaries), \emph{not} on tree depth. However, the solver's fitting time
-#' is governed separately by \eqn{\bar L} (which determines required search depth for
-#' exact optimization) and total covariate count. For \eqn{\bar L} in the 20--30 range
-#' with more than a handful of covariates, fitting can take from under a minute to
-#' several minutes of wall-clock time; this is an accepted, documented cost of exact
-#' optimization, not a memory risk. Additionally, unbounded depth or very large leaf
-#' budgets can cause memory blowup regardless of bin count. Always pair fixed bins
-#' with explicit depth caps and leaf-size constraints.
+#' \strong{Grid-resolution requirement.} The fixed-sample topology-recovery
+#' margin condition referenced above is
+#' \deqn{m^* = \frac{2B}{c \cdot \underline{f} \cdot \varsigma} \left(\frac{\kappa_{\max}}{\kappa_{\min}}\right)^2}
+#' where \eqn{B} is the number of boundaries (nuisance functions), \eqn{c} is a
+#' constant, \eqn{\underline{f}} is the minimum density, \eqn{\varsigma} is the
+#' jump size, and \eqn{\kappa_{\max}/\kappa_{\min}} is the condition-number
+#' ratio. It does \emph{not} require asymptotic grid refinement (any fixed bin
+#' count \eqn{\ge m^*} suffices), but \eqn{m^*} itself scales with \eqn{B}
+#' (related to, but not identical to, the leaf budget \eqn{\bar L}), so a
+#' fixed bin count cannot satisfy it "for any \eqn{\bar L}" -- it was only
+#' evaluated at the assumed \eqn{B \le 4} above. \strong{The 32-bin default has NOT been
+#' validated at the plan's staged-rollout target \eqn{\bar L \in [20,30]}};
+#' the plan explicitly sequences validation at smaller \eqn{\bar L \in \{4,8\}}
+#' first before attempting that range. Separately, the solver's fitting time
+#' is governed by \eqn{\bar L} (which determines required search depth for
+#' exact optimization, per \code{prop:transition-leaves} up to \eqn{2\bar L-1}
+#' leaves and \eqn{2d_0} depth, not \eqn{\bar L}/\eqn{d_0}) and total
+#' covariate count; at the target \eqn{\bar L} range with more than a handful
+#' of covariates, fitting can take from under a minute to several minutes of
+#' wall-clock time. Unbounded depth or very large leaf budgets can cause
+#' memory blowup regardless of bin count; always pair fixed bins with
+#' explicit depth caps and leaf-size constraints.
 #'
 #' \strong{Polynomial schedule (when \code{rho} is explicit).} The convergence
 #' theory for tree nuisance estimators (piecewise sparse anisotropic Besov class)
