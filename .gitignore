@@ -45,6 +45,17 @@ temp_*
 *.tmp
 *.log
 
+# LaTeX build artifacts (inst/paper/)
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
+*.toc
+*.fdb_latexmk
+*.fls
+inst/paper/*.pdf
+
 # Python (if any)
 __pycache__/
 *.pyc

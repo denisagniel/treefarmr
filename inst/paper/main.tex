@@ -1,0 +1,139 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% Portable preamble: compiles with pdfLaTeX or XeLaTeX, no project macros.
+% Mirrors doubletree/inst/paper/theory.tex's preamble style, since this
+% paper's core content is being extracted from that document's Section 6
+% (the two-stage estimator's topology-recovery / off-grid-refinement
+% machinery, split out 2026-09-01 because it has no causal-inference content
+% and stands as an independent contribution -- see
+% quality_reports/plans/2026-09-01_two-paper-split.md at the repo root).
+% ---------------------------------------------------------------------------
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage[margin=1in]{geometry}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage[round,authoryear]{natbib}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
+
+% NOTE: when porting content from theory.tex, also port the specific macro
+% definitions that section actually uses (E, PP, argmin/argmax, cA_r,
+% \topol, \topolcoll, \gbar, \cTcont, etc.) rather than pulling in
+% common-defs.tex's full causal-nuisance vocabulary (\ehat, \thetahat, ...),
+% which this paper does not need. A copy of common-defs.tex is available in
+% this directory if a later section needs its general-purpose macros.
+
+\title{Recovering Continuum-Threshold Optimal Trees:\\[2pt]
+  \large A Two-Stage Algorithm with Superconsistent Threshold Refinement}
+\author{[author list]}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+[TODO: abstract. Working content, per the 2026-09-01 split-planning
+discussion: existing globally-optimal decision-tree solvers search a
+\emph{pre-specified, fixed} grid of candidate cutpoints -- a genuine
+threshold almost never lands exactly on one. We give a two-stage procedure
+that removes this restriction without re-entering the combinatorial solver.
+Stage A fits an ordinary grid-restricted optimal tree, at a coarse
+resolution and an inflated leaf/depth budget, to recover the tree's
+\emph{topology} (which coordinate splits where) rather than its exact
+thresholds; a collapse map removes the ``transition leaf'' artifacts this
+creates. Stage B then refines each threshold by an exact, grid-free
+one-dimensional scan over observed covariate values, node by node,
+root-first. We show topology is recovered with probability tending to one
+on a refining grid, and that every refined threshold is simultaneously
+superconsistent, at rate $O_p(n^{-1})$. The algorithm and its
+guarantees are implemented and tested in the \texttt{optimaltrees} package.]
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{Introduction}\label{sec:intro}
+
+[TODO -- outline, not drafted. Candidate structure per the split-planning
+discussion:
+\begin{itemize}
+\item Motivate: optimal (globally-exact) decision trees are attractive for
+  interpretable ML, but existing solvers (GOSDT, OSRT, this package's own
+  branch-and-bound) require search over a \emph{pre-specified} grid of
+  candidate cutpoints. A true threshold generically does not land on a grid
+  point.
+\item Position against \citet{xu2026}: their oracle inequalities and
+  minimax rates for ERM decision trees concern
+  \emph{approximation}/prediction-risk theory over a nonparametric function
+  class. This paper's question is different in kind -- whether the
+  \emph{partition itself} (the object an interpretable-ML user actually
+  reads) is exactly recovered, and at what rate -- and is not addressed by
+  that or related oracle-inequality results.
+\item State the two contributions: (i) the two-stage algorithm; (ii) the
+  topology-recovery + simultaneous-superconsistency guarantee.
+\item Related work: classical change-point/threshold estimation
+  (\citealt{chan1993}, \citealt{seijosen2011}, \citealt{baiperron1998},
+  \citealt{yaoau1989}, \citealt{boysen2009}), the argmax theorem for
+  discontinuous criteria (\citealt{seootsu2018}), and the split-point
+  confidence-set literature under misspecification
+  (\citealt{banerjee2007}) -- contrast: that literature gets cube-root,
+  non-standard rates because the true regression function is smooth and
+  the tree is a working (misspecified) model; here the true function is
+  genuinely tree-structured, which is why superconsistency ($n^{-1}$, not
+  $n^{-1/3}$) is available.
+\item Roadmap.
+\end{itemize}]
+
+\section{Setup and the two-stage algorithm}\label{sec:setup}
+[TODO -- port from theory.tex \S6.1 (\texttt{sec:twostage}), de-indexed from
+the causal $\{e,\mu\}$ nuisance pair to a single regression/classification
+problem $(Z,\nu)$.]
+
+\section{Topology recovery on a refining grid}\label{sec:topology}
+[TODO -- port from theory.tex \S6.2.]
+
+\section{Superconsistent threshold refinement (Stage B)}\label{sec:stageb}
+[TODO -- port from theory.tex \S6.3.]
+
+\section{Implementation}\label{sec:implementation}
+[TODO -- not yet drafted. Describe \texttt{optimaltrees}'s
+\texttt{RefinedTreeModel} S7 class, \texttt{as\_coordinate\_tree()},
+\texttt{collapse\_transitions()}, \texttt{refine\_tree\_cuts()}. This is new
+prose, not a port -- the package documentation exists but a paper-facing
+description does not.]
+
+\section{Simulations}\label{sec:simulations}
+[TODO -- not started. Deferred per the 2026-09-01 planning discussion until
+after both papers' outlines are drafted. Candidate content: threshold-MSE
+scaling ($\propto n^{-2}$), topology-recovery frequency vs.\ grid
+resolution $r$, comparison against greedy CART and grid-only optimal trees,
+timing.]
+
+\section{Discussion}\label{sec:discussion}
+[TODO.]
+
+% ===========================================================================
+\begin{thebibliography}{9}
+% [TODO: port only the bibitems theory.tex \S6.1--6.3 actually cites --
+% chan1993, seijosen2011, baiperron1998, yaoau1989, boysen2009, seootsu2018,
+% vandervaart1998, xu2026 -- plus banerjee2007 for the related-work contrast
+% in the introduction above. Do not port the causal-inference bibliography
+% (chernozhukov2018, robins1995, hahn1998, van der Laan/Robins, etc.) --
+% none of it is cited by the ported content.]
+\end{thebibliography}
+
+\end{document}
