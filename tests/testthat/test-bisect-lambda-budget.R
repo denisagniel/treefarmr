@@ -163,3 +163,78 @@ test_that("bisection still recovers the certificate when lambda_n overshoots the
   expect_equal(res$depth_required, 3L)
   expect_true(res$depth_sufficient)
 })
+
+# ---------------------------------------------------------------------------
+# Continuous-covariate support (2026-09-01 fix). Previously bisect_lambda_
+# to_budget() could not be used AT ALL with continuous X requiring internal
+# discretization -- check_leaf_feasibility()/assign_leaf_ids() mapped the
+# fitted tree's split feature indices onto the SUPPLIED X directly, which
+# only agreed with the fit when X was already binary. Discovered via
+# quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md
+# Milestone D's benchmark (reproducibly: "split references feature index k
+# but X has p columns" the moment continuous X was passed). Fixed by
+# re-discretizing X against the fit's own @discretization_metadata before
+# the feasibility check.
+# ---------------------------------------------------------------------------
+
+test_that("bisect_lambda_to_budget works with continuous covariates (previously always errored)", {
+  set.seed(20260901)
+  n <- 400
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 2) + rnorm(n, sd = 0.1)
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                  loss_function = "squared_error",
+                                  max_depth = 3L, discretize_bins = 8L)
+  expect_true(res$feasible)
+  expect_true(res$n_leaves <= 4L)
+  expect_true(is.finite(res$lambda))
+})
+
+test_that("bisect_lambda_to_budget's m_n floor correctly detects infeasibility with continuous covariates", {
+  # Mirrors the existing binary-covariate feasibility semantics: an m_n
+  # floor larger than what any leaf can actually hold must be reported as
+  # infeasible, not silently ignored -- confirmed here specifically for the
+  # continuous-X path the 2026-09-01 fix newly supports.
+  set.seed(20260901)
+  n <- 100
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 2) + rnorm(n, sd = 0.1)
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, lambda_n = 0.05,
+                                  loss_function = "squared_error",
+                                  max_depth = 3L, discretize_bins = 8L,
+                                  m_n = 1000L)
+  expect_false(res$feasible)
+})
+
+test_that("bisect_lambda_to_budget's continuous-covariate path is exercised across bisection, not just the first try", {
+  # Forces used_search = TRUE (lambda_n deliberately overshoots the budget)
+  # so fit_and_check() -- and hence the discretize-then-check-feasibility
+  # fix -- runs repeatedly at different lambda values, not just once.
+  set.seed(20260901)
+  n <- 500
+  x1 <- rbinom(n, 1, 0.5); x2 <- rbinom(n, 1, 0.5); x3 <- runif(n)
+  X <- data.frame(x1 = x1, x2 = x2, x3 = x3)
+  y <- as.numeric(xor(x1, x2)) * 2 + ifelse(x3 <= 0.4, 0, 1) + rnorm(n, sd = 0.05)
+
+  res <- bisect_lambda_to_budget(X, y, leaf_budget = 4, lambda_n = 1e-6,
+                                  loss_function = "squared_error",
+                                  max_depth = 3L, discretize_bins = 8L)
+  expect_true(res$used_search)
+  expect_true(res$n_leaves <= 4L)
+  expect_true(res$feasible)
+})
+
+test_that("bisect_lambda_to_budget accepts a matrix X with continuous covariates", {
+  set.seed(20260901)
+  n <- 300
+  Xdf <- data.frame(x1 = runif(n), x2 = runif(n))
+  Xmat <- as.matrix(Xdf)
+  y <- ifelse(Xdf$x1 <= 0.4, 0, 2) + rnorm(n, sd = 0.1)
+
+  res <- bisect_lambda_to_budget(Xmat, y, leaf_budget = 4, lambda_n = 0.05,
+                                  loss_function = "squared_error",
+                                  max_depth = 3L, discretize_bins = 8L)
+  expect_true(res$feasible)
+})

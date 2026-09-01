@@ -227,7 +227,15 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #' fallback for the residual (and, per the theory, unverifiable-from-data-in-
 #' advance) event that the first try overshoots the budget.
 #'
-#' @param X,y Training data, as for [fit_tree()].
+#' @param X,y Training data, as for [fit_tree()]. `X` may be continuous,
+#'   already-binary, or mixed -- [fit_tree()]'s own internal discretization
+#'   handles it, and the feasibility check inside this function
+#'   re-discretizes `X` against each fit's own discretization metadata
+#'   before checking leaf sizes, so the two always agree. (Continuous-`X`
+#'   support was a real, confirmed gap before the 2026-09-01 fix: earlier
+#'   versions of this function mapped the fitted tree's split indices onto
+#'   the caller's original `X` directly, which only agreed with the fit when
+#'   `X` was already binary, and errored reproducibly otherwise.)
 #' @param leaf_budget Integer. Maximum number of leaves (\eqn{\bar L}).
 #' @param lambda_n Numeric. The analyst's regularization value, tried first.
 #'   Defaults to [fit_tree()]'s own default (0.1). The fitted objective is
@@ -444,7 +452,27 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
     fit <- fit_tree(X, y, loss_function = loss_function,
                      regularization = lambda, max_depth = max_depth, ...)
     n_leaves <- count_tree_leaves(fit)
-    feas <- check_leaf_feasibility(fit, X, m_n = m_n, group = group,
+    # check_leaf_feasibility()/assign_leaf_ids() map the fitted tree's split
+    # feature indices onto whatever X they are given directly, which only
+    # agrees with the fit when that X matches the DISCRETIZED binary design
+    # matrix the tree actually split on -- not the analyst's original,
+    # possibly-continuous X. Re-discretize using THIS fit's own
+    # @discretization_metadata before the feasibility check (confirmed
+    # idempotent for already-binary X: apply_discretization()'s all_binary
+    # fast path returns the input unchanged, column-reordered at most, so
+    # this adds no behavior change for binary-X callers -- e.g.
+    # doubletree::estimate_att(), which requires binary X up front anyway).
+    # Discovered as a real gap (2026-09-01) via
+    # quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md
+    # Milestone D's benchmark: bisect_lambda_to_budget() could not be used
+    # AT ALL with continuous covariates before this fix, reproducibly
+    # erroring "split references feature index k but X has p columns" the
+    # moment a continuous X requiring internal discretization was passed.
+    X_for_feas <- apply_discretization(
+      if (is.matrix(X)) as.data.frame(X) else X,
+      fit@discretization_metadata
+    )
+    feas <- check_leaf_feasibility(fit, X_for_feas, m_n = m_n, group = group,
                                     group_value = group_value,
                                     m_n_group = m_n_group)
     list(fit = fit, lambda = lambda, n_leaves = n_leaves,

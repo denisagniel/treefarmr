@@ -23,7 +23,15 @@ bisect_lambda_to_budget(
 )
 }
 \arguments{
-\item{X, y}{Training data, as for [fit_tree()].}
+\item{X, y}{Training data, as for [fit_tree()]. `X` may be continuous,
+already-binary, or mixed -- [fit_tree()]'s own internal discretization
+handles it, and the feasibility check inside this function
+re-discretizes `X` against each fit's own discretization metadata
+before checking leaf sizes, so the two always agree. (Continuous-`X`
+support was a real, confirmed gap before the 2026-09-01 fix: earlier
+versions of this function mapped the fitted tree's split indices onto
+the caller's original `X` directly, which only agreed with the fit when
+`X` was already binary, and errored reproducibly otherwise.)}
 
 \item{leaf_budget}{Integer. Maximum number of leaves (\eqn{\bar L}).}
 
