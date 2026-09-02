@@ -70,7 +70,11 @@
 
 % --- Two-stage additions, matching theory.tex's own \S6 macro block ---
 \newcommand{\topol}{\operatorname{top}}
-\newcommand{\cTcont}{\cT^{\mathrm{cont}}_{\bar L}}
+% Continuum-threshold tree class. Both restrictions the class carries --- the
+% leaf budget \bar L and the depth bound \bar D --- appear in the symbol, so
+% that clause (S) of Assumption~\ref{ass:continuum-sparsity} asserts exactly
+% the non-emptiness of \cS(\cTcont) and nothing stronger.
+\newcommand{\cTcont}{\cT^{\mathrm{cont}}_{\bar L,\bar D}}
 \newcommand{\gbar}{\bar\gamma}
 \newcommand{\topolcoll}{\topol_{\mathrm{coll}}}
 
@@ -204,8 +208,9 @@ a summary, it does not replace anything.
   Assumption~\ref{ass:sparsity} (grid-exact sparsity) -- the ``old,''
   grid-restricted world this paper extends.
 \item \S\ref{sec:setup-twostage}: the two-stage extension --
-  Assumption~\ref{ass:sparsity-jump} (continuum tree sparsity + jump
-  regularity) states the actual target class: a \emph{continuum}-threshold
+  Assumptions~\ref{ass:continuum-sparsity}--\ref{ass:local-design}
+  (continuum sparsity; jump regularity; local design regularity)
+  state the actual target class: a \emph{continuum}-threshold
   tree, not grid-restricted. Explicit ``borrows vs.\ adds'' accounting:
   borrows the localisation machinery wholesale (\citealt{chan1993,
   seijosen2011} rate-$n$; \citealt{baiperron1998,yaoau1989,boysen2009}
@@ -220,7 +225,11 @@ a summary, it does not replace anything.
   boundaries.
 \item \S\ref{sec:setup-solver}: Assumption~\ref{ass:solver-twostage} --
   the precise fidelity conditions both stages' solvers must satisfy
-  (bracket containment, etc.) for the guarantees below to apply.
+  (exactness at each stage, topology preservation, measurability, refined
+  leaf mass) for the guarantees below to apply, plus
+  Remark~\ref{rem:not-assumed} recording the two properties that are
+  \emph{derived} rather than assumed (bracket validity, and the leaf-mass
+  floor at the true partition).
 \end{itemize}]
 
 \subsection{Covariate space, tree partitions, and the fitting problem}
@@ -281,9 +290,9 @@ of $\cX$ consistent with every ancestor test on the root-to-$N$ path:
 $R_{\mathrm{root}}=\cX$, and each child's cell is the half of its parent's
 cell cut by the parent's threshold; the cell of a leaf is the corresponding
 block of $\tau$. (Some assumptions below work with the closure of $R_N$ for
-convenience, e.g.\ Assumption~\ref{ass:sparsity-jump}'s $R_N$; this changes
-nothing that follows, since adjacent leaves' cells share only a
-$\nu$-null boundary face under Assumption~\ref{ass:sparsity-jump}(Dens).)
+convenience, e.g.\ Assumption~\ref{ass:local-design}(Dens)'s $R_N$; this
+changes nothing that follows, since adjacent leaves' cells share only a
+$\nu$-null boundary face under Assumption~\ref{ass:local-design}(Dens).)
 Node $M$ is an \emph{ancestor} of node $N$, and $N$ a \emph{descendant} of
 $M$, if $M$ lies on the root-to-$N$ path; $M$ is $N$'s \emph{parent} if in
 addition no node lies strictly between them. The \emph{level} of a node is
@@ -374,7 +383,8 @@ under the \emph{inflated} leaf budget
   \bar L_A:=\min\{2\bar L-1,\,N_r\}
 \end{equation}
 and the inflated depth bound $2\bar D$, where $\bar D$ is a depth bound
-supplied by the analyst (Assumption~\ref{ass:sparsity-jump}(S) below requires
+supplied by the analyst (Assumption~\ref{ass:continuum-sparsity}(S) below
+requires
 the unknown truth to respect it). The leaf budget is truncated at the grid's
 own capacity $N_r$ for small $r$; the depth bound needs no matching
 truncation, since a tree respecting $\bar L_A$ already has depth at most
@@ -701,7 +711,8 @@ exactly.
 
 Assumption~\ref{ass:sparsity} is the grid-exact hypothesis this paper is
 designed to dispense with: it requires every true threshold to coincide with a
-pre-specified cutpoint. Assumption~\ref{ass:sparsity-jump}(S) below replaces
+pre-specified cutpoint. Assumption~\ref{ass:continuum-sparsity}(S) below
+replaces
 it by its continuum analogue.
 
 \subsection{Continuum sparsity and the two-stage estimator}
@@ -723,11 +734,13 @@ Definition~\ref{def:sufficient}, whereas
   \cS(\cTcont)
 \]
 denotes its continuum analogue, $\cTcont$ being the class of axis-aligned tree
-partitions with at most $\bar L$ leaves whose thresholds are unrestricted real
-numbers. Clause (S) of Assumption~\ref{ass:sparsity-jump} asserts
-$\cS^{\mathrm{cont}}\ne\emptyset$. This is strictly weaker than the grid-exact
-Assumption~\ref{ass:sparsity}, because a true continuum boundary need not
-coincide with any cutpoint of a finite grid.
+partitions whose thresholds are unrestricted real numbers, with at most
+$\bar L$ leaves and realisable by a tree of depth at most $\bar D$. Both
+restrictions are carried by the class itself, so that
+Assumption~\ref{ass:continuum-sparsity}(S) below asserts exactly
+$\cS^{\mathrm{cont}}\ne\emptyset$ and nothing stronger. This is strictly
+weaker than the grid-exact Assumption~\ref{ass:sparsity}, because a true
+continuum boundary need not coincide with any cutpoint of a finite grid.
 
 Nonemptiness of $\cS^{\mathrm{cont}}$ alone does not pin down a single object
 for later results to be \emph{about}: the definition below fixes what ``the
@@ -741,13 +754,13 @@ induce the same partition of $\cX$ into leaf cells
 (Definition~\ref{def:tree-vocab}) --- equivalently, if every realisation of
 one is a realisation of the other, whatever the order of the underlying
 split tests. \emph{The true tree} is a minimal element of
-$\cS^{\mathrm{cont}}$, and \textbf{Assumption~\ref{ass:sparsity-jump}(S) is
-strengthened, for the remainder of this paper, to assert that all minimal
+$\cS^{\mathrm{cont}}$, and \textbf{Assumption~\ref{ass:continuum-sparsity}(S)
+is strengthened, for the remainder of this paper, to assert that all minimal
 elements of $\cS^{\mathrm{cont}}$ are equivalent in this sense.} Every
 subsequent use of ``the true tree'', ``the true node $N$'', ``the true
 boundaries'', and ``$c_{0,k}$'' refers to (a fixed choice of realisation of)
 this equivalence class; a stated bound on the true tree's depth
-(Assumption~\ref{ass:sparsity-jump}(S)) refers to the minimal-depth
+(Assumption~\ref{ass:continuum-sparsity}(S)) refers to the minimal-depth
 realisation of it, per the convention of Definition~\ref{def:tree-vocab}.
 \end{definition}
 
@@ -797,74 +810,193 @@ recover a continuum topology at all, by paying one extra leaf per
 grid-misaligned boundary. Everything else below is the cited machinery
 instantiated at those three points.
 
-\begin{assumption}[Continuum tree sparsity and jump regularity]
-\label{ass:sparsity-jump}
-The regression function \(\gamma_0\) satisfies the following conditions.
-\begin{enumerate}[label=(\Alph*),leftmargin=*]
+\begin{assumption}[Continuum sparsity]\label{ass:continuum-sparsity}
+The regression function \(\gamma_0\) satisfies the following condition.
+\begin{enumerate}[leftmargin=*]
   \item[(S)] \emph{Tree realisability.}
   The function \(\gamma_0\) is piecewise constant on a continuum
   partition realised by an axis-aligned tree with at most \(\bar L\) leaves
-  and depth at most \(\bar D\), where \(\bar L\) and \(\bar D\) are fixed in \(n\).
+  and depth at most \(\bar D\), where \(\bar L\) and \(\bar D\) are fixed in
+  \(n\). Equivalently, \(\cS^{\mathrm{cont}}\ne\emptyset\) for the class
+  \(\cTcont\) of \S\ref{sec:setup-twostage}.
+\end{enumerate}
+The two budgets are required to be \emph{compatible}, in the sense that the
+leaf budget is attainable at the stated depth:
+\[
+  \lceil\log_2\bar L\rceil\ \le\ \bar D,
+  \qquad\text{equivalently}\qquad
+  \bar L\le2^{\bar D}.
+\]
+A binary tree of depth \(\bar D\) has at most \(2^{\bar D}\) leaves, so a pair
+with \(\bar L>2^{\bar D}\) would leave the leaf budget inoperative --- the
+depth bound alone would cap the leaf count at \(2^{\bar D}<\bar L\) --- and
+every appearance of \(\bar L\) below would then overstate the class actually
+searched.
 
-  \item[(J)] \emph{Genuine jumps.}
-  Every true split separates regions on which the relevant population values
-  differ by an absolute amount between fixed constants
-  \(0<\kappa_{\min}\le\kappa_{\max}<\infty\).
+Clause (S) is to be read together with Definition~\ref{def:true-tree}, which
+selects the minimal element of \(\cS^{\mathrm{cont}}\) that every later result
+is \emph{about}, and which strengthens (S) by asserting that the minimal
+elements coincide as partitions. That strengthening is stated there and is not
+restated here.
+\end{assumption}
 
-  \item[(Dens)] \emph{Local connected density.}
-  Let \(R_N\) be the closed axis-aligned box associated with a true internal
-  node \(N\), and let
+\begin{remark}[What continuum sparsity buys, and where]
+\label{rem:sparsity-role}
+Assumption~\ref{ass:continuum-sparsity} is used for exactly three purposes
+below, and for nothing else. It makes the target of every later result
+\emph{exist}, so that ``the true tree'' of Definition~\ref{def:true-tree}
+denotes something and \(\cS^{\mathrm{cont}}\) is not vacuously empty; it
+supplies the two budget constants that Algorithm~\ref{alg:twostage} inflates,
+Stage~A searching at \(\bar L_A=\min\{2\bar L-1,N_r\}\) of
+\eqref{eq:inflated-budget} and depth \(2\bar D\), the analyst-supplied
+\(\bar D\) of \S\ref{sec:setup-algorithm} being exactly the bound (S) requires
+the unknown truth to respect; and it enters two population constants through
+its \emph{fixedness} in \(n\) alone --- the comparator term
+\((\bar L-1)\kappa_{\max}^2f_{\max}\) of Lemma~\ref{lem:topol-margin} and the
+leaf-count bounds of Proposition~\ref{prop:transition-leaves}. The
+compatibility condition propagates to Stage~A: whenever \(\bar D\ge1\),
+\(\bar L_A\le2\bar L-1<2^{\bar D+1}\le2^{2\bar D}\), so the inflated pair
+\((\bar L_A,2\bar D)\) is compatible in the same sense. No stochastic
+argument below invokes (S): every concentration and rate statement is proved
+at a fixed, already-existing truth.
+\end{remark}
+
+\begin{assumption}[Jump regularity]\label{ass:jump-regularity}
+Fix constants \(0<\kappa_{\min}\le\kappa_{\max}<\infty\), independent of
+\(n\), and let \(N\) range over the internal nodes of the true tree, with
+splitting coordinate \(q\) and threshold \(c_{0,N}\). Both conditions below
+hold uniformly over such \(N\).
+\begin{enumerate}[leftmargin=*]
+  \item[(J)] \emph{Genuine jumps, pooled across the split.}
+  Write
+  \[
+    H^-_N:=\{x\in R_N:x_q\le c_{0,N}\},
+    \qquad
+    H^+_N:=R_N\setminus H^-_N
+  \]
+  for the two sides of \(N\)'s split --- equivalently, the cells of \(N\)'s
+  two children (Definition~\ref{def:tree-vocab}) --- and let
+  \[
+    \gamma^{\mathrm{pool}}_{N,\pm}
+    :=
+    \frac1{\nu(H^\pm_N)}\int_{H^\pm_N}\gamma_0\,d\nu
+  \]
+  be the \(\nu\)-averaged population value on each side, each side
+  \emph{pooled over all of its own descendant leaves}. Then
+  \[
+    \kappa_{\min}
+    \ \le\
+    \abs{\gamma^{\mathrm{pool}}_{N,+}-\gamma^{\mathrm{pool}}_{N,-}}
+    \ \le\ \kappa_{\max}.
+  \]
+  Both averages are well defined, since \(\nu(H^\pm_N)\ge q_{\min}>0\) by
+  Assumption~\ref{ass:local-design}(Node).
+
+  \item[(Local-Jump)] \emph{Jumps across every active face cell.}
+  For every pair of leaves adjacent across the boundary \(\{x_q=c_{0,N}\}\),
+  the corresponding population values \(\gamma^-_{N,j}\) and
+  \(\gamma^+_{N,j}\) satisfy
+  \(\kappa_{\min}\le\abs{\gamma^+_{N,j}-\gamma^-_{N,j}}\le\kappa_{\max}\).
+\end{enumerate}
+The two clauses share the constants \(\kappa_{\min},\kappa_{\max}\) by
+construction rather than by consequence: the constants are chosen as a common
+lower and upper bound for \emph{both} families of differences --- (J)'s two
+pooled side averages and (Local-Jump)'s adjacent leaf pairs --- so that either
+family may be bounded by either constant below. No implication between the two
+clauses is claimed; see Remark~\ref{rem:jump-role}.
+\end{assumption}
+
+\begin{remark}[What jump regularity buys, and where]\label{rem:jump-role}
+The two clauses of Assumption~\ref{ass:jump-regularity} are invoked at
+disjoint places, and the distinction is the pooling.
+
+Clause (Local-Jump) is used wherever a jump must be visible at the level of an
+\emph{individual} pair of leaves adjacent across a true face, because the
+argument decomposes the face into cells and needs each one to contribute. That
+is the lower half of Lemma~\ref{lem:topol-margin}'s margin, where two points
+straddling an omitted boundary must share a leaf and therefore incur squared
+error at least \(\kappa_{\min}^2/4\); and it is every drift computation of
+\S\ref{sec:stageb} --- Lemma~\ref{lem:prism-profile}'s prism scaling, in which
+each active face cell carries its own jump mark, and
+Lemma~\ref{lem:descendant-stability}, which transfers those marks to perturbed
+leaf pairs.
+
+Clause (J) is used only where a single \emph{pooled} comparison across a whole
+split suffices. That is the comparator half of
+Lemma~\ref{lem:topol-margin}, where snapping a true boundary to a neighbouring
+cutpoint costs at most \(\kappa_{\max}^2\) per unit of slab mass; and it is
+Proposition~\ref{prop:transition-leaves}, where the atom-projected value on a
+straddled atom must be genuinely intermediate between its two neighbours, so
+that a grid-optimal tree is forced to spend the extra leaf.
+
+Neither clause is used to bound anything about the estimator: both are
+population statements, and every stochastic step below takes them as given.
+
+Whether the two clauses are genuinely different conditions or the same
+condition read at two resolutions is not settled here. (Local-Jump) constrains
+more pairs than (J) does, but (J) constrains a mass-weighted average of them,
+and averaging can in principle cancel what the individual pairs do not; no
+implication is asserted in either direction, and the citations above are
+therefore kept clause-specific rather than consolidated. The question ---
+together with the consequent question of whether some of the citations of (J)
+above could be discharged from (Local-Jump) alone --- is carried on the
+correctness ledger of
+\texttt{quality\_reports/plans/2026-09-02\_paper-a-theory-clarity-remediation.md}
+and is not resolved in this paper.
+\end{remark}
+
+\begin{remark}[Interpretation of the local-jump clause]
+Condition (Local-Jump) is stronger than requiring merely that a split produce
+some aggregate risk reduction.  It rules out cancellation caused by an
+adjacent pair of leaves having the same population value.  Any design whose
+true leaf values are pairwise distinct satisfies the condition by
+construction, with \(\kappa_{\min}\) the smallest and \(\kappa_{\max}\) the
+largest gap between values on leaves adjacent across a true face.
+\end{remark}
+
+\begin{assumption}[Local design regularity]\label{ass:local-design}
+Let \(N\) range over the internal nodes of the true tree, with splitting
+coordinate \(q\) and threshold \(c_{0,N}\), and let \(R_N\) be the closed
+axis-aligned box associated with \(N\) (Definition~\ref{def:tree-vocab}). The
+design measure \(\nu\) satisfies the following, with every constant fixed
+uniformly over such \(N\) and in \(n\).
+\begin{enumerate}[leftmargin=*]
+  \item[(Sep)] \emph{Separation and interiority.}
+  Distinct true boundaries on the same coordinate are separated by at least
+  \(\varsigma>0\), and every true boundary is at least \(\varsigma\) from the
+  boundary of the support of its own splitting coordinate \(X_q\). (Which
+  measure's support is meant does not matter: \(\nu\) and \(P_X\) are mutually
+  absolutely continuous by Assumption~\ref{ass:design}, hence have the same
+  support.)
+
+  \item[(Dens)] \emph{Local connected density.} With \(\varsigma\) as in
+  (Sep), let
   \[
     R_N^+
     :=
     \bigl\{x\in\cX:
       \operatorname{dist}_\infty(x,R_N)\le\varsigma/2
-    \bigr\}.
+    \bigr\}
   \]
-  On \(R_N^+\), the covariate law under the measure \(\nu\) admits a density
-  \(f_{\nu,N}\), with respect to Lebesgue measure or the appropriate product
-  base measure, satisfying
-  \[
-    0<f_{\min}
-    \le f_{\nu,N}(x)
-    \le f_{\max}<\infty
-    \qquad\text{for every }x\in R_N^+,
-  \]
-  where \(f_{\min}\) and \(f_{\max}\) are fixed uniformly over true nodes.
-  (Every cross-sectional-measure argument below, in particular the
-  definition of \(c_{\mathrm{box}}\) preceding Lemma~\ref{lem:topol-margin},
-  is written for the Lebesgue case; a discrete or mixed splitting
-  coordinate would in any case violate the \(\omega_{N,j}(c)=\Theta(\abs{c-c_0})\)
-  prism scaling of Lemma~\ref{lem:prism-profile}(iii) on which the
-  \(n^{-1}\) rate below depends, so this is a scoping remark, not an
-  additional restriction.)
-  The sets \(R_N^+\) are fixed compact rectangles whose coordinate diameters
-  are bounded uniformly over true nodes by a fixed constant
-  \(D_{\max}<\infty\).  In particular, the density lower bound implies
-  that the support has no gaps in a neighbourhood of any true splitting
-  face.  Thus, whenever \(x^-\) and \(x^+\) differ only in the splitting
-  coordinate and lie sufficiently close to opposite sides of a true
-  boundary, both points belong to the local support.  This condition rules
-  out, by construction, supports consisting locally of disjoint rectangles.
-  It is the local version of the customary assumption that covariates have a
-  density bounded away from zero and infinity on a compact connected
-  support.  The converse implication need not hold: connected support alone
-  does not require its density to be bounded away from zero.
-
-  \item[(Sep)] \emph{Separation and interiority.}
-  Distinct true boundaries on the same coordinate are separated by at least
-  \(\varsigma>0\), and every true boundary is at least \(\varsigma\) from the
-  relevant support boundary.
+  denote the \emph{collar} of \(R_N\). Two things are required of it.
+  \begin{enumerate}[leftmargin=1.8em]
+    \item[(Dens-i)] \emph{Two-sided local density.} On \(R_N^+\), the
+    covariate law under \(\nu\) admits a density \(f_{\nu,N}\) with respect to
+    Lebesgue measure, satisfying
+    \[
+      0<f_{\min}
+      \le f_{\nu,N}(x)
+      \le f_{\max}<\infty
+      \qquad\text{for every }x\in R_N^+ .
+    \]
+    \item[(Dens-ii)] \emph{Bounded collar diameters.} The sets \(R_N^+\) are
+    fixed compact rectangles whose coordinate diameters are bounded, uniformly
+    over true nodes, by a fixed constant \(D_{\max}<\infty\).
+  \end{enumerate}
 
   \item[(Node)] \emph{Positive node mass.}
   Every true node and leaf has \(\nu\)-mass at least \(q_{\min}>0\), fixed in
   \(n\).
-
-  \item[(Local-Jump)] \emph{Jumps across every active face cell.}
-  Fix an internal node \(N\), splitting coordinate \(q\) at \(c_{0,N}\). For
-  every pair of leaves adjacent across this boundary, the corresponding
-  population values \(\gamma^-_{N,j}\) and \(\gamma^+_{N,j}\) satisfy
-  \(\kappa_{\min}\le\abs{\gamma^+_{N,j}-\gamma^-_{N,j}}\le\kappa_{\max}\).
 
   \item[(Joint)] \emph{Ancestor--descendant joint density.}
   If an ancestor split uses coordinate \(q_a\), a descendant split uses
@@ -874,13 +1006,92 @@ The regression function \(\gamma_0\) satisfies the following conditions.
 \end{enumerate}
 \end{assumption}
 
-\begin{remark}[Interpretation of the local-jump clause]
-Condition (Local-Jump) is stronger than requiring merely that a split produce
-some aggregate risk reduction.  It rules out cancellation caused by an
-adjacent pair of leaves having the same population value.  Any design whose
-true leaf values are pairwise distinct satisfies the condition by
-construction, with \(\kappa_{\min}\) the smallest and \(\kappa_{\max}\) the
-largest gap between values on leaves adjacent across a true face.
+\begin{remark}[What local design regularity buys, and where]
+\label{rem:local-design-role}
+Each clause of Assumption~\ref{ass:local-design} has a single job, and the
+jobs do not overlap.
+
+\emph{(Sep)} is used everywhere a local region must be shown to contain no
+\emph{second} true boundary, and nowhere else. That is: the choice of \(r_0\)
+preceding Lemma~\ref{lem:topol-margin}, which makes the mesh smaller than
+\(\varsigma\) so that no grid atom holds two boundaries; the paired face patch
+inside that lemma's proof; the recovered separation
+\(\varsigma-2C/r_n\to\varsigma\) of Proposition~\ref{prop:boundary-recovery};
+Corollary~\ref{cor:valid-brackets}, where a bracket must be shown not to
+contain two true thresholds; the fixed interval
+\(B^-=(c_0-\varsigma/4,c_0+\varsigma/4)\) of
+Lemma~\ref{lem:bracket-reduction}; and the equal-coordinate case of
+Lemma~\ref{lem:ancestor-localisation}, where (Sep) makes an ancestor collar and
+a descendant window disjoint outright. The interiority half does one further
+thing: it is what places the collar \(R_N^+\) of (Dens) inside the support, so
+that (Dens-i) is a hypothesis about a set the design actually charges.
+
+\emph{(Dens-i)} is used in both directions and for nothing else. The floor
+\(f_{\min}\) converts a slab's \emph{width} into a \(\nu\)-mass, which is what
+produces the \(\Theta(\abs{c-c_0})\) drift of
+Lemma~\ref{lem:prism-profile}(iii) and the lower half of
+Lemma~\ref{lem:topol-margin}'s margin; the ceiling \(f_{\max}\) converts a
+slab's width into a \emph{risk cost}, which is what bounds the comparator loss
+in the same lemma and, with (Joint) absent, nothing further. \emph{(Dens-ii)}'s
+\(D_{\max}\) appears only where a mass bound must be turned into a
+cross-sectional-area bound --- inside
+\(c_{\mathrm{box}}:=1/(f_{\max}D_{\max})\), fixed before
+Lemma~\ref{lem:topol-margin} --- and where a node box's extent along one
+coordinate must be a fixed compact interval, as in
+Lemma~\ref{lem:bracket-reduction}'s \([q_N^-,q_N^+]\).
+
+\emph{(Node)} supplies one quantity, the floor \(q_{\min}\) on the mass of
+every true node and leaf, and it is invoked wherever a denominator must not
+degenerate: the cross-sectional bound
+\(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}q_{\min}\) used from
+Lemma~\ref{lem:topol-margin} onwards, the leaf-refit denominators of
+Lemma~\ref{lem:descendant-stability}, and --- with
+Assumptions~\ref{ass:iid} and~\ref{ass:design} and the law of large numbers ---
+the sample-size floor at the true partition recorded in
+Remark~\ref{rem:not-assumed}.
+
+\emph{(Joint)} is used in exactly one place: the unequal-coordinate case of
+Lemma~\ref{lem:ancestor-localisation}, to bound the chance that a single
+observation lies simultaneously in an ancestor collar of half-width \(M/n\)
+and a descendant window of half-width \(U/n\). When the two coordinates
+coincide, (Sep) settles the matter and (Joint) is not invoked.
+\end{remark}
+
+\begin{remark}[Interpretation of the density clause]\label{rem:dens-interpretation}
+The lower bound in (Dens-i) implies that the support has no gaps in a
+neighbourhood of any true splitting face.  Thus, whenever \(x^-\) and \(x^+\)
+differ only in the splitting coordinate and lie sufficiently close to opposite
+sides of a true boundary, both points belong to the local support.  This rules
+out, by construction, supports consisting locally of disjoint rectangles.  It
+is the local version of the customary assumption that covariates have a
+density bounded away from zero and infinity on a compact connected support.
+The converse implication need not hold: connected support alone does not
+require its density to be bounded away from zero.
+\end{remark}
+
+\begin{remark}[What (Dens) costs in generality]\label{rem:dens-scope}
+Clause (Dens-i) is a genuine additional restriction and not merely a scoping
+convention, and it is worth being explicit about what it excludes.
+\S\ref{sec:setup-basics} allows a coordinate of \(\cX\) to be a finite
+category set, and Assumption~\ref{ass:finite} allows that coordinate's
+cutpoint family to be a grouping of its values; (Dens-i) requires instead that
+every coordinate on which the \emph{true} tree splits carry a Lebesgue density
+on the collar \(R_N^+\). Every result of
+\S\S\ref{sec:topology}--\ref{sec:stageb} is therefore stated for continuous
+true splitting coordinates, and every cross-sectional-measure argument below
+--- in particular the definition of \(c_{\mathrm{box}}\) preceding
+Lemma~\ref{lem:topol-margin} --- is written for the Lebesgue case only. A
+discrete or mixed \emph{true splitting} coordinate is excluded rather than
+covered: it would violate the \(\omega_{N,j}(c)=\Theta(\abs{c-c_0})\) prism
+scaling of Lemma~\ref{lem:prism-profile}(iii) on which the \(n^{-1}\) rate
+depends, and an off-grid threshold is in any case not a meaningful target on a
+coordinate with finitely many values. What (Dens-i) does \emph{not} restrict
+are the coordinates the true tree never splits on, nor the coordinates
+Stage~A's grid \(\cA_r\) ranges over. Whether the grid cardinality
+\(N_r\asymp r^p\) of \S\ref{sec:setup-algorithm} should count all \(p\)
+coordinates or only the continuous ones is left open here, and is carried on
+the ledger of
+\texttt{quality\_reports/plans/2026-09-02\_paper-a-theory-clarity-remediation.md}.
 \end{remark}
 
 The estimator that operates under this assumption is
@@ -940,44 +1151,51 @@ implementation gives for free.
   \item \emph{Topology preservation.} Step~4 moves thresholds and nothing
   else; an implementation must add, delete, reorder, and re-coordinate no
   split, for instance by pruning a node whose refined scan empties a child.
-  \item \emph{Valid brackets.} For every node $N$ of $\topolcoll(\hat t^A)$,
-  the bracket $\widehat B_n(N)$ of Definition~\ref{def:stageb-bracket}
-  contains the corresponding true threshold with probability tending to one.
   \item \emph{Measurability.} Both stages use deterministic, measurable
   tie-breaking rules. Consequently the refined threshold vector $\hat c$ is a
   well-defined random vector.
   \item \emph{Refined leaf mass.} There exists a constant $\rho>0$, independent
   of $n$, such that, with probability tending to one, every leaf of the refined
-  partition contains at least $\rho n$ observations. The same bound holds at
-  the true partition $c_0$. Thus finite-dimensional leaf-refit control is
-  available at the anchor and throughout the topology-preserving perturbation
-  from $c_0$ to $\hat c$.
+  partition contains at least $\rho n$ observations.
 \end{enumerate}
 \end{assumption}
 
-\begin{remark}\label{rem:bracket-consequence}
-Clause~(e) is a consequence of Proposition~\ref{prop:boundary-recovery}.
-Indeed, on
+\begin{remark}[Two properties that are not assumed here]\label{rem:not-assumed}
+Two properties that a solver-fidelity condition might be expected to carry are
+in fact consequences of what is already assumed, and are recorded here so that
+no later argument appears to take either as a hypothesis.
+
+\emph{Bracket validity.} That the bracket $\widehat B_n(N)$ of
+Definition~\ref{def:stageb-bracket} contains $N$'s true threshold --- and no
+other true threshold on $N$'s coordinate --- with probability tending to one
+is Corollary~\ref{cor:valid-brackets}, proved there from
+Proposition~\ref{prop:boundary-recovery}. Nothing in \S\ref{sec:topology} uses
+it, so no circularity arises in obtaining it; its first use is in
+\S\ref{sec:stageb}. Stage~A supplies only the topology and the brackets
+$\widehat B_n(\cdot)$; every threshold \emph{value} in the final estimator is
+supplied by the off-grid Stage-B scan of Algorithm~\ref{alg:twostage}, Step~4.
+
+\emph{Leaf mass at the anchor.} Clause~(f) above asserts the $\rho n$
+leaf-mass floor at the \emph{refined} partition $\hat c$, and only there. The
+corresponding floor at the \emph{true} partition $c_0$ needs no assumption.
+Every leaf of the true partition has $\nu$-mass at least $q_{\min}$ by
+Assumption~\ref{ass:local-design}(Node), hence $P_X$-mass at least
+$q_{\min}/\bar W$, since $d\nu\le\bar W\,dP_X$ by
+Assumption~\ref{ass:design}; there are at most $\bar L$ such leaves and they
+are fixed in $n$, by Assumption~\ref{ass:continuum-sparsity}(S). Applying the
+law of large numbers to each of those finitely many fixed leaves under
+Assumption~\ref{ass:iid} therefore gives, with probability tending to one,
 \[
-  E_n:=
-  \Bigl\{
-    \topolcoll(\hat t^A)\text{ is in bijection with the true boundaries of }
-    \gamma_0\text{, each within }C/r_n\text{ of its match}
-  \Bigr\},
-  \qquad \PP(E_n)\to1,
+  \#\{i\le n:X_i\in\ell\}\ \ge\ \rho_0n
+  \quad\text{for every leaf }\ell\text{ of }c_0,
+  \qquad
+  \rho_0:=\frac{q_{\min}}{2\bar W}>0 ,
 \]
-the recovered split corresponding to each true boundary lies within
-$C/r_n$ of that boundary, while boundary separation and interiority from
-Assumption~\ref{ass:sparsity-jump} prevent adjacent true boundaries from
-entering the same $\widehat B_n(N)$: with the ancestor-only convention of
-Definition~\ref{def:stageb-bracket}, the endpoints of $\widehat B_n(N)$ are
-themselves recovered splits within $C/r_n$ of distinct true boundaries, which
-(Sep) separates by at least $\varsigma$. No rate condition linking $r_n$ to
-$n$ is needed beyond the conditions already required by
-Proposition~\ref{prop:boundary-recovery}. Stage A supplies only the topology
-and the brackets $\widehat B_n(\cdot)$; every threshold value in the final
-estimator is supplied by the off-grid Stage-B scan of
-Algorithm~\ref{alg:twostage}, Step~4.
+the factor $\tfrac12$ absorbing the estimation error of the law of large
+numbers. Finite-dimensional leaf-refit control is thus available at the anchor
+$c_0$ as well as throughout the topology-preserving perturbation from $c_0$ to
+$\hat c$; where an argument below needs the floor at both ends, it may take
+$\rho\wedge\rho_0$.
 \end{remark}
 
 
@@ -998,6 +1216,10 @@ Algorithm~\ref{alg:twostage}, Step~4.
 \item Proposition~\ref{prop:boundary-recovery}: restates the above along
   the actual joint asymptotic sequence $(n,r_n,\lambda_n,m_n)$ used
   downstream -- the form Stage~B's hypotheses actually invoke.
+\item Corollary~\ref{cor:valid-brackets}: each Stage-B bracket
+  $\widehat B_n(N)$ contains its own true threshold and no other,
+  w.p.$\to1$ -- discharged here rather than assumed, and first used in
+  \S\ref{sec:stageb}.
 \item Proposition~\ref{prop:transition-leaves}: quantifies how many extra
   leaves a finite grid forces (one ``transition leaf'' pair per
   grid-misaligned true boundary) -- the source of the inflated leaf budget
@@ -1076,8 +1298,9 @@ Choose the fixed constant \(C\) sufficiently large that
 
 \begin{lemma}[A refining-grid margin for omitted true boundaries]
 \label{lem:topol-margin}
-Under Assumptions~\ref{ass:design}, \ref{ass:budget}, and
-\ref{ass:sparsity-jump}, there exist \(r_0<\infty\) and
+Under Assumptions~\ref{ass:design}, \ref{ass:budget},
+\ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+and~\ref{ass:local-design}, there exist \(r_0<\infty\) and
 \(c_\Delta>0\), independent of \(r\) and \(n\), such that, for every
 \(r\ge r_0\) and every
 \(\tau\in\cT_{\bar L_A}(\cA_r)\) that omits at least one true boundary,
@@ -1149,7 +1372,8 @@ degenerate with \(n\).
 \label{prop:parsimony-grid}
 Suppose Assumptions~\ref{ass:iid}, \ref{ass:design},
 \ref{ass:moments}, \ref{ass:construct}, \ref{ass:budget},
-\ref{ass:global}, and \ref{ass:sparsity-jump} hold for Stage~A.  Let
+\ref{ass:global}, \ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+and \ref{ass:local-design} hold for Stage~A.  Let
 \(r_n\ge r_0\) and let
 \[
   N_{r_n}:=\card{\cA_{r_n}}\asymp r_n^p.
@@ -1227,7 +1451,8 @@ solver is not globally exact.
 \label{prop:boundary-recovery}
 Under Assumptions~\ref{ass:iid}, \ref{ass:design},
 \ref{ass:moments}, \ref{ass:construct}, \ref{ass:budget},
-\ref{ass:global}, and \ref{ass:sparsity-jump}, let
+\ref{ass:global}, \ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+and \ref{ass:local-design}, let
 \(r_n\ge r_0\) and \(\lambda_n\to0\) satisfy
 \[
   \frac{N_{r_n}}{n}\ll\lambda_n\ll\frac1{r_n},
@@ -1272,9 +1497,45 @@ Proposition~\ref{prop:parsimony-grid}.  Separation, rather than grid mesh,
 sets the eventual Stage-B bracket width.  The bracket conclusion can fail if
 same-coordinate true boundaries approach one another with \(n\).
 
+\begin{corollary}[Valid brackets]\label{cor:valid-brackets}
+Under the hypotheses of Proposition~\ref{prop:boundary-recovery}, for every
+node $N$ of $\topolcoll(\hat t^A)$ the bracket $\widehat B_n(N)$ of
+Definition~\ref{def:stageb-bracket} contains the true threshold of the node
+matched to $N$, and contains no \emph{other} true threshold on $N$'s splitting
+coordinate, with probability tending to one.
+\end{corollary}
+
+\begin{proof}
+Let
+\[
+  E_n:=
+  \Bigl\{
+    \topolcoll(\hat t^A)\text{ is in bijection with the true boundaries of }
+    \gamma_0\text{, each within }C/r_n\text{ of its match}
+  \Bigr\},
+\]
+so that $\PP(E_n)\to1$ is exactly the conclusion of
+Proposition~\ref{prop:boundary-recovery}; it suffices to argue on $E_n$. There
+the recovered split corresponding to each true boundary lies within $C/r_n$ of
+that boundary, which gives containment, $\widehat B_n(N)$ being an open
+interval about $N$'s own recovered split whose endpoints are, by
+Definition~\ref{def:stageb-bracket}(i), other splits or the support boundary.
+Boundary separation and interiority then prevent adjacent true boundaries from
+entering the same $\widehat B_n(N)$: with the ancestor-only convention of
+Definition~\ref{def:stageb-bracket}(i), each endpoint of $\widehat B_n(N)$ is
+either a recovered split within $C/r_n$ of a true boundary distinct from
+$N$'s, which Assumption~\ref{ass:local-design}(Sep) separates from $N$'s by at
+least $\varsigma$, or the support boundary, which the interiority half of
+(Sep) places at distance at least $\varsigma$ from every true boundary. Since $r_n\ge r_0$ gives $C/r_n<\varsigma/2$, no second
+true boundary can lie between the endpoints. No rate condition linking $r_n$
+to $n$ is needed beyond the conditions already required by
+Proposition~\ref{prop:boundary-recovery}.
+\end{proof}
+
 \begin{proposition}[Transition leaves inflate the grid-optimal leaf count]
 \label{prop:transition-leaves}
-Under Assumption~\ref{ass:sparsity-jump} and for all $r\ge r_0$ (so that no
+Under Assumptions~\ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+and~\ref{ass:local-design}, and for all $r\ge r_0$ (so that no
 grid atom contains more than one true boundary), let $L^{\mathrm{cont}}$ be
 the leaf count of the true continuum partition and let $B_r$ be the
 number of its boundaries not lying at a cutpoint of $\cA_r$. Then
@@ -1415,7 +1676,8 @@ and changes nothing else: no condition in this paper requires
 
 Both tiers below face the same preliminary difficulty before any rate
 argument applies: the bracket $\widehat B_n$ that Stage B actually searches
-(Assumption~\ref{ass:solver-twostage}(e)) is a random set, produced by
+(Definition~\ref{def:stageb-bracket}; valid with probability tending to one by
+Corollary~\ref{cor:valid-brackets}) is a random set, produced by
 Stage A, whereas the classical results this section relies on
 (\citealt{chan1993,seijosen2011}, and Lemma~\ref{lem:prism-profile}'s own
 localisation argument below) presume a fixed, data-independent search
@@ -1695,7 +1957,8 @@ Supplementary Material, \S\ref{sec:supp-stageb}.
 
 \paragraph{Proof audit.}
 All structural conditions used above are contained in
-Assumption~\ref{ass:sparsity-jump}; the fixed bracket and exact minimisation
+Assumptions~\ref{ass:continuum-sparsity}--\ref{ass:local-design}; the fixed
+bracket and exact minimisation
 come from Assumption~\ref{ass:solver-twostage}.  The cited change-point
 results are used for their rate-\(n\) localisation machinery, while the new
 prism and joint-process arguments verify the feature not covered directly by
@@ -1816,7 +2079,7 @@ $O(MU/n)$; when ancestor and descendant share a coordinate, (Sep) makes the two
 collars disjoint outright. On that event a contaminated observation's
 prism-cell membership does not vary as $c$ ranges over the local window, so,
 using the $\Theta_p(n)$ leaf denominators granted by
-Assumption~\ref{ass:solver-twostage}(g), it perturbs the actual-minus-oracle
+Assumption~\ref{ass:solver-twostage}(f), it perturbs the actual-minus-oracle
 local contrast by only $O_p(n^{-1})=o_p(1)$ on the unnormalised SSE scale.
 Because that control holds on a fixed compact $u$-window, escape must be
 excluded separately: every contributing observation lies in
@@ -1868,7 +2131,8 @@ number of boundaries, at most \(\bar L-1\), are fixed.
 \label{prop:twostage-superconsistency}
 Suppose Assumptions~\ref{ass:iid}, \ref{ass:design}, and~\ref{ass:moments}
 hold.
-Under Assumptions~\ref{ass:sparsity-jump}, including (Local-Jump) and (Joint),
+Under Assumptions~\ref{ass:continuum-sparsity}--\ref{ass:local-design},
+including (Local-Jump) and (Joint),
 and~\ref{ass:solver-twostage}, and on the topology-recovery conclusion of
 Proposition~\ref{prop:boundary-recovery}, every Stage-B-refined boundary
 satisfies
@@ -2020,8 +2284,9 @@ Both answers change the specs' design, per the Oracle consult.]
   (P)'s continuum-sparsity instantiation -- state this connection
   explicitly (JASA's practical-utility requirement for a theory-only
   paper).
-\item Limitations: fixed $\bar L$/depth (Assumption~\ref{ass:sparsity-jump}
-  (S)); the classification-loss extension of the two-stage algorithm is an
+\item Limitations: fixed $\bar L$/depth
+  (Assumption~\ref{ass:continuum-sparsity}(S)); the classification-loss
+  extension of the two-stage algorithm is an
   open package-side item (not yet started on the package side), not a gap
   in the theory here -- state which it is.
 \item Open directions: the $m$-ladder / depth-budget question raised on
@@ -2972,7 +3237,7 @@ On the preceding good event, each contaminated observation enters or leaves
 a specific prism cell in the level-\(\ell\) subtree, but its cell membership
 does not change as \(c\) ranges over
 \(c_{0,\ell}+[-U,U]/n\).  Thus it changes the count and response sum of each
-affected cell by \(O_p(1)\).  By Assumption~\ref{ass:solver-twostage}(g),
+affected cell by \(O_p(1)\).  By Assumption~\ref{ass:solver-twostage}(f),
 every leaf of the refined partition contains at least \(\rho n\)
 observations with probability tending to one, so its fitted mean changes by
 \[
@@ -3035,7 +3300,7 @@ $q_\ell$-side membership changes between $c_{0,\ell}$ and $c_{0,\ell}+u/n$,
 and the indirect effect through the profiled leaf means; the indirect
 effect is $O_p(n^{-1})$ uniformly in $u$ by Step~3's own argument (the
 $O_p(1)$ collar count and the $\Theta_p(n)$ leaf denominators of
-Assumption~\ref{ass:solver-twostage}(g) do not depend on $u$), hence
+Assumption~\ref{ass:solver-twostage}(f) do not depend on $u$), hence
 $o_p(1)$ uniformly and negligible below. For the direct effect, every
 contributing observation lies in $\mathcal C_{n,M}$ \emph{regardless of
 $u$} --- the collar is defined by the ancestor coordinate alone, and only
