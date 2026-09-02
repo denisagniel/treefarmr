@@ -100,13 +100,14 @@ that removes this restriction without re-entering the combinatorial solver.
 Stage A fits an ordinary grid-restricted optimal tree, at a coarse
 resolution and an inflated leaf/depth budget, to recover the tree's
 \emph{topology} (which coordinate splits where) rather than its exact
-thresholds; a collapse map removes the ``transition leaf'' artifacts this
-creates. Stage B then refines each threshold by an exact, grid-free
+thresholds; a collapse map removes the ``transition leaf'' artifacts that the
+inflated budget creates. Stage B then refines each threshold by an exact,
+grid-free
 one-dimensional scan over observed covariate values, node by node,
-root-first. We show topology is recovered with probability tending to one
+root-first. We show that topology is recovered with probability tending to one
 on a refining grid, and that every refined threshold is simultaneously
-superconsistent, at rate $O_p(n^{-1})$. The algorithm and its
-guarantees are implemented and tested in the \texttt{optimaltrees} package.]
+superconsistent, at rate $O_p(n^{-1})$. The algorithm is implemented, and its
+guarantees are illustrated empirically, in the \texttt{optimaltrees} package.]
 \end{abstract}
 
 \tableofcontents
@@ -170,7 +171,7 @@ re-expanding to prose; do not re-verify.
     via a beta-distribution pivot and \citet{waltherperry2022}'s
     multiscale Bonferroni adjustment -- for each leaf's probability
     content. Different object throughout: no single true tree generates
-    the data, splits sit at empirical medians rather than loss-optimized
+    the data, splits sit at empirical medians rather than loss-optimised
     thresholds, and the target is leaf-level density coverage, not exact
     recovery of one fixed, unknown topology and its thresholds.
   \end{itemize}
@@ -304,6 +305,22 @@ specified realising tree, not of $\tau$ alone; Definition~\ref{def:true-tree}
 fixes which realisation depth bounds refer to for the unknown truth.
 \end{definition}
 
+\paragraph{Cutpoint, split, threshold, boundary, collapsed split.}
+Five closely related words for locations along a coordinate recur below, and
+they are not interchangeable. A \emph{cutpoint} is one of the analyst's
+pre-specified candidate values on a single coordinate, fixed in $n$ and never
+updated by the data. A \emph{split} is a tree's use of a cutpoint at one
+internal node --- or, for the continuum truth of \S\ref{sec:setup-twostage},
+its use of an arbitrary real value there --- and that split's \emph{threshold}
+is the value it carries. A \emph{boundary} is a split of the unknown truth
+$\gamma_0$ rather than a candidate split of a fitted tree, and is written
+``true boundary'' wherever the contrast matters; the same word also appears in
+its ordinary geometric sense for the face of a cell, which context
+distinguishes. A \emph{collapsed split}, produced by Step~3 of
+Algorithm~\ref{alg:twostage} from a pair of splits at consecutive cutpoints, is
+a labelled \emph{interval} rather than a point, and is compared with a true
+boundary accordingly (\S\ref{sec:setup-twostage}).
+
 The \emph{topology} of a tree partition is its split structure with the
 threshold \emph{values} discarded: formally, the rooted binary tree together
 with the splitting coordinate attached to each internal node, and the
@@ -329,6 +346,13 @@ Given $\tau$, the \emph{full-sample leaf refit} sets, on each leaf $\ell$,
   \widehat\gamma_\tau\restriction_\ell
   =\frac{\sum_{i:X_i\in\ell}Z_i}{\card{\{i:X_i\in\ell\}}} .
 \end{equation}
+By convention, a leaf containing no observations is assigned the fitted value
+of its nearest ancestor that contains at least one (the root mean if none
+does). The choice is immaterial to everything below: the minimum-leaf-count
+requirement of Assumption~\ref{ass:construct}(d) makes every leaf of a
+selected candidate non-empty once $m_n\ge1$, an empty leaf contributes nothing
+to an empirical risk, and every population risk below is computed from
+$\Pi^\nu_\tau\gamma_0$ rather than from~\eqref{eq:refit}.
 Structure is selected by penalised empirical risk minimisation over the
 \emph{feasible} candidates. Let
 \begin{equation}\label{eq:feasible}
@@ -900,7 +924,7 @@ hold uniformly over such \(N\).
   Both averages are well defined, since \(\nu(H^\pm_N)\ge q_{\min}>0\) by
   Assumption~\ref{ass:local-design}(Node).
 
-  \item[(Local-Jump)] \emph{Jumps across every active face cell.}
+  \item[(Local-Jump)] \emph{Jumps across every adjacent leaf pair.}
   For every pair of leaves adjacent across the boundary \(\{x_q=c_{0,N}\}\),
   the corresponding population values \(\gamma^-_{N,j}\) and
   \(\gamma^+_{N,j}\) satisfy
@@ -1317,7 +1341,8 @@ This convention remains in force in the next three results.
 A tree \(\tau\) is said to \emph{omit} a true boundary
 \(b=(q,c_{0,N})\) if no singleton or interval in the collapsed split set
 \(\topolcoll(\tau)\), on coordinate \(q\), lies within distance \(C/r\) of
-\(c_{0,N}\).  Let \(D_{\max}\) be the coordinate-diameter bound of (Dens) and
+\(c_{0,N}\).  Let \(D_{\max}\) be the coordinate-diameter bound of
+Assumption~\ref{ass:local-design}(Dens) and
 set
 \[
   c_{\mathrm{box}}:=\frac1{f_{\max}D_{\max}}>0,
@@ -1325,7 +1350,8 @@ set
 so that, for every true internal node \(N\) with splitting coordinate \(q\),
 the \((p-1)\)-dimensional cross-section \(\Gamma_N\) of \(R_N\) transverse to
 \(q\) satisfies \(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}
-q_{\min}\).  Indeed (Node) gives \(\nu(R_N)\ge q_{\min}\) while (Dens) gives
+q_{\min}\).  Indeed Assumption~\ref{ass:local-design}(Node) gives
+\(\nu(R_N)\ge q_{\min}\) while (Dens) gives
 \(\nu(R_N)\le f_{\max}\operatorname{Leb}_{p-1}(\Gamma_N)D_{\max}\).  Set
 \[
   c_{\mathrm{topol}}:=\frac{c_{\mathrm{box}}}{8}.
@@ -1376,7 +1402,8 @@ boundary and consider a pair of points differing only in the splitting
 coordinate and straddling it at distance $t\le C/2r$: no split on another
 coordinate can separate them, and, precisely because the boundary is omitted,
 no $q$-split of $\tau$ lies between them, so they share a leaf. Clause
-(Local-Jump) then forces a squared error of at least $\kappa_{\min}^2/4$ at one
+Assumption~\ref{ass:jump-regularity}(Local-Jump) then forces a squared error of
+at least $\kappa_{\min}^2/4$ at one
 of the two points, and integrating over $t$ and over the active face cells ---
 using the density floor of (Dens) together with the cross-sectional bound
 $\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}q_{\min}$ that (Node)
@@ -1384,7 +1411,8 @@ and (Dens) supply --- gives an approximation loss of order $C/r$. For the
 upper bound, snapping every true boundary to a nearest cutpoint while
 preserving the true ancestor order produces a feasible comparator in
 $\cT_{\bar L_A}(\cA_r)$ that disagrees with $\gamma_0$ only in slabs of width
-$O(r^{-1})$, costing at most $(\bar L-1)\kappa_{\max}^2f_{\max}/r$ by (J) and
+$O(r^{-1})$, costing at most $(\bar L-1)\kappa_{\max}^2f_{\max}/r$ by
+Assumption~\ref{ass:jump-regularity}(J) and
 the upper density bound. Subtracting the second bound from the first leaves
 $c_\Delta/r$, and the choice~\eqref{eq:C-margin-choice} of $C$ is exactly what
 makes $c_\Delta>0$ after the $O(r^{-1})$ discard loss at the edge of the face
@@ -1538,7 +1566,8 @@ sequence $(n,r_n,\lambda_n,m_n)$, so its bijection and $C/r_n$ localisation
 apply directly; no fixed-$r$, then $n\to\infty$, interchange is used. The only
 additional step converts that localisation into the bracket statement Stage~B
 requires: two distinct true boundaries on one coordinate are at distance at
-least $\varsigma$ by (Sep), and each recovered representative lies within
+least $\varsigma$ by Assumption~\ref{ass:local-design}(Sep), and each recovered
+representative lies within
 $C/r_n$ of its match, so the triangle inequality gives a recovered separation
 of at least $\varsigma-2C/r_n\to\varsigma$. Hence the bracket bounded by the
 nearest \emph{other} same-coordinate recovered split has width bounded below by
@@ -1645,7 +1674,7 @@ values.
   Stage-A-descendant variant of Lemma~\ref{lem:prism-profile}.
 \item Lemma~\ref{lem:ancestor-localisation}: superconsistency survives
   conditioning on \emph{estimated} rather than true ancestor thresholds --
-  the engine that makes the level-by-level, root-first induction over the
+  the engine that makes the levelwise, root-first induction over the
   whole tree legitimate.
 \item Proposition~\ref{prop:twostage-superconsistency}: the headline
   result -- every refined threshold, at every level, is simultaneously
@@ -1711,7 +1740,8 @@ Fix an internal node $N$ on coordinate $q$ with true threshold
 $c_0:=c_{0,N}$, and let $[q_N^-,q_N^+]$ denote the fixed, compact extent of
 the true node box $R_N$ along coordinate $q$ (well defined and bounded, by
 the construction of $R_N^+$ and the bounded coordinate diameters assumed in
-clause (Dens)). (Here and below, $R_N$ and $R_N^+$ always denote the node's
+clause (Dens) of Assumption~\ref{ass:local-design}). (Here and below, $R_N$ and
+$R_N^+$ always denote the node's
 axis-aligned \emph{box}, per clause (Dens); a superscripted $R_N^{\bullet}$
 with $\bullet\in\{X,\mathrm{stump},\mathrm{prof}\}$ always denotes a
 real-valued \emph{risk}. The two uses do not otherwise overlap.) Write
@@ -1745,7 +1775,8 @@ criterion over the FIXED interval $B^-$. Then:
 Part (a) is population-only: the ANOVA identity makes
 $R_N^X(c)-R_N^X(c_0)$ nonnegative, and strictly positive for $c\ne c_0$
 because the slab $\mathcal I_N(c,c_0)$ has strictly positive $\nu$-mass by
-(Dens) while (Local-Jump) gives one of its cells a nonzero jump, so $\tau(c)$
+(Dens) while Assumption~\ref{ass:jump-regularity}(Local-Jump) gives one of its
+cells a nonzero jump, so $\tau(c)$
 is not sufficient; continuity of $R_N^X$ plus compactness of
 $\{c\in[q_N^-,q_N^+]:\abs{c-c_0}\ge\eta\}$ then forces a strictly positive
 infimum. Part (b) applies the standard argmin-consistency argument for
@@ -1792,7 +1823,8 @@ the actual Stage-B minimiser $\widehat c_N$ equals $\widetilde c_N$, the
 minimiser of the same criterion over the FIXED interval $B^-$, with
 probability tending to one. The random-design change-point results of
 \citet{chan1993} and \citet{seijosen2011}, whose
-conditions are supplied here by (Dens), (Node), (Local-Jump), and the standing
+conditions are supplied here by (Dens), Assumption~\ref{ass:local-design}(Node),
+(Local-Jump), and the standing
 second-moment condition, apply directly to $\widetilde c_N$ (a legitimate,
 unconditionally-defined statistic on the fixed set $B^-$) and give
 \[
@@ -1820,7 +1852,7 @@ criterion.
 \begin{lemma}[Prism decomposition of the local profiled criterion]
 \label{lem:prism-profile}
 Fix an internal node \(N\), its splitting coordinate \(q\), its true threshold
-\(c_0:=c_{0,N}\), and its true region \(R_N\).  Suppose that the topology,
+\(c_0:=c_{0,N}\), and its true box \(R_N\).  Suppose that the topology,
 the true ancestor row set, and the population-level descendant cell structure
 are fixed.  (The corresponding statement with descendant thresholds held at
 their Stage-A values instead of their true values follows from
@@ -1847,24 +1879,31 @@ Then:
     \le \frac{(L_N^-+L_N^+)^2}{4}
     \le \frac{\bar L^2}{4}
   \]
-  active prism cells, where \(L_N^-\) and \(L_N^+\) are the numbers of
-  descendant leaves below the two children of \(N\).
+  prism cells, where \(L_N^-\) and \(L_N^+\) are the numbers of
+  descendant leaves below the two children of \(N\). The bound is on the
+  total number of cells in the decomposition, whether or not a given cell
+  turns out to be active in the sense of (iii).
 
-  \item If \(\omega_{N,j}(c)\) is the \(\nu\)-mass of prism cell \(j\), and
+  \item Call prism cell \(j\) \emph{active} if its \((p-1)\)-dimensional
+  footprint \(G_j\) --- its projection onto the coordinates other than
+  \(q\) --- has positive Lebesgue measure,
+  \(\operatorname{Leb}_{p-1}(G_j)>0\).
+  If \(\omega_{N,j}(c)\) is the \(\nu\)-mass of prism cell \(j\), and
   \(\Delta_{N,j}\) is the jump between its adjacent leaves, then for every
-  cell \(j\) whose \((p-1)\)-dimensional footprint \(G_j\) has
-  \(\operatorname{Leb}_{p-1}(G_j)>0\),
+  active cell \(j\),
   \[
     \omega_{N,j}(c)=\Theta\!\left(\abs{c-c_0}\right),
     \qquad
     \kappa_{\min}\le\abs{\Delta_{N,j}}\le\kappa_{\max}.
   \]
-  A cell with \(\operatorname{Leb}_{p-1}(G_j)=0\) (a source--target leaf
-  pair whose footprints do not overlap) has \(\omega_{N,j}\equiv0\) and
-  contributes zero to both the cell count of (ii) and the drift sum of (iv);
-  it is retained in the count only as an upper-bound artefact.
-  Thus, at \(c=c_0+u/n\) with fixed \(u\), every cell with positive
-  footprint has \(\omega_{N,j}(c)=\Theta(n^{-1})\).
+  An inactive cell --- one with \(\operatorname{Leb}_{p-1}(G_j)=0\), i.e.\ a
+  source--target leaf pair whose footprints do not overlap --- has
+  \(\omega_{N,j}\equiv0\) and contributes zero to the drift sum of (iv); it is
+  nonetheless included in the cell count of (ii), which therefore bounds the
+  total number of cells rather than the number of active ones, and is retained
+  there only as an upper-bound artefact.
+  Thus, at \(c=c_0+u/n\) with fixed \(u\), every active cell
+  has \(\omega_{N,j}(c)=\Theta(n^{-1})\).
 
   \item Writing \(R_N^{\mathrm{prof}}(c)\) for the population squared-error
   risk after profiling all descendant-leaf means,
@@ -1903,7 +1942,8 @@ observation whose $q$-coordinate lies between $c$ and $c_0$ changes side of
 $N$, which is (i). Step~2 refines that slab into at most
 $L_N^-L_N^+\le\bar L^2/4$ disjoint prism cells indexed by realised
 source--target leaf pairs; this is legitimate because
-Assumption~\ref{ass:solver-twostage}(b)'s bracket together with (Sep) prevents
+Assumption~\ref{ass:solver-twostage}(b)'s bracket together with
+Assumption~\ref{ass:local-design}(Sep) prevents
 a candidate from crossing any other $q$-split, so every same-coordinate
 descendant test is constant throughout the slab and may be absorbed into a
 fixed path label, while cell masses and jump marks are read off (Dens) and
@@ -1937,7 +1977,8 @@ results are used for their rate-\(n\) localisation machinery, while the new
 prism and joint-process arguments verify the feature not covered directly by
 those references.  The linear drift constant is explicitly
 \(\kappa_{\min}^2p_{\min}/4\), and the quadratic ANOVA remainder cannot change
-the rate.  The argument can fail if an active adjacent pair has zero jump, if
+the rate.  The argument can fail if an active cell's adjacent leaf pair has
+zero jump, if
 the local design density vanishes, if leaf masses approach zero, or if the
 number of leaves grows with \(n\).  With fixed nonzero jumps, the \(n^{-1}\)
 rate is the usual sharp change-point rate.
@@ -1965,7 +2006,10 @@ cell \(j\) in the coordinates other than \(q\), clause (Dens) gives
 \]
 The footprints \(G_j\) are disjoint and, by Lemma~\ref{lem:prism-profile}(i)--(ii),
 exhaust the cross-section \(\Gamma_N\) of the box \(R_N\) transverse to
-\(q\); under (Local-Jump) every resulting cell is active. Summing therefore
+\(q\); the inactive cells of Lemma~\ref{lem:prism-profile}(iii) have
+\(\operatorname{Leb}_{p-1}(G_j)=0\) and so contribute nothing to either side of
+the display below, while (Local-Jump) supplies a nonzero jump mark on each
+active cell. Summing therefore
 gives exactly
 \[
   \sum_j\omega_{N,j}(c)
@@ -2073,7 +2117,7 @@ Lemma~\ref{lem:bracket-reduction} and Lemma~\ref{lem:prism-profile} are
 both stated with every descendant threshold at its \emph{true} value.
 Stage~B does not have access to true descendant values: by
 Assumption~\ref{ass:solver-twostage}(b), a node's refinement proceeds
-level-by-level with every strictly-deeper threshold still held at its
+levelwise with every strictly-deeper threshold still held at its
 Stage-A grid value. The next lemma closes this gap.
 
 \begin{lemma}[Stability under Stage-A descendant thresholds]
@@ -2140,7 +2184,8 @@ the row set induced by the refined ancestor thresholds:
 \begin{proof}[Proof sketch]
 The induction hypothesis is used only to place every ancestor error inside a
 deterministic collar $\mathcal C_{n,M}$ of half-width $M/n$, at the cost of one
-third of an $\epsilon$-budget. Clause (Joint) and a bare union bound then show
+third of an $\epsilon$-budget. Clause (Joint) of
+Assumption~\ref{ass:local-design} and a bare union bound then show
 that, with probability tending to one, no observation lies simultaneously in
 that collar and in the level-$\ell$ window
 $\abs{x_{q_\ell}-c_{0,\ell}}\le U/n$, the relevant probability being
@@ -2180,7 +2225,7 @@ boundaries, or if node masses vanished with \(n\).
 \begin{remark}[Non-local descendant splits]
 \label{rem:nonlocal-descendants}
 Proposition~\ref{prop:boundary-recovery} places every recovered split, not
-only the one currently being refined, within $C/r_n$ of its true split.
+only the one currently being refined, within $C/r_n$ of its true boundary.
 Since \(r_n\to\infty\), these
 other split locations converge to their true values.  Their induced prism
 masses, jump marks, and positive drift constants therefore differ from their
@@ -2948,7 +2993,7 @@ which exceeds $\varsigma/2$ for $n$ large; consequently
   \PP\bigl(B^-\subseteq\widehat B_n\bigr)\longrightarrow1,
 \]
 while $\widehat B_n\subseteq[q_N^-,q_N^+]$ holds always, since Stage B
-never searches outside the node's own region. By (b),
+never searches outside the node's own box. By (b),
 $\PP(\widehat c_N^{\mathrm{full}}\in B^-)\to1$. On the intersection of
 these two probability-tending-to-one events:
 $\widehat c_N^{\mathrm{full}}$ is the global minimiser of the criterion
