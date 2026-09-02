@@ -97,67 +97,110 @@ guarantees are implemented and tested in the \texttt{optimaltrees} package.]
 % ===========================================================================
 \section{Introduction}\label{sec:intro}
 
-[TODO -- outline, not drafted. Audience target revised 2026-09-01 to
-JASA Theory \& Methods (was JMLR; see
-\texttt{quality\_reports/plans/2026-09-01\_two-paper-split.md} \S7) --
-lead with the statistical framing, not the ML motivation, per that
-reconsideration. Candidate structure:
+[OUTLINE -- reverted from full prose 2026-09-01 to keep iterating on the
+story cheap. Citations below are real (\texttt{\textbackslash citet}/
+\texttt{\textbackslash citep}), verified this session -- keep as-is when
+re-expanding to prose; do not re-verify.
 \begin{itemize}
-\item Motivate (stats-first): decision-tree fitting is, at each split, a
-  threshold/change-point estimation problem. Classical change-point theory
-  (\citealt{chan1993}, \citealt{yaoau1989}, \citealt{baiperron1998},
-  \citealt{boysen2009}, \citealt{seijosen2011}) and the split-point
-  confidence-set literature (\citealt{banerjee2007}) study this for a
-  single threshold, or for a tree used as a working (possibly
-  misspecified) model. This paper asks the analogous question for a
-  genuinely tree-structured target with multiple, jointly estimated
-  thresholds arranged in a partition topology that must itself be
-  recovered before any individual threshold's rate is even meaningful.
-\item Secondary/practical motivation: existing globally-optimal
-  decision-tree solvers (GOSDT, OSRT, this package's own branch-and-bound)
-  search a \emph{pre-specified} grid of candidate cutpoints -- a genuine
-  threshold generically does not land on a grid point. The two-stage
-  algorithm below removes this restriction; the statistical question above
-  is what makes the removal rigorous rather than heuristic.
-\item Position against \citet{xu2026}: their oracle inequalities and
-  minimax rates for ERM decision trees concern
-  \emph{approximation}/prediction-risk theory over a nonparametric function
-  class. This paper's question is different in kind -- whether the
-  \emph{partition itself} is exactly recovered, and at what rate -- and is
-  not addressed by that or related oracle-inequality results.
-\item State the two contributions: (i) the two-stage algorithm; (ii) the
-  topology-recovery + simultaneous-superconsistency guarantee.
-\item Related work, expanded per the 2026-09-01 lit review
-  (\texttt{quality\_reports/2026-09-01\_paper-a-lit-review.md}):
+\item \textbf{Motivate (stats-first).} Tree-fitting = threshold/
+  change-point estimation at every split. Classical theory
+  \citep{chan1993,yaoau1989,baiperron1998,boysen2009,seijosen2011} and
+  split-point confidence sets \citep{banerjee2007} do this for \emph{one}
+  threshold, or for a tree used as a working model. This paper: multiple
+  jointly-estimated thresholds in a partition topology that must itself be
+  recovered first, before any individual rate is meaningful.
+\item \textbf{Practical obstacle.} Global-optimal solvers
+  (\citealt{lin2020gosdt}'s GOSDT, \citealt{zhang2023osrt}'s OSRT, this
+  package's own branch-and-bound) search a finite, pre-specified grid --
+  branch-and-bound needs a finite candidate set to certify against. A true
+  threshold generically lands off-grid. The two-stage algorithm removes
+  this restriction without reopening the combinatorial search; the
+  statistical question above is what makes the removal rigorous rather
+  than heuristic.
+\item \textbf{Position against \citet{xu2026}.} Their oracle
+  inequalities/minimax rates bound excess \emph{prediction risk} over a
+  nonparametric class -- silent on whether the fitted \emph{partition}
+  matches any true partition. This paper: exact partition recovery, at a
+  rate. Different question; not addressed by that theory.
+\item \textbf{Two contributions.} (i) the two-stage algorithm --
+  topology on a coarse grid (\S\ref{sec:topology}) + collapse map +
+  grid-free root-first threshold refinement (\S\ref{sec:stageb}); (ii)
+  topology recovered w.p.$\to1$ as the grid refines, every threshold
+  \emph{simultaneously} superconsistent at $O_p(n^{-1})$ -- the same rate a
+  single, already-known-topology threshold would attain
+  \citep{chan1993}, despite topology itself being estimated.
+\item \textbf{Related work, sharpened.}
   \begin{itemize}
-  \item Classical change-point/threshold estimation as above, plus
-    \citealt{seootsu2018} (the argmax theorem for discontinuous criteria)
-    and \citealt{song2016} (change-point asymptotics under
-    misspecification) -- contrast: that literature gets cube-root,
-    non-standard rates because the true regression function is smooth and
-    the tree is a working (misspecified) model; here the true function is
-    genuinely tree-structured, which is why superconsistency ($n^{-1}$,
-    not $n^{-1/3}$) is available.
-  \item ArborEnum (Heile, McTavish, Seltzer \& Rudin, 2026): the closest
-    algorithmic cousin -- exact enumeration of Rashomon sets over
-    continuous thresholds without prior binarization. Convergent
-    motivation (binarization loses information), orthogonal contribution
-    (combinatorial enumeration of a whole near-optimal set vs.\ this
-    paper's statistical recovery-and-rate claim for one tree); neither
-    subsumes the other.
-  \item Xu (2026), \emph{On Stopping Rules and Spatial Adaptation for
-    CART}: a companion piece (same lead author as \citealt{xu2026}) on
-    greedy-CART pointwise rates -- adopt its global-vs.-pointwise rate
-    vocabulary when scoping this paper's own (global) claim.
+  \item \citet{seootsu2018}/\citet{song2016}: cube-root rate because their
+    truth is smooth and the tree is a deliberately misspecified working
+    model. Here: $n^{-1}$, because the truth genuinely \emph{is}
+    tree-structured -- misspecification, not threshold estimation per se,
+    is what slows the classical rate.
+  \item \citet{heile2026arborenum}'s ArborEnum: closest algorithmic
+    cousin, adapts \citet{brita2025contree}'s single-tree
+    continuous-threshold bounds to exact Rashomon-set enumeration.
+    Convergent motivation (binarization can discard the truth), orthogonal
+    contribution (combinatorial enumeration of a \emph{set} vs.\ this
+    paper's statistical recovery of \emph{one} tree). Neither subsumes the
+    other.
+  \item \citet{xu2026stopping}: distinguishes \emph{global} vs.\
+    \emph{pointwise} rate vocabulary (greedy CART, stopping rules). This
+    paper's guarantee is global, uniformly over every recovered threshold.
+  \item \citet{waltherzhao2026}'s Beta-trees: closest venue/theme cousin,
+    not a competing method. Builds a $k$-d tree by recursive marginal-median
+    splits and prunes to the coarsest partition passing a goodness-of-fit
+    test, giving exact finite-sample simultaneous confidence bounds --
+    via a beta-distribution pivot and \citet{waltherperry2022}'s
+    multiscale Bonferroni adjustment -- for each leaf's probability
+    content. Different object throughout: no single true tree generates
+    the data, splits sit at empirical medians rather than loss-optimized
+    thresholds, and the target is leaf-level density coverage, not exact
+    recovery of one fixed, unknown topology and its thresholds.
   \end{itemize}
-\item Roadmap.
-\end{itemize}
-Bibkeys \texttt{song2016} and the ArborEnum/Xu-companion citations are
-used above by name only (no \texttt{\textbackslash bibitem} yet), matching
-how \texttt{xu2026} is already handled in this outline -- add all of them
-together when this section is actually drafted.]
+\item \textbf{Roadmap.} \S\ref{sec:setup} setup + standing assumptions;
+  \S\ref{sec:topology} topology recovery; \S\ref{sec:stageb} simultaneous
+  superconsistency; \S\ref{sec:implementation} the \texttt{optimaltrees}
+  implementation; \S\ref{sec:simulations} empirical illustration of both
+  rates; \S\ref{sec:discussion} discussion. Full proofs: Supplementary
+  Material (\S\ref{sec:supplement}).
+\end{itemize}]
 
 \section{Setup and the two-stage algorithm}\label{sec:setup}
+
+[OUTLINE -- section in brief, added 2026-09-01 for whole-paper story
+review. Formal content below is unchanged, proof-audited; this block adds
+a summary, it does not replace anything.
+\begin{itemize}
+\item \S\ref{sec:setup-basics}: single-stage setup -- $\gamma_0$
+  piecewise-constant on an axis-aligned tree partition; a pre-specified
+  finite cutpoint grid gives a \emph{fixed} candidate class $\cT_{\bar L}$;
+  \emph{topology} = split structure with thresholds discarded, strictly
+  weaker than the full partition -- the object Stage~A targets.
+\item \S\ref{sec:setup-assumptions}: standing single-stage assumptions
+  (sampling, design/boundedness, moments, finite candidate family,
+  estimator construction, solver fidelity, fixed leaf budget, exact global
+  optimisation) plus Definition~\ref{def:sufficient} (sufficient class) and
+  Assumption~\ref{ass:sparsity} (grid-exact sparsity) -- the ``old,''
+  grid-restricted world this paper extends.
+\item \S\ref{sec:setup-twostage}: the two-stage extension --
+  Assumption~\ref{ass:sparsity-jump} (continuum tree sparsity + jump
+  regularity) states the actual target class: a \emph{continuum}-threshold
+  tree, not grid-restricted. Explicit ``borrows vs.\ adds'' accounting:
+  borrows the localisation machinery wholesale (\citealt{chan1993,
+  seijosen2011} rate-$n$; \citealt{baiperron1998,yaoau1989,boysen2009}
+  joint step-height/location estimation; \citealt{seootsu2018} argmax
+  theorem); adds three things -- (i) Lemma~\ref{lem:prism-profile}'s
+  reduction of one moving threshold to a sum of source--target leaf-pair
+  processes (not a two-group problem); (ii)
+  Lemma~\ref{lem:ancestor-localisation}'s robustness to \emph{estimated}
+  (not true) ancestor thresholds, the engine behind the levelwise
+  induction; (iii) Proposition~\ref{prop:transition-leaves} and the
+  collapse map $\topolcoll$'s budget accounting for grid-misaligned
+  boundaries.
+\item \S\ref{sec:setup-solver}: Assumption~\ref{ass:solver-twostage} --
+  the precise fidelity conditions both stages' solvers must satisfy
+  (bracket containment, etc.) for the guarantees below to apply.
+\end{itemize}]
 
 \subsection{Covariate space, tree partitions, and the fitting problem}
 \label{sec:setup-basics}
@@ -177,7 +220,7 @@ $L_2$ distance to $\gamma_0$.
 
 $\cX$ need not itself be finite; it may be any measurable space on which the
 covariate law $P_X$ and the regression function $\gamma_0$ are well defined (a
-finite product $\cX=\prod_{j\le d}\cX_j$ is the special case in which every
+finite product $\cX=\prod_{j\le p}\cX_j$ is the special case in which every
 coordinate's cutpoint family below is its full value set). What is finite, and
 fixed in $n$, is not $\cX$ but the \emph{candidate partition family},
 generated by a pre-specified finite collection of cutpoints on each
@@ -206,6 +249,30 @@ finite cutpoint family generating atoms $\cB$ we write $\cT_\cB$ for the
 unrestricted class of tree partitions built from those cutpoints, and
 $\cT_{L}(\cB)$ for its restriction to at most $L$ leaves; thus
 $\cT_{\bar L}=\cT_{\bar L}(\cA)$.
+
+\begin{definition}[Rooted tree, nodes, depth, and level]\label{def:tree-vocab}
+Every tree partition $\tau$ above is \emph{realised} by a rooted binary tree
+$\mathbf T$ whose leaves are the blocks of $\tau$: every vertex of
+$\mathbf T$ other than a leaf is an \emph{internal node}, and every internal
+node carries a splitting coordinate, a threshold, and exactly two children.
+Leaves are nodes. The \emph{cell} of a node $N$, written $R_N$, is the subset
+of $\cX$ consistent with every ancestor test on the root-to-$N$ path:
+$R_{\mathrm{root}}=\cX$, and each child's cell is the half of its parent's
+cell cut by the parent's threshold; the cell of a leaf is the corresponding
+block of $\tau$. (Some assumptions below work with the closure of $R_N$ for
+convenience, e.g.\ Assumption~\ref{ass:sparsity-jump}'s $R_N$; this changes
+nothing that follows, since adjacent leaves' cells share only a
+$\nu$-null boundary face under Assumption~\ref{ass:sparsity-jump}(Dens).)
+Node $M$ is an \emph{ancestor} of node $N$, and $N$ a \emph{descendant} of
+$M$, if $M$ lies on the root-to-$N$ path; $M$ is $N$'s \emph{parent} if in
+addition no node lies strictly between them. The \emph{level} of a node is
+its distance from the root (the root has level $0$); the \emph{depth} of
+$\mathbf T$ is the greatest level attained by any leaf. A partition $\tau$ can
+be realised by trees of different depths (e.g.\ by reordering splits on
+distinct coordinates), so ``depth'' below is always a property of a
+specified realising tree, not of $\tau$ alone; Definition~\ref{def:true-tree}
+fixes which realisation depth bounds refer to for the unknown truth.
+\end{definition}
 
 The \emph{topology} of a tree partition is its split structure with the
 threshold \emph{values} discarded: formally, the rooted binary tree together
@@ -262,9 +329,9 @@ of $(X,Z)\sim P$.
 
 \begin{assumption}[Design measure and boundedness]\label{ass:design}
 The design measure $\nu$ is a fixed measure on $\cX$, not depending on $n$,
-for which there exist constants $0<c\le C<\infty$ with
+for which there exist constants $0<\underline W\le\bar W<\infty$ with
 \[
-  c\,dP_X\ \le\ d\nu\ \le\ C\,dP_X .
+  \underline W\,dP_X\ \le\ d\nu\ \le\ \bar W\,dP_X .
 \]
 Moreover $\gamma_0$ is bounded: $\sup_{x\in\cX}\abs{\gamma_0(x)}\le
 C_\gamma<\infty$.
@@ -391,6 +458,42 @@ $\cS^{\mathrm{cont}}\ne\emptyset$. This is strictly weaker than the grid-exact
 Assumption~\ref{ass:sparsity}, because a true continuum boundary need not
 coincide with any cutpoint of a finite grid.
 
+Nonemptiness of $\cS^{\mathrm{cont}}$ alone does not pin down a single object
+for later results to be \emph{about}: the definition below fixes what ``the
+true tree'' means.
+
+\begin{definition}[The true tree]\label{def:true-tree}
+Call $\tau\in\cS^{\mathrm{cont}}$ \emph{minimal} if
+$\card\tau\le\card{\tau'}$ for every $\tau'\in\cS^{\mathrm{cont}}$. Two
+minimal elements of $\cS^{\mathrm{cont}}$ are \emph{equivalent} if they
+induce the same partition of $\cX$ into leaf cells
+(Definition~\ref{def:tree-vocab}) --- equivalently, if every realisation of
+one is a realisation of the other, whatever the order of the underlying
+split tests. \emph{The true tree} is a minimal element of
+$\cS^{\mathrm{cont}}$, and \textbf{Assumption~\ref{ass:sparsity-jump}(S) is
+strengthened, for the remainder of this paper, to assert that all minimal
+elements of $\cS^{\mathrm{cont}}$ are equivalent in this sense.} Every
+subsequent use of ``the true tree'', ``the true node $N$'', ``the true
+boundaries'', and ``$c_{0,k}$'' refers to (a fixed choice of realisation of)
+this equivalence class; a stated bound on the true tree's depth
+(Assumption~\ref{ass:sparsity-jump}(S)) refers to the minimal-depth
+realisation of it, per the convention of Definition~\ref{def:tree-vocab}.
+\end{definition}
+
+\begin{remark}[Uniqueness is assumed here, not proved]\label{rem:true-tree-open}
+Definition~\ref{def:true-tree} \emph{asserts} that the minimal elements of
+$\cS^{\mathrm{cont}}$ coincide as partitions; it does not derive this from
+clauses (S), (J), (Dens), (Sep), (Node), (Local-Jump), and (Joint) alone. It
+is plausible that those clauses already force this coincidence --- any two
+minimal elements would have to agree on jump locations by (J) and
+(Local-Jump), and (Sep) plausibly rules out two inequivalent minimal
+partitions both satisfying (Dens) --- but no such argument is given here.
+Until one is, Definition~\ref{def:true-tree}'s equivalence claim should be
+read as an additional standing hypothesis, not as a consequence of the
+others; it is carried on the open-questions ledger of
+\texttt{quality\_reports/plans/2026-09-02\_paper-a-theory-clarity-remediation.md}.
+\end{remark}
+
 It is worth stating at the outset what this paper borrows and what it adds,
 since the two are easily conflated. The localisation machinery is not new: the
 rate-$n$ behaviour of a least-squares change point under random design is due
@@ -430,7 +533,7 @@ The regression function \(\gamma_0\) satisfies the following conditions.
   \item[(S)] \emph{Tree realisability.}
   The function \(\gamma_0\) is piecewise constant on a continuum
   partition realised by an axis-aligned tree with at most \(\bar L\) leaves
-  and depth at most \(d\), where \(\bar L\) and \(d\) are fixed in \(n\).
+  and depth at most \(\bar D\), where \(\bar L\) and \(\bar D\) are fixed in \(n\).
 
   \item[(J)] \emph{Genuine jumps.}
   Every true split separates regions on which the relevant population values
@@ -460,7 +563,7 @@ The regression function \(\gamma_0\) satisfies the following conditions.
   (Every cross-sectional-measure argument below, in particular the
   definition of \(c_{\mathrm{box}}\) preceding Lemma~\ref{lem:topol-margin},
   is written for the Lebesgue case; a discrete or mixed splitting
-  coordinate would in any case violate the \(\omega_{N,r}(c)=\Theta(\abs{c-c_0})\)
+  coordinate would in any case violate the \(\omega_{N,j}(c)=\Theta(\abs{c-c_0})\)
   prism scaling of Lemma~\ref{lem:prism-profile}(iii) on which the
   \(n^{-1}\) rate below depends, so this is a scoping remark, not an
   additional restriction.)
@@ -489,8 +592,8 @@ The regression function \(\gamma_0\) satisfies the following conditions.
   \item[(Local-Jump)] \emph{Jumps across every active face cell.}
   Fix an internal node \(N\), splitting coordinate \(q\) at \(c_{0,N}\). For
   every pair of leaves adjacent across this boundary, the corresponding
-  population values \(\gamma^-_{N,r}\) and \(\gamma^+_{N,r}\) satisfy
-  \(\kappa_{\min}\le\abs{\gamma^+_{N,r}-\gamma^-_{N,r}}\le\kappa_{\max}\).
+  population values \(\gamma^-_{N,j}\) and \(\gamma^+_{N,j}\) satisfy
+  \(\kappa_{\min}\le\abs{\gamma^+_{N,j}-\gamma^-_{N,j}}\le\kappa_{\max}\).
 
   \item[(Joint)] \emph{Ancestor--descendant joint density.}
   If an ancestor split uses coordinate \(q_a\), a descendant split uses
@@ -513,17 +616,17 @@ For each resolution \(r\), let \(\cA_r\) be the full product grid generated by
 \(r\) cutpoints per coordinate, up to fixed multiplicative constants: the
 ratio of the largest to the smallest cutpoint spacing, in any coordinate and
 at any resolution \(r\), is bounded by a fixed quasi-uniformity constant
-\(\gamma_{\mathrm{grid}}\ge1\).  Its
+\(\bar Q\ge1\).  Its
 mesh is \(O(r^{-1})\), tends to zero as \(r\to\infty\), and
 \[
-  N_r:=\card{\cA_r}\asymp r^d.
+  N_r:=\card{\cA_r}\asymp r^p.
 \]
 Stage~A globally minimises the penalised empirical risk over trees built from
 \(\cA_r\), subject to the inflated leaf budget
 \[
   \bar L_A:=\min\{2\bar L-1,N_r\}
 \]
-and depth bound \(2d\) (the leaf budget is truncated at the grid's own
+and depth bound \(2\bar D\) (the leaf budget is truncated at the grid's own
 capacity \(N_r\) for small \(r\); the depth bound needs no matching
 truncation, since a tree respecting \(\bar L_A\) already has depth at most
 \(\bar L_A-1\le N_r-1\)).  These bounds accommodate the fact that a true
@@ -532,7 +635,7 @@ grid splits, rather than one continuum split: the first split enters the
 straddling atom and the second exits it.  This introduces at most one
 additional leaf and one additional level for each true boundary.  Since a
 tree with \(L\) leaves has \(L-1\) boundaries, at most \(2\bar L-1\) leaves
-and depth \(2d\) are required.
+and depth \(2\bar D\) are required.
 
 Only the collapsed topology \(\topolcoll(\hat t^A)\) is retained from
 Stage~A.  More precisely, suppose that within a node a split at cutpoint
@@ -631,6 +734,27 @@ off-grid Stage-B scan.
 
 \section{Topology recovery on a refining grid}\label{sec:topology}
 
+[OUTLINE -- section in brief. Formal content below unchanged.
+\begin{itemize}
+\item Lemma~\ref{lem:grid-optimal}: population-level identity -- the
+  grid-optimal class equals the projected-sufficient class (an ANOVA
+  argument; no stochastics).
+\item Lemma~\ref{lem:topol-margin}: any grid tree omitting a true boundary
+  pays a fixed $c_\Delta/r$ population excess-risk margin -- also
+  population-level, no concentration inequality or union bound.
+\item Proposition~\ref{prop:parsimony-grid}: the main Stage-A result -- the
+  penalised empirical minimiser on a refining grid omits no true boundary
+  and carries no unmatched extra split, w.p.$\to1$; every true boundary is
+  localised to within $C/r_n$.
+\item Proposition~\ref{prop:boundary-recovery}: restates the above along
+  the actual joint asymptotic sequence $(n,r_n,\lambda_n,m_n)$ used
+  downstream -- the form Stage~B's hypotheses actually invoke.
+\item Proposition~\ref{prop:transition-leaves}: quantifies how many extra
+  leaves a finite grid forces (one ``transition leaf'' pair per
+  grid-misaligned true boundary) -- the source of the inflated leaf budget
+  $\bar L_A$ used throughout.
+\end{itemize}]
+
 \noindent\emph{A note on reading Assumptions~\ref{ass:finite},
 \ref{ass:budget}, and~\ref{ass:global} in this section.} Those assumptions
 were stated in \S\ref{sec:setup} for the fixed grid $\cA$ and the fixed
@@ -672,7 +796,7 @@ atom mass, and finiteness of the grid.  No stochastic rate or tail bound is
 used.  It can fail if a purported grid atom has zero \(\nu\)-mass.
 
 Fix \(r_0\), depending only on \(\varsigma\), the quasi-uniformity constant
-\(\gamma_{\mathrm{grid}}\),
+\(\bar Q\),
 and the constant \(C\) selected below, such that, for every \(r\ge r_0\),
 the mesh in every coordinate is smaller than \(\varsigma\) and
 \(C/r<\varsigma/2\).  Hence no grid atom contains more than one true boundary.
@@ -687,10 +811,10 @@ set
   c_{\mathrm{box}}:=\frac1{f_{\max}D_{\max}}>0,
 \]
 so that, for every true internal node \(N\) with splitting coordinate \(q\),
-the \((d-1)\)-dimensional cross-section \(\Gamma_N\) of \(R_N\) transverse to
-\(q\) satisfies \(\operatorname{Leb}_{d-1}(\Gamma_N)\ge c_{\mathrm{box}}
+the \((p-1)\)-dimensional cross-section \(\Gamma_N\) of \(R_N\) transverse to
+\(q\) satisfies \(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}
 q_{\min}\).  Indeed (Node) gives \(\nu(R_N)\ge q_{\min}\) while (Dens) gives
-\(\nu(R_N)\le f_{\max}\operatorname{Leb}_{d-1}(\Gamma_N)D_{\max}\).  Set
+\(\nu(R_N)\le f_{\max}\operatorname{Leb}_{p-1}(\Gamma_N)D_{\max}\).  Set
 \[
   c_{\mathrm{topol}}:=\frac{c_{\mathrm{box}}}{8}.
 \]
@@ -720,11 +844,16 @@ One may take
 \[
   c_\Delta
   :=
+  \tfrac12
   c_{\mathrm{topol}}\kappa_{\min}^2f_{\min}q_{\min}C
   -
   (\bar L-1)\kappa_{\max}^2f_{\max}
-  >0.
+  >0,
 \]
+the factor \(\tfrac12\) reflecting the discard adjustment fixed once and for
+all when \(r_0\) is enlarged in the proof below (the constant \(C\) in
+\eqref{eq:C-margin-choice} is chosen large enough that this halved quantity
+is still positive).
 \end{lemma}
 
 \begin{proof}[Proof sketch]
@@ -737,7 +866,7 @@ no $q$-split of $\tau$ lies between them, so they share a leaf. Clause
 (Local-Jump) then forces a squared error of at least $\kappa_{\min}^2/4$ at one
 of the two points, and integrating over $t$ and over the active face cells ---
 using the density floor of (Dens) together with the cross-sectional bound
-$\operatorname{Leb}_{d-1}(\Gamma_N)\ge c_{\mathrm{box}}q_{\min}$ that (Node)
+$\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}q_{\min}$ that (Node)
 and (Dens) supply --- gives an approximation loss of order $C/r$. For the
 upper bound, snapping every true boundary to a nearest cutpoint while
 preserving the true ancestor order produces a feasible comparator in
@@ -774,7 +903,7 @@ Suppose Assumptions~\ref{ass:iid}, \ref{ass:design},
 \ref{ass:global}, and \ref{ass:sparsity-jump} hold for Stage~A.  Let
 \(r_n\ge r_0\) and let
 \[
-  N_{r_n}:=\card{\cA_{r_n}}\asymp r_n^d.
+  N_{r_n}:=\card{\cA_{r_n}}\asymp r_n^p.
 \]
 Assume
 \begin{equation}\label{eq:stage-a-rates}
@@ -785,7 +914,7 @@ Assume
 \end{equation}
 Equivalently, existence of such a penalty requires
 \[
-  r_n^{d+1}=o(n).
+  r_n^{p+1}=o(n).
 \]
 Then every Stage-A penalised global minimiser
 \[
@@ -821,7 +950,7 @@ are all measured in the same empirical inner product. The population margin of
 Lemma~\ref{lem:topol-margin} transfers to $\widehat S_r$ on the finitely many
 fixed boundary patches by a local relative Bernstein bound for a
 fixed-VC-dimension family of axis-aligned sets, which is the one place the rate
-condition $r_n^{d+1}=o(n)$ is used. Two exclusions then finish the argument:
+condition $r_n^{p+1}=o(n)$ is used. Two exclusions then finish the argument:
 an omitted boundary loses by $\Theta(r_n^{-1})$, more than the largest possible
 penalty advantage $\lambda_n\bar L_A=o(r_n^{-1})$, while an unmatched collapsed
 split can be contracted without changing the population fit, so its empirical
@@ -839,9 +968,9 @@ The rates combine as
   \qquad
   \lambda_n=o(r_n^{-1}),
   \qquad
-  N_{r_n}\asymp r_n^d,
+  N_{r_n}\asymp r_n^p,
 \]
-which requires \(r_n^{d+1}=o(n)\).  The feasibility conclusion additionally
+which requires \(r_n^{p+1}=o(n)\).  The feasibility conclusion additionally
 uses \(m_n=o(n/r_n)\).  Failure can occur if transition leaves are excluded
 by the minimum-leaf constraint, if the local density vanishes, or if the
 solver is not globally exact.
@@ -855,13 +984,13 @@ Under Assumptions~\ref{ass:iid}, \ref{ass:design},
 \[
   \frac{N_{r_n}}{n}\ll\lambda_n\ll\frac1{r_n},
   \qquad
-  N_{r_n}\asymp r_n^d,
+  N_{r_n}\asymp r_n^p,
   \qquad
   m_n=o(n/r_n)
 \]
 when Stage~A retains the minimum-leaf constraint.  Equivalently, the first
-two conditions require \(r_n^{d+1}=o(n)\).  Under the inflated Stage-A
-budgets \(\bar L_A=\min\{2\bar L-1,N_{r_n}\}\) and \(2d\),
+two conditions require \(r_n^{p+1}=o(n)\).  Under the inflated Stage-A
+budgets \(\bar L_A=\min\{2\bar L-1,N_{r_n}\}\) and \(2\bar D\),
 \[
   \PP\left(
     \begin{array}{c}
@@ -936,6 +1065,30 @@ values.
 
 \section{Superconsistent threshold refinement (Stage B)}\label{sec:stageb}
 
+[OUTLINE -- section in brief. Formal content below unchanged.
+\begin{itemize}
+\item Lemma~\ref{lem:bracket-reduction}: reduces the random Stage-A
+  bracket to a genuine fixed-interval minimiser w.p.$\to1$
+  (Glivenko--Cantelli argument) -- closes a blocking gap found in this
+  session's holistic audit of the ported material.
+\item Lemma~\ref{lem:descendant-stability}: the local analysis survives
+  descendant thresholds being at their Stage-A (not true) values -- the
+  Stage-A-descendant variant of Lemma~\ref{lem:prism-profile}.
+\item Lemma~\ref{lem:prism-profile}: the core local excess-risk
+  decomposition -- moving one threshold near a true boundary decomposes
+  the excess risk into finitely many source--target ``prism cell''
+  contributions; gives a local rate lower bound $\propto\abs{c-c_0}$.
+\item Lemma~\ref{lem:ancestor-localisation}: superconsistency survives
+  conditioning on \emph{estimated} rather than true ancestor thresholds --
+  the engine that makes the level-by-level, root-first induction over the
+  whole tree legitimate.
+\item Proposition~\ref{prop:twostage-superconsistency}: the headline
+  result -- every refined threshold, at every level, is simultaneously
+  $O_p(n^{-1})$, by induction over tree levels using
+  Lemma~\ref{lem:ancestor-localisation} at internal nodes and
+  Lemma~\ref{lem:prism-profile} at terminal ones.
+\end{itemize}]
+
 \begin{remark}[Notation used in this section]
 This section introduces several objects distinguished only by
 subscript, which are collected here rather than at each first use. Three
@@ -976,33 +1129,33 @@ Throughout this section, set
 with \(f_{\min}\) the density lower bound of clause (Dens), \(q_{\min}\) the
 node-mass floor of clause (Node), and \(c_{\mathrm{box}}\) the
 cross-sectional constant fixed before Lemma~\ref{lem:topol-margin}. The
-three factors are not interchangeable, and the \((d-1)\)-dimensional factor
-cannot be omitted: \(\omega_{N,r}(c)\) is the \(\nu\)-mass of a
-\(d\)-dimensional prism cell of thickness \(\abs{c-c_0}\), so it carries the
-cell's \((d-1)\)-dimensional cross-sectional size as well as a density.
-Explicitly, writing \(G_r\) for the \((d-1)\)-dimensional footprint of prism
-cell \(r\) in the coordinates other than \(q\), clause (Dens) gives
+three factors are not interchangeable, and the \((p-1)\)-dimensional factor
+cannot be omitted: \(\omega_{N,j}(c)\) is the \(\nu\)-mass of a
+\(p\)-dimensional prism cell of thickness \(\abs{c-c_0}\), so it carries the
+cell's \((p-1)\)-dimensional cross-sectional size as well as a density.
+Explicitly, writing \(G_j\) for the \((p-1)\)-dimensional footprint of prism
+cell \(j\) in the coordinates other than \(q\), clause (Dens) gives
 \[
-  \omega_{N,r}(c)
+  \omega_{N,j}(c)
   \ \ge\
-  f_{\min}\,\operatorname{Leb}_{d-1}(G_r)\,\abs{c-c_0}
+  f_{\min}\,\operatorname{Leb}_{p-1}(G_j)\,\abs{c-c_0}
   +o\!\left(\abs{c-c_0}\right).
 \]
-The footprints \(G_r\) are disjoint and, by Lemma~\ref{lem:prism-profile}(i)--(ii),
+The footprints \(G_j\) are disjoint and, by Lemma~\ref{lem:prism-profile}(i)--(ii),
 exhaust the cross-section \(\Gamma_N\) of the box \(R_N\) transverse to
 \(q\); under (Local-Jump) every resulting cell is active. Summing therefore
 gives exactly
 \[
-  \sum_r\omega_{N,r}(c)
+  \sum_j\omega_{N,j}(c)
   \ \ge\
-  f_{\min}\operatorname{Leb}_{d-1}(\Gamma_N)\abs{c-c_0}
+  f_{\min}\operatorname{Leb}_{p-1}(\Gamma_N)\abs{c-c_0}
   +o\!\left(\abs{c-c_0}\right),
 \]
-and, as fixed above, \(\operatorname{Leb}_{d-1}(\Gamma_N)\ge c_{\mathrm{box}}
+and, as fixed above, \(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}
 q_{\min}\). Absorbing the \(o(\abs{c-c_0})\) term by shrinking the
 neighbourhood yields the bound
 \[
-  \sum_r\omega_{N,r}(c)\ \ge\ \frac{p_{\min}}{2}\abs{c-c_0}
+  \sum_j\omega_{N,j}(c)\ \ge\ \frac{p_{\min}}{2}\abs{c-c_0}
 \]
 used below. Making the cross-sectional factor explicit weakens every drift
 constant below by the fixed positive factor \(c_{\mathrm{box}}q_{\min}\),
@@ -1113,8 +1266,8 @@ one:
       \ge\tfrac12\delta_N(\eta)>0\);
   \item the perturbed prism masses and jump marks of
     Lemma~\ref{lem:prism-profile} satisfy
-    \(\widetilde\omega_{N,r}(c)=\omega_{N,r}(c)\{1+O(1/r_n)\}\) and
-    \(\abs{\widetilde\Delta_{N,r}}\ge\kappa_{\min}/2\), so
+    \(\widetilde\omega_{N,j}(c)=\omega_{N,j}(c)\{1+O(1/r_n)\}\) and
+    \(\abs{\widetilde\Delta_{N,j}}\ge\kappa_{\min}/2\), so
     \eqref{eq:prism-drift} holds for \(\widetilde R^X_{N,n}\) with
     \(p_{\min}\) replaced by \(p_{\min}/2\).
 \end{enumerate}
@@ -1215,21 +1368,21 @@ Then:
   active prism cells, where \(L_N^-\) and \(L_N^+\) are the numbers of
   descendant leaves below the two children of \(N\).
 
-  \item If \(\omega_{N,r}(c)\) is the \(\nu\)-mass of prism cell \(r\), and
-  \(\Delta_{N,r}\) is the jump between its adjacent leaves, then for every
-  cell \(r\) whose \((d-1)\)-dimensional footprint \(G_r\) has
-  \(\operatorname{Leb}_{d-1}(G_r)>0\),
+  \item If \(\omega_{N,j}(c)\) is the \(\nu\)-mass of prism cell \(j\), and
+  \(\Delta_{N,j}\) is the jump between its adjacent leaves, then for every
+  cell \(j\) whose \((p-1)\)-dimensional footprint \(G_j\) has
+  \(\operatorname{Leb}_{p-1}(G_j)>0\),
   \[
-    \omega_{N,r}(c)=\Theta\!\left(\abs{c-c_0}\right),
+    \omega_{N,j}(c)=\Theta\!\left(\abs{c-c_0}\right),
     \qquad
-    \kappa_{\min}\le\abs{\Delta_{N,r}}\le\kappa_{\max}.
+    \kappa_{\min}\le\abs{\Delta_{N,j}}\le\kappa_{\max}.
   \]
-  A cell with \(\operatorname{Leb}_{d-1}(G_r)=0\) (a source--target leaf
-  pair whose footprints do not overlap) has \(\omega_{N,r}\equiv0\) and
+  A cell with \(\operatorname{Leb}_{p-1}(G_j)=0\) (a source--target leaf
+  pair whose footprints do not overlap) has \(\omega_{N,j}\equiv0\) and
   contributes zero to both the cell count of (ii) and the drift sum of (iv);
   it is retained in the count only as an upper-bound artefact.
   Thus, at \(c=c_0+u/n\) with fixed \(u\), every cell with positive
-  footprint has \(\omega_{N,r}(c)=\Theta(n^{-1})\).
+  footprint has \(\omega_{N,j}(c)=\Theta(n^{-1})\).
 
   \item Writing \(R_N^{\mathrm{prof}}(c)\) for the population squared-error
   risk after profiling all descendant-leaf means,
@@ -1237,7 +1390,7 @@ Then:
   \label{eq:prism-risk}
     R_N^{\mathrm{prof}}(c)-R_N^{\mathrm{prof}}(c_0)
     =
-    \sum_r \omega_{N,r}(c)\Delta_{N,r}^2
+    \sum_j \omega_{N,j}(c)\Delta_{N,j}^2
     +O\!\left(\abs{c-c_0}^2\right).
   \end{equation}
   Consequently, for all sufficiently small \(\abs{c-c_0}\),
@@ -1276,7 +1429,7 @@ fixed path label, while cell masses and jump marks are read off (Dens) and
 identity one destination leaf at a time; the pooling correction is
 $O(\abs{c-c_0}^2)$ once (Node) bounds the correctly assigned core mass below,
 which yields~\eqref{eq:prism-risk} and then, with the cross-sectional mass
-bound $\sum_r\omega_{N,r}(c)\ge p_{\min}\abs{c-c_0}/2$, the linear drift
+bound $\sum_j\omega_{N,j}(c)\ge p_{\min}\abs{c-c_0}/2$, the linear drift
 bound~\eqref{eq:prism-drift}. Step~4 rescales to $c=c_0+u/n$, where every
 active cell holds $\Theta(1)$ observations, and represents the local
 unnormalised criterion as a finite sum --- at most $\bar L^2/4$ terms, a number
@@ -1341,18 +1494,18 @@ population-risk correction is
   +
   O_p\!\left(\abs{c-c_0}\,n^{-1/2}\right).
 \]
-More precisely, if \(N_L(c)\) is the leaf count and
+More precisely, if \(n_L(c)\) is the leaf count and
 \(d_L(c)=\widehat\mu_{L(c)}-\mu_{L(c)}\), the least-squares identity gives
 \[
   \sum_{i\in L(c)}\{Z_i-\widehat\mu_{L(c)}\}^2
   =
   \sum_{i\in L(c)}\{Z_i-\mu_{L(c)}\}^2
   -
-  N_L(c)d_L(c)^2.
+  n_L(c)d_L(c)^2.
 \]
 For \(\abs u\le U\), only \(O_p(1)\) observations change assignment, whence
 \[
-  N_L(c)-N_L(c_0)=O_p(1),
+  n_L(c)-n_L(c_0)=O_p(1),
   \qquad
   d_L(c_0)=O_p(n^{-1/2}),
   \qquad
@@ -1364,11 +1517,11 @@ observations are reassigned, contributing a mean shift of
 \(O_p(n^{-1/2})\) sampling fluctuation.
 Therefore,
 \begin{align*}
-  &N_L(c)d_L(c)^2-N_L(c_0)d_L(c_0)^2
+  &n_L(c)d_L(c)^2-n_L(c_0)d_L(c_0)^2
   \\
   &\quad=
-  \{N_L(c)-N_L(c_0)\}d_L(c_0)^2
-  +N_L(c)\{d_L(c)-d_L(c_0)\}
+  \{n_L(c)-n_L(c_0)\}d_L(c_0)^2
+  +n_L(c)\{d_L(c)-d_L(c_0)\}
        \{d_L(c)+d_L(c_0)\}
   \\
   &\quad=
@@ -1460,7 +1613,7 @@ value) with probability tending
 to one.  No rate faster than consistency is required for these non-local
 descendant splits.
 
-The induction stops after at most \(d\) levels.  Both \(d\) and the total
+The induction stops after at most \(\bar D\) levels.  Both \(\bar D\) and the total
 number of boundaries, at most \(\bar L-1\), are fixed.
 
 \begin{proposition}[Simultaneous superconsistency of all refined boundaries]
@@ -1491,7 +1644,7 @@ tree, not merely to a two- or three-leaf special case.
 The root carries no ancestor contamination, so its rate is the classical stump
 argument when both children are terminal and Lemma~\ref{lem:prism-profile}
 otherwise; Lemma~\ref{lem:ancestor-localisation} then propagates the rate one
-level at a time, and the induction terminates after at most $d$ levels because
+level at a time, and the induction terminates after at most $\bar D$ levels because
 the depth is fixed. Simultaneity is a finite union bound over the at most
 $\bar L-1$ boundaries: choosing $M_k$ with
 $\limsup_n\PP(n\abs{\widehat c_k-c_{0,k}}>M_k)<\epsilon/K$ for each $k$ and
@@ -1516,29 +1669,116 @@ depth that grows with \(n\).
 
 
 \section{Implementation}\label{sec:implementation}
-[TODO -- not yet drafted; scope revised 2026-09-01 for JASA Theory \&
-Methods conventions (see
-\texttt{quality\_reports/plans/2026-09-01\_two-paper-split.md} \S7): JASA
-treats software as a reproducibility/supplementary-materials artifact, not
-a primary main-text section. This should be a SHORT paragraph (not a
-systems-style section) -- name the \texttt{optimaltrees} package and its
-\texttt{RefinedTreeModel} S7 class, \texttt{as\_coordinate\_tree()},
-\texttt{collapse\_transitions()}, \texttt{refine\_tree\_cuts()} by
-function, point to the package's own documentation for engineering
-detail, and close with a forward pointer to the Supplementary Material
-section (\S\ref{sec:supplement}) for the reproducibility statement. Do
-not expand this into a full package description -- that belongs in
-\texttt{optimaltrees}'s own documentation, which already exists.]
+[OUTLINE -- not yet drafted; scope fixed 2026-09-01 for JASA Theory \&
+Methods conventions (\texttt{quality\_reports/plans/
+2026-09-01\_two-paper-split.md} \S7): software is a
+reproducibility/supplementary-materials artifact, not a primary main-text
+section -- keep this SHORT, not a systems-style section.
+\begin{itemize}
+\item Name \texttt{optimaltrees} and its four building blocks by function
+  only: \texttt{RefinedTreeModel} (S7 class), \texttt{as\_coordinate\_tree()}
+  (Stage-A tree $\to$ coordinate-space representation),
+  \texttt{collapse\_transitions()} (removes transition-leaf artifacts),
+  \texttt{refine\_tree\_cuts()} (the actual Stage-B scan).
+\item Point to the package's own documentation for engineering detail --
+  do not re-describe it here.
+\item Close with a forward pointer to the Supplementary Material
+  (\S\ref{sec:supplement}) for the reproducibility statement.
+\item Do NOT expand into a full package description -- that belongs in
+  \texttt{optimaltrees}'s own documentation, which already exists.
+\end{itemize}]
 
 \section{Simulations}\label{sec:simulations}
-[TODO -- not started. Deferred per the 2026-09-01 planning discussion until
-after both papers' outlines are drafted. Candidate content: threshold-MSE
-scaling ($\propto n^{-2}$), topology-recovery frequency vs.\ grid
-resolution $r$, comparison against greedy CART and grid-only optimal trees,
-timing.]
+[OUTLINE -- design not yet started; this block is the learning-objectives
+outline the spec (\texttt{quality\_reports/specs/}) is drafted against.
+Restructured 2026-09-01 after an Oracle consult on scoping (see
+\texttt{quality\_reports/plans/2026-09-01\_two-paper-split.md} for the
+full consult) -- the original A--E cluster listing collapses to two specs
+plus a non-spec timing table, because several sub-items are by-products
+of axes the other items already need, not independent studies.
+
+\textbf{Spec 1 -- recovery and rate (one DGP family, one metric contract).}
+Covers topology-recovery probability vs.\ $(n,r_n)$
+(Prop.~\ref{prop:parsimony-grid}/\ref{prop:boundary-recovery}), the
+\emph{simultaneous} rate $\max_{k\le K}n\abs{\widehat c_k-c_{0,k}}$
+(Prop.~\ref{prop:twostage-superconsistency}) with heterogeneous
+$\kappa_k,q_k$ across boundaries so the max is driven by an identifiable
+hardest boundary rather than degenerating to a marginal rate, grid-floored
+vs.\ refined error as a per-replication distribution (not the single
+worked-example anecdote), and predicted-vs-realised transition-leaf counts
+(Prop.~\ref{prop:transition-leaves}). Stress regimes folded in as DGP
+axes, not separate studies: misspecified/smooth truth, vanishing jump
+$\kappa\to\kappa_{\min}$, near-violated separation $\varsigma$, and small
+$n$. Grid-resolution sensitivity is the $r_n$ axis of the same sweep, not
+its own item. Every cell reports a \texttt{status} column (ok /
+collapse-abort / other error) -- never silently dropped, since a
+package-side finding is that the collapse-map's abort path is routine at
+realistic depth/covariate combinations, not a rare edge case; the abort
+rate is itself a first-class finding if it does not $\to0$ as $n,r_n$
+grow.
+
+\emph{Two feasibility risks flagged by the Oracle consult, to resolve
+before drafting}: (i) under smooth (misspecified) truth there is no
+$c_0$, so the simultaneous-rate metric is undefined until a pseudo-true
+target (thresholds of the population-optimal $K$-leaf tree) is defined
+and shown computable -- if it isn't, this regime can only report excess
+risk, which would require softening the Introduction's cube-root
+contrast rather than letting the spec promise a rate comparison it can't
+deliver; (ii) Stage~B's threshold resolution is bounded by the observed
+covariate spacing $\sim1/n$, the same order as the target rate --
+display $n\abs{\widehat c-c_0}$ stabilising rather than a log-log MSE
+slope, and pin down the scan's tie-breaking convention explicitly.
+
+\textbf{Spec 2 -- leaf-budget/$p$ attribution (separate design logic).} The
+package-side finding that \texttt{leaf\_budget}=8, $p=20$ with a fixed
+$\lambda$ recovers 7 leaves instead of 8 is currently confounded: a fixed
+$\lambda$ is itself a tuning choice, so it cannot distinguish a genuine
+rate-condition boundary from a tuning artifact. Three-cause,
+pre-registered design: (1) an oracle-objective check -- score the true
+8-leaf tree against the returned 7-leaf fit under the same penalised
+objective (requires the package to expose scoring an arbitrary
+user-specified tree -- an implementation prerequisite to confirm before
+drafting, not a design choice); if the true tree scores worse, it's a
+genuine $\lambda$/statistical tradeoff; if it scores better, that's an
+optimisation/certification gap (a package bug, not a paper finding) --
+(2) a $\lambda$-path check -- does any $\lambda$ recover 8 leaves; (3)
+hold $p=20$ fixed and grow $n$ -- recovery returning as $n$ grows is a
+finite-sample/rate phenomenon, never returning implicates the grid or
+(Node)'s $q_{\min}$ instead.
+
+\textbf{Timing (extend the existing benchmark script, not a spec).}
+Stage~A vs.\ Stage~B wall-clock vs.\ $n$, extending
+\texttt{dev-scripts/benchmark\_stage\_a\_inflated\_budget.R}'s existing
+$(\texttt{leaf\_budget},p)$ sweep along the $n$ axis, plus a
+Stage-A-only ablation (context for why Stage~B is needed). No greedy-CART
+comparison -- a different estimand, and this venue (JASA T\&M) wants a
+rate illustration, not a competitor leaderboard.
+
+\emph{Pilot gate, before drafting either spec}: one favourable cell,
+$\sim$20 replications, to (a) measure the baseline collapse-abort rate and
+(b) confirm the package can construct and score a specified true tree.
+Both answers change the specs' design, per the Oracle consult.]
 
 \section{Discussion}\label{sec:discussion}
-[TODO.]
+[OUTLINE -- not yet started.
+\begin{itemize}
+\item Practical implications: what the $O_p(n^{-1})$
+  topology-recovery-plus-threshold-refinement guarantee buys a
+  practitioner already using a grid-restricted optimal-tree solver.
+\item Tie to the companion causal-inference paper (``Paper B''): this
+  paper's Propositions~\ref{prop:boundary-recovery}/
+  \ref{prop:transition-leaves}/\ref{prop:twostage-superconsistency} are
+  cited there as an off-the-shelf partition-recovery input to Condition
+  (P)'s continuum-sparsity instantiation -- state this connection
+  explicitly (JASA's practical-utility requirement for a theory-only
+  paper).
+\item Limitations: fixed $\bar L$/depth (Assumption~\ref{ass:sparsity-jump}
+  (S)); the classification-loss extension of the two-stage algorithm is an
+  open package-side item (not yet started on the package side), not a gap
+  in the theory here -- state which it is.
+\item Open directions: the $m$-ladder / depth-budget question raised on
+  the package side; a forward pointer, not a claim this paper resolves it.
+\end{itemize}]
 
 % ===========================================================================
 % Supplementary Material. Unnumbered (starred) headings, per JASA's convention
@@ -1609,7 +1849,7 @@ write
 \[
   h_r:=\frac{C}{2r}.
 \]
-For each point \(z\) on an active \((d-1)\)-dimensional face cell and each
+For each point \(z\) on an active \((p-1)\)-dimensional face cell and each
 \(t\in(0,h_r]\), define
 \[
   x^-(z,t):=(z,c_{0,N}-t),
@@ -1672,7 +1912,7 @@ Integrating over \(t\in(0,h_r]\), over all active face cells, and using
 \end{align*}
 Grid cells that meet the boundary of the fixed face patch can be discarded.
 Their partial-overlap volume is \(o(r^{-1})\), because the face patch has
-fixed positive \((d-1)\)-dimensional measure and the grid mesh tends to zero.
+fixed positive \((p-1)\)-dimensional measure and the grid mesh tends to zero.
 After increasing \(r_0\), the displayed bound holds with \(c_{\mathrm{box}}\)
 replaced by \(c_{\mathrm{box}}/2\), i.e.\ with \(c_{\mathrm{topol}}\) above
 replaced by \(c_{\mathrm{topol}}/2\) in the final display, since
@@ -1688,7 +1928,7 @@ boundary disagrees with the truth only in a slab of width \(O(r^{-1})\).
 By (J) and the upper density bound in (Dens), the loss contributed by one
 such slab is at most
 \(\kappa_{\max}^2f_{\max}/r\), after absorbing the fixed quasi-uniformity
-constant \(\gamma_{\mathrm{grid}}\) into \(f_{\max}\).  Since a tree with at most \(\bar L\) leaves has
+constant \(\bar Q\) into \(f_{\max}\).  Since a tree with at most \(\bar L\) leaves has
 at most \(\bar L-1\) boundaries,
 \[
   \min_{\sigma\in\cT_{\bar L_A}(\cA_r)}R(\sigma)
@@ -1736,7 +1976,7 @@ It has at most
 \[
   \bar L+(\bar L-1)=2\bar L-1
 \]
-leaves and depth at most \(2d\), and it is constant on the level sets of
+leaves and depth at most \(2\bar D\), and it is constant on the level sets of
 \(\gbar_r\).  Therefore
 \[
   \tau_r^\star\in\cS^{\cA_r},
@@ -1883,8 +2123,8 @@ order \(r^{-1}\), because
 \[
   \frac{r\log n}{n}\longrightarrow0,
 \]
-which follows from \(r^{d+1}=o(n)\): the latter gives \(r=o(n^{1/(d+1)})\),
-so \(r\log n=o(n^{1/(d+1)}\log n)=o(n)\) for every fixed \(d\ge1\) (the
+which follows from \(r^{p+1}=o(n)\): the latter gives \(r=o(n^{1/(p+1)})\),
+so \(r\log n=o(n^{1/(p+1)}\log n)=o(n)\) for every fixed \(p\ge1\) (the
 relative-deviation bound for a mass-\(\Theta(r^{-1})\), fixed-VC-dimension
 family requires \(r\log n/n\to0\), not merely \(r\log r/n\to0\), since the
 uniform bound is taken over \(n\)-dependent occupancy counts, not over the
@@ -1963,7 +2203,12 @@ Repeating this operation produces a tree \(\tau^{-}\) with
 Transition pairs enclosing true boundaries are retained and count as one
 collapsed boundary.  Thus the contraction removes only unmatched
 topological splits and does not remove a transition split needed to represent
-a projected jump.
+a projected jump.  Because the surviving descendant tests below the
+contracted split are applied uniformly in the true ancestor order, the leaf
+partition of \(\tau^{-}\) is a coarsening of that of \(\tau\); in particular
+\(\cG_{\tau^{-}}\subseteq\cG_\tau\), so the two leaves \(\ell_1,\ell_2\)
+below \(\ell\) are genuine \(\tau\)-cells nested inside the single
+\(\tau^{-}\)-cell \(\ell\).
 
 Because \(\tau\) and \(\tau^{-}\) have the same population-mean fit, any
 empirical improvement of \(\tau\) over \(\tau^{-}\) is caused solely by
@@ -1983,8 +2228,10 @@ weighted averages,
 \]
 and summing over \(k=1,2\) collapses the second term to
 \(2\sum_{a\subseteq\ell}\widehat\omega_aD_a^2\) exactly, by definition of
-the weighted average over \(\ell\).  Orthogonal-projection contraction and
-Cauchy--Schwarz therefore give
+the weighted average over \(\ell\).  The orthogonal-projection identity for
+nested leaf partitions gives the displayed equality below exactly (no
+further inequality is needed for it); combining it with the bound just
+derived from \((x-y)^2\le2x^2+2y^2\) and Jensen's inequality then gives
 \[
   R_n(\tau^{-})-R_n(\tau)
   =
@@ -2194,14 +2441,14 @@ at most \(L_N^-L_N^+\) such pairs.  Since
 \]
 This proves (ii).  By (Dens), each active cell has mass
 \[
-  \omega_{N,r}(c)
+  \omega_{N,j}(c)
   =
-  f_{N,r}^{\operatorname{sgn}(c-c_0)}(c_0)
+  f_{N,j}^{\operatorname{sgn}(c-c_0)}(c_0)
   \abs{c-c_0}
   +o\!\left(\abs{c-c_0}\right),
 \]
 and (Local-Jump) gives
-\(\kappa_{\min}\le\abs{\Delta_{N,r}}\le\kappa_{\max}\).
+\(\kappa_{\min}\le\abs{\Delta_{N,j}}\le\kappa_{\max}\).
 This proves (iii).
 
 \emph{Step 3: derive the population excess risk.}
@@ -2210,29 +2457,29 @@ Consider one destination leaf.  Let its correctly assigned core have mass
 entering this leaf have masses \(b_1,\ldots,b_s\) and means
 \(\mu_1,\ldots,\mu_s\).  Put
 \[
-  B=\sum_{r=1}^s b_r,
+  B=\sum_{j=1}^s b_j,
   \qquad
-  \Delta_r=\mu_r-\mu_0.
+  \Delta_j=\mu_j-\mu_0.
 \]
 The candidate leaf mean is
 \[
   \bar\mu
   =
-  \frac{a\mu_0+\sum_{r=1}^s b_r\mu_r}{a+B}
+  \frac{a\mu_0+\sum_{j=1}^s b_j\mu_j}{a+B}
   =
-  \mu_0+\frac{\sum_{r=1}^s b_r\Delta_r}{a+B}.
+  \mu_0+\frac{\sum_{j=1}^s b_j\Delta_j}{a+B}.
 \]
 The weighted ANOVA identity states that the excess squared error from pooling
 groups with masses \(w_g\) and means \(\mu_g\) equals
 \(\sum_g w_g(\mu_g-\bar\mu)^2\).  Applying it here and expanding gives
 \begin{align*}
   &a(\mu_0-\bar\mu)^2
-    +\sum_{r=1}^s b_r(\mu_r-\bar\mu)^2
+    +\sum_{j=1}^s b_j(\mu_j-\bar\mu)^2
   \\
   &\quad=
-    \sum_{r=1}^s b_r\Delta_r^2
+    \sum_{j=1}^s b_j\Delta_j^2
     -
-    \frac{\left(\sum_{r=1}^s b_r\Delta_r\right)^2}{a+B}.
+    \frac{\left(\sum_{j=1}^s b_j\Delta_j\right)^2}{a+B}.
 \end{align*}
 Indeed,
 \begin{align*}
@@ -2241,21 +2488,26 @@ Indeed,
   \sum_g w_g\mu_g^2-(a+B)\bar\mu^2
   \\
   &=
-  a\mu_0^2+\sum_r b_r(\mu_0+\Delta_r)^2
+  a\mu_0^2+\sum_j b_j(\mu_0+\Delta_j)^2
   -
-  \frac{\left\{(a+B)\mu_0+\sum_r b_r\Delta_r\right\}^2}{a+B}
+  \frac{\left\{(a+B)\mu_0+\sum_j b_j\Delta_j\right\}^2}{a+B}
   \\
   &=
-  \sum_r b_r\Delta_r^2
+  \sum_j b_j\Delta_j^2
   -
-  \frac{\left(\sum_r b_r\Delta_r\right)^2}{a+B}.
+  \frac{\left(\sum_j b_j\Delta_j\right)^2}{a+B}.
 \end{align*}
-By (Node), \(a\ge q_{\min}-B\), and hence \(a\ge q_{\min}/2\) for all
-sufficiently small \(\abs{c-c_0}\).  Moreover,
+The destination leaf fixed at the start of this step is a leaf of the
+\emph{true} partition: by the lemma's own hypothesis, the population-level
+descendant cell structure below \(N\)'s two children is held at its true
+configuration throughout this local expansion (only the threshold at \(N\)
+itself moves), so (Node)'s leaf-mass floor applies to it directly and gives
+\(a\ge q_{\min}\); in particular \(a\ge q_{\min}/2\) for all sufficiently
+small \(\abs{c-c_0}\).  Moreover,
 \[
   0
   \le
-  \frac{\left(\sum_r b_r\Delta_r\right)^2}{a+B}
+  \frac{\left(\sum_j b_j\Delta_j\right)^2}{a+B}
   \le
   \frac{\kappa_{\max}^2 B^2}{a+B}
   \le
@@ -2266,25 +2518,25 @@ Summing over the finitely many destination leaves, and using
 \[
   R_N^{\mathrm{prof}}(c)-R_N^{\mathrm{prof}}(c_0)
   =
-  \sum_r\omega_{N,r}(c)\Delta_{N,r}^2
+  \sum_j\omega_{N,j}(c)\Delta_{N,j}^2
   +O\!\left(\abs{c-c_0}^2\right),
 \]
 which is \eqref{eq:prism-risk}.  Equivalently,
 \[
   R_N^{\mathrm{prof}}(c)-R_N^{\mathrm{prof}}(c_0)
   =
-  \left\{\sum_r\omega_{N,r}(c)\Delta_{N,r}^2\right\}
+  \left\{\sum_j\omega_{N,j}(c)\Delta_{N,j}^2\right\}
   \{1+o(1)\}.
 \]
 
 By (Dens),
 \[
-  \sum_r\omega_{N,r}(c)
+  \sum_j\omega_{N,j}(c)
   \ge \frac{p_{\min}}{2}\abs{c-c_0}
 \]
 for all sufficiently small \(\abs{c-c_0}\).  Therefore,
 \[
-  \sum_r\omega_{N,r}(c)\Delta_{N,r}^2
+  \sum_j\omega_{N,j}(c)\Delta_{N,j}^2
   \ge
   \frac{\kappa_{\min}^2p_{\min}}{2}\abs{c-c_0}.
 \]
@@ -2301,10 +2553,10 @@ proving (iv).
 Let \(c=c_0+u/n\), with \(u\) in a fixed compact set.  The expected number of
 observations in each active prism cell is
 \[
-  n\omega_{N,r}(c)
+  n\omega_{N,j}(c)
   =
   \abs{u}\,
-  f_{N,r}^{\operatorname{sgn}(u)}(c_0)+o(1),
+  f_{N,j}^{\operatorname{sgn}(u)}(c_0)+o(1),
 \]
 and is therefore of constant order.  If an observation moves from a leaf
 with mean \(\mu_s\) to one with mean \(\mu_d\), write
@@ -2328,7 +2580,7 @@ Conditional on its prism cell, this increment has mean
   =
   (\mu_s-\mu_d)^2
   =
-  \Delta_{N,r}^2
+  \Delta_{N,j}^2
   \ge\kappa_{\min}^2,
 \]
 and finite variance by the standing conditional second-moment bound.
@@ -2627,9 +2879,13 @@ competitor achieving increment exactly zero, $\widehat c_\ell$ cannot lie at
 any such $u$, on an event of probability at least $1-2\epsilon/3$. The true
 minimiser also cannot lie in $\{c:\varsigma n/4\le n\abs{c-c_{0,\ell}}\}$,
 since $B^-$ already excludes it by construction. Together with Step~3's
-control on $\abs u\le U$, this gives
-$\PP(n\abs{\widehat c_\ell-c_{0,\ell}}>U)<\epsilon$ for $n$ large, completing
-the third $\epsilon/3$ budgeted in Step~1. Hence
+control on $\abs u\le U$ (valid on the same Step~1/Step~2 good event), a
+union bound over the three budgeted bad events --- the ancestor-collar
+exceedance budgeted at $\epsilon/3$ in Step~1, and the two further
+$\epsilon/3$ exceedances fixed in Steps~4a and~4b above --- together with
+the vanishing-probability event of Step~2, gives
+$\PP(n\abs{\widehat c_\ell-c_{0,\ell}}>U)\le\epsilon+o(1)$ for $n$ large.
+Since $\epsilon>0$ was arbitrary, this holds for every $\epsilon$, so
 \[
   n(\widehat c_\ell-c_{0,\ell})=O_p(1).
 \]
@@ -2645,7 +2901,7 @@ The root rate follows from the classical stump argument when both children
 are terminal and from Lemma~\ref{lem:prism-profile} otherwise.  If every
 boundary above level \(\ell\) has the asserted rate,
 Lemma~\ref{lem:ancestor-localisation} establishes it for every boundary at
-level \(\ell\).  Since the depth is at most the fixed number \(d\), induction
+level \(\ell\).  Since the depth is at most the fixed number \(\bar D\), induction
 covers the whole tree.
 
 For each fixed \(k\) and every \(\epsilon>0\), choose \(M_k<\infty\) such that
@@ -2701,20 +2957,52 @@ Hence the maximum is \(O_p(1)\).  Since
   V., Munk, A. and Wittich, O. (2009). Consistencies and rates of convergence
   of jump-penalized least squares estimators. \emph{The Annals of Statistics}
   37, 157--183.
+\bibitem[Bri\c{t}a et al.(2025)]{brita2025contree} Bri\c{t}a, C. E., van der
+  Linden, J. G. M. and Demirovi\'c, E. (2025). Optimal classification trees
+  for continuous feature data using dynamic programming with
+  branch-and-bound. \emph{Proceedings of the AAAI Conference on Artificial
+  Intelligence} 39(11), 11131--11139.
 \bibitem[Chan(1993)]{chan1993} Chan, K. S. (1993). Consistency and limiting
   distribution of the least squares estimator of a threshold autoregressive
   model. \emph{The Annals of Statistics} 21, 520--533.
+\bibitem[Heile et al.(2026)]{heile2026arborenum} Heile, Z., McTavish, H.,
+  Seltzer, M. and Rudin, C. (2026). ArborEnum: Decision tree Rashomon sets
+  over continuous features. \emph{arXiv preprint arXiv:2608.04310}.
+\bibitem[Lin et al.(2020)]{lin2020gosdt} Lin, J., Zhong, C., Hu, D., Rudin,
+  C. and Seltzer, M. (2020). Generalized and scalable optimal sparse
+  decision trees. In \emph{Proceedings of the 37th International Conference
+  on Machine Learning}, PMLR 119, 6150--6160.
 \bibitem[Seijo \& Sen(2011)]{seijosen2011} Seijo, E. and Sen, B. (2011).
   Change-point in stochastic design regression and the bootstrap.
   \emph{The Annals of Statistics} 39, 1580--1607.
 \bibitem[Seo \& Otsu(2018)]{seootsu2018} Seo, M. H. and Otsu, T. (2018).
   Local M-estimation with discontinuous criterion for dependent and limited
   observations. \emph{The Annals of Statistics} 46, 344--369.
+\bibitem[Song et al.(2016)]{song2016} Song, R., Banerjee, M. and Kosorok,
+  M. R. (2016). Asymptotics for change-point models under varying degrees of
+  mis-specification. \emph{The Annals of Statistics} 44, 153--182.
 \bibitem[van der Vaart(1998)]{vandervaart1998} van der Vaart, A. W. (1998).
   \emph{Asymptotic Statistics}. Cambridge University Press.
+\bibitem[Walther \& Perry(2022)]{waltherperry2022} Walther, G. and Perry, A.
+  (2022). Calibrating the scan statistic: Finite sample performance versus
+  asymptotics. \emph{Journal of the Royal Statistical Society: Series B
+  (Statistical Methodology)} 84(5), 1608--1639.
+\bibitem[Walther \& Zhao(2026)]{waltherzhao2026} Walther, G. and Zhao, Q.
+  (2026). Beta-trees: Multivariate histograms with confidence statements.
+  \emph{Journal of the American Statistical Association}, to appear.
+  \texttt{doi:10.1080/01621459.2026.2699466}.
+\bibitem[Xu et al.(2026a)]{xu2026} Xu, Z., Ghosh, S. and Tan, Y. S. (2026).
+  On the statistical optimality of optimal decision trees. \emph{arXiv
+  preprint arXiv:2603.05340}.
+\bibitem[Xu et al.(2026b)]{xu2026stopping} Xu, Z. et al. (2026). On stopping
+  rules and spatial adaptation for CART. \emph{arXiv preprint
+  arXiv:2608.15649}.
 \bibitem[Yao \& Au(1989)]{yaoau1989} Yao, Y.-C. and Au, S. T. (1989).
   Least-squares estimation of a step function. \emph{Sankhy\=a: The Indian
   Journal of Statistics, Series A} 51, 370--381.
+\bibitem[Zhang et al.(2023)]{zhang2023osrt} Zhang, R., Xin, R., Seltzer, M.
+  and Rudin, C. (2023). Optimal sparse regression trees. \emph{Proceedings
+  of the AAAI Conference on Artificial Intelligence} 37(9), 11270--11279.
 \end{thebibliography}
 
 \end{document}
