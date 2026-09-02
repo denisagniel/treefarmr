@@ -1259,6 +1259,13 @@ global minimisation for Stage~A's own problem --- $\hat t^A$ over $\cT^A_n$,
 not $\widehat\tau$ over $\cT_n$ --- and the former is retained only for its
 second clause, $\lambda_n\to0$, which~(a) does not state.
 
+\subsection{Population-level identities and margins}
+\label{sec:topology-population}
+
+Neither result in this subsection is stochastic: both are statements about the
+population risk $R$ and the projection $\Pi^\nu$ alone, and neither proof uses
+a concentration inequality or a union bound.
+
 \begin{lemma}[The grid-optimal class is the projected-sufficient class]
 \label{lem:grid-optimal}
 Under Assumptions~\ref{ass:design} and~\ref{ass:finite} at $\cA_r$,
@@ -1287,6 +1294,7 @@ The argument uses only the population ANOVA identity, positivity of every
 atom mass, and finiteness of the grid.  No stochastic rate or tail bound is
 used.  It can fail if a purported grid atom has zero \(\nu\)-mass.
 
+\paragraph{Constants for the refining-grid argument.}
 Fix \(r_0\), depending only on \(\varsigma\), the quasi-uniformity constant
 \(\bar Q\), the leaf budget \(\bar L\),
 and the constant \(C\) selected below, such that, for every \(r\ge r_0\),
@@ -1385,11 +1393,9 @@ patch is absorbed. The full proof is given in the Supplementary Material,
 \end{proof}
 
 \begin{remark}[Population scope of the refining-grid margin]
-Lemma~\ref{lem:topol-margin} is entirely population-level.  Its proof uses
-neither a concentration inequality nor a union bound.  The
-empirical-design comparison required for
-Stage~A is separate and is established in
-Proposition~\ref{prop:parsimony-grid}.
+The empirical-design comparison that Stage~A additionally requires is separate
+from the population margin just established, and is carried out in
+\S\ref{sec:topology-empirical}, Proposition~\ref{prop:parsimony-grid}.
 \end{remark}
 
 \paragraph{Proof audit.}
@@ -1400,6 +1406,11 @@ true boundaries.  Separation ensures that the paired patch contains no
 second true boundary.  The conclusion can fail if the local support has a
 gap, if a jump vanishes on an active face cell, or if node cross-sections
 degenerate with \(n\).
+
+\subsection{Empirical topology recovery}\label{sec:topology-empirical}
+
+The remaining results are stochastic: each concerns the penalised empirical
+minimiser \(\hat t^A\) and holds with probability tending to one.
 
 \begin{proposition}[Parsimonious topology recovery on a refining grid]
 \label{prop:parsimony-grid}
@@ -1480,6 +1491,16 @@ which requires \(r_n^{p+1}=o(n)\).  The feasibility conclusion additionally
 uses \(m_n=o(n/r_n)\).  Failure can occur if transition leaves are excluded
 by the minimum-leaf constraint, if the local density vanishes, or if the
 solver is not globally exact.
+
+The next proposition repackages Proposition~\ref{prop:parsimony-grid} rather
+than strengthening it: it restates the same bijection and the same \(C/r_n\)
+localisation under the same rate regime, but collects every hypothesis into a
+single display along the joint sequence \((n,r_n,\lambda_n,m_n)\) ---
+including \(\lambda_n\to0\), which above is carried only implicitly, inside
+Assumption~\ref{ass:global}'s second clause --- and names the inflated Stage-A
+budgets in the statement itself.  That self-contained form is the one the
+paper's later results invoke: Proposition~\ref{prop:twostage-superconsistency}
+assumes its full hypothesis set, not merely its conclusion.
 
 \begin{proposition}[Sequential recovery of continuum boundaries]
 \label{prop:boundary-recovery}
@@ -1615,13 +1636,13 @@ values.
   bracket to a genuine fixed-interval minimiser w.p.$\to1$
   (Glivenko--Cantelli argument) -- closes a blocking gap found in this
   session's holistic audit of the ported material.
-\item Lemma~\ref{lem:descendant-stability}: the local analysis survives
-  descendant thresholds being at their Stage-A (not true) values -- the
-  Stage-A-descendant variant of Lemma~\ref{lem:prism-profile}.
 \item Lemma~\ref{lem:prism-profile}: the core local excess-risk
   decomposition -- moving one threshold near a true boundary decomposes
   the excess risk into finitely many source--target ``prism cell''
   contributions; gives a local rate lower bound $\propto\abs{c-c_0}$.
+\item Lemma~\ref{lem:descendant-stability}: the local analysis survives
+  descendant thresholds being at their Stage-A (not true) values -- the
+  Stage-A-descendant variant of Lemma~\ref{lem:prism-profile}.
 \item Lemma~\ref{lem:ancestor-localisation}: superconsistency survives
   conditioning on \emph{estimated} rather than true ancestor thresholds --
   the engine that makes the level-by-level, root-first induction over the
@@ -1666,45 +1687,10 @@ design measure \(\nu\).  Assumption~\ref{ass:moments} supplies
 which is the only distributional property of $Z$ used below beyond
 Assumption~\ref{ass:iid}.
 
-Throughout this section, set
-\[
-  p_{\min}:=f_{\min}\,c_{\mathrm{box}}\,q_{\min},
-\]
-with \(f_{\min}\) the density lower bound of clause (Dens), \(q_{\min}\) the
-node-mass floor of clause (Node), and \(c_{\mathrm{box}}\) the
-cross-sectional constant fixed before Lemma~\ref{lem:topol-margin}. The
-three factors are not interchangeable, and the \((p-1)\)-dimensional factor
-cannot be omitted: \(\omega_{N,j}(c)\) is the \(\nu\)-mass of a
-\(p\)-dimensional prism cell of thickness \(\abs{c-c_0}\), so it carries the
-cell's \((p-1)\)-dimensional cross-sectional size as well as a density.
-Explicitly, writing \(G_j\) for the \((p-1)\)-dimensional footprint of prism
-cell \(j\) in the coordinates other than \(q\), clause (Dens) gives
-\[
-  \omega_{N,j}(c)
-  \ \ge\
-  f_{\min}\,\operatorname{Leb}_{p-1}(G_j)\,\abs{c-c_0}
-  +o\!\left(\abs{c-c_0}\right).
-\]
-The footprints \(G_j\) are disjoint and, by Lemma~\ref{lem:prism-profile}(i)--(ii),
-exhaust the cross-section \(\Gamma_N\) of the box \(R_N\) transverse to
-\(q\); under (Local-Jump) every resulting cell is active. Summing therefore
-gives exactly
-\[
-  \sum_j\omega_{N,j}(c)
-  \ \ge\
-  f_{\min}\operatorname{Leb}_{p-1}(\Gamma_N)\abs{c-c_0}
-  +o\!\left(\abs{c-c_0}\right),
-\]
-and, as fixed above, \(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}
-q_{\min}\). Absorbing the \(o(\abs{c-c_0})\) term by shrinking the
-neighbourhood yields the bound
-\[
-  \sum_j\omega_{N,j}(c)\ \ge\ \frac{p_{\min}}{2}\abs{c-c_0}
-\]
-used below. Making the cross-sectional factor explicit weakens every drift
-constant below by the fixed positive factor \(c_{\mathrm{box}}q_{\min}\),
-and changes nothing else: no condition in this paper requires
-\(p_{\min}\) to exceed a specified threshold.
+One composite constant, \(p_{\min}\), recurs in the drift bounds of this
+section. Its derivation refers to the prism cells of
+Lemma~\ref{lem:prism-profile}, so it is stated and derived in
+\S\ref{sec:stageb-tiers}, immediately after that lemma.
 
 \subsection{Consistency and reduction to a fixed bracket}
 \label{sec:stageb-bracket}
@@ -1786,59 +1772,10 @@ already-established width guarantee; nothing here duplicates that
 proposition's own proof. The lemma can fail if $\varsigma$ (the separation
 constant) is not fixed, or if the node box $R_N$ is unbounded.
 
-Lemma~\ref{lem:bracket-reduction} and Lemma~\ref{lem:prism-profile} below are
-both stated with every descendant threshold at its \emph{true} value.
-Stage~B does not have access to true descendant values: by
-Assumption~\ref{ass:solver-twostage}(b), a node's refinement proceeds
-level-by-level with every strictly-deeper threshold still held at its
-Stage-A grid value. The next lemma closes this gap.
-
-\begin{lemma}[Stability under Stage-A descendant thresholds]
-\label{lem:descendant-stability}
-Let \(N\) be an internal node and let \(\widetilde R^X_{N,n}\) denote the
-population criterion of Lemma~\ref{lem:bracket-reduction} computed with
-every descendant threshold of \(N\) held at its Stage-A value rather than at
-its true value. On the event \(E_n\) of
-Proposition~\ref{prop:boundary-recovery}, every such descendant threshold
-lies within \(C/r_n\) of its true value. Then, with probability tending to
-one:
-\begin{enumerate}[label=(\alph*),nosep]
-  \item \(\sup_{c\in[q_N^-,q_N^+]}
-    \abs{\widetilde R^X_{N,n}(c)-R_N^X(c)}=O(1/r_n)=o(1)\);
-  \item for every fixed \(\eta>0\),
-    \(\inf_{\abs{c-c_0}\ge\eta}
-      \{\widetilde R^X_{N,n}(c)-\widetilde R^X_{N,n}(c_0)\}
-      \ge\tfrac12\delta_N(\eta)>0\);
-  \item the perturbed prism masses and jump marks of
-    Lemma~\ref{lem:prism-profile} satisfy
-    \(\widetilde\omega_{N,j}(c)=\omega_{N,j}(c)\{1+O(1/r_n)\}\) and
-    \(\abs{\widetilde\Delta_{N,j}}\ge\kappa_{\min}/2\), so
-    \eqref{eq:prism-drift} holds for \(\widetilde R^X_{N,n}\) with
-    \(p_{\min}\) replaced by \(p_{\min}/2\).
-\end{enumerate}
-Consequently Lemmas~\ref{lem:bracket-reduction} and~\ref{lem:prism-profile}
-apply verbatim to the criterion Stage~B actually minimises, with the drift
-constant halved.
-\end{lemma}
-\begin{proof}[Proof sketch]
-On the event $E_n$ every descendant threshold is displaced by $O(1/r_n)$,
-which by the upper density bound of (Dens) and the bounded coordinate
-diameters perturbs the $\nu$-mass of the affected leaf regions by $O(1/r_n)$;
-part (a) follows from this and the boundedness of the profiled leaf means
-(Assumptions~\ref{ass:design} and~\ref{ass:construct}(c)). Part (b) combines
-(a) with Lemma~\ref{lem:bracket-reduction}(a): the perturbed infimum lies
-within $O(1/r_n)$ of the true one and so exceeds $\delta_N(\eta)/2$ once
-$1/r_n<\delta_N(\eta)/2$. Part (c) follows because each perturbed
-adjacent-leaf pair differs from a true pair only through regions of $\nu$-mass
-$O(1/r_n)$, whose profiled means therefore differ by $O(1/r_n)$ given the
-leaf-mass floor of (Node), so (Local-Jump) transfers to the perturbed pairs
-with $\kappa_{\min}$ replaced by $\kappa_{\min}/2$. The full proof is given in
-the Supplementary Material, \S\ref{sec:supp-stageb}.
-\end{proof}
-
 \subsection{Two tiers of refinement}\label{sec:stageb-tiers}
 
-The proof has two tiers. Both first invoke
+The proof of Proposition~\ref{prop:twostage-superconsistency} has two tiers.
+Both first invoke
 Lemma~\ref{lem:bracket-reduction} to replace the random bracket $\widehat
 B_n$ by the fixed interval $B^-$; the tiers differ only in which criterion
 --- stump or profiled --- is then analysed on that fixed interval.
@@ -1887,7 +1824,7 @@ Fix an internal node \(N\), its splitting coordinate \(q\), its true threshold
 the true ancestor row set, and the population-level descendant cell structure
 are fixed.  (The corresponding statement with descendant thresholds held at
 their Stage-A values instead of their true values follows from
-Lemma~\ref{lem:descendant-stability}, with \(p_{\min}\) replaced by
+Lemma~\ref{lem:descendant-stability} below, with \(p_{\min}\) replaced by
 \(p_{\min}/2\) throughout.)  For a candidate \(c\) in the node's true box (in particular for
 \(c\) in the fixed interval \(B^-\) of Lemma~\ref{lem:bracket-reduction},
 which is where parts (iv)--(v) below are ultimately applied), let
@@ -1974,7 +1911,8 @@ fixed path label, while cell masses and jump marks are read off (Dens) and
 identity one destination leaf at a time; the pooling correction is
 $O(\abs{c-c_0}^2)$ once (Node) bounds the correctly assigned core mass below,
 which yields~\eqref{eq:prism-risk} and then, with the cross-sectional mass
-bound $\sum_j\omega_{N,j}(c)\ge p_{\min}\abs{c-c_0}/2$, the linear drift
+bound $\sum_j\omega_{N,j}(c)\ge p_{\min}\abs{c-c_0}/2$ derived below, the
+linear drift
 bound~\eqref{eq:prism-drift}. Step~4 rescales to $c=c_0+u/n$, where every
 active cell holds $\Theta(1)$ observations, and represents the local
 unnormalised criterion as a finite sum --- at most $\bar L^2/4$ terms, a number
@@ -2003,6 +1941,49 @@ the rate.  The argument can fail if an active adjacent pair has zero jump, if
 the local design density vanishes, if leaf masses approach zero, or if the
 number of leaves grows with \(n\).  With fixed nonzero jumps, the \(n^{-1}\)
 rate is the usual sharp change-point rate.
+
+\paragraph{The drift constant.}
+The constant \(p_{\min}\) appearing in the drift bound~\eqref{eq:prism-drift},
+and in every drift bound in this section, is
+\[
+  p_{\min}:=f_{\min}\,c_{\mathrm{box}}\,q_{\min},
+\]
+with \(f_{\min}\) the density lower bound of clause (Dens), \(q_{\min}\) the
+node-mass floor of clause (Node), and \(c_{\mathrm{box}}\) the
+cross-sectional constant fixed before Lemma~\ref{lem:topol-margin}. The
+three factors are not interchangeable, and the \((p-1)\)-dimensional factor
+cannot be omitted: \(\omega_{N,j}(c)\) is the \(\nu\)-mass of a
+\(p\)-dimensional prism cell of thickness \(\abs{c-c_0}\), so it carries the
+cell's \((p-1)\)-dimensional cross-sectional size as well as a density.
+Explicitly, writing \(G_j\) for the \((p-1)\)-dimensional footprint of prism
+cell \(j\) in the coordinates other than \(q\), clause (Dens) gives
+\[
+  \omega_{N,j}(c)
+  \ \ge\
+  f_{\min}\,\operatorname{Leb}_{p-1}(G_j)\,\abs{c-c_0}
+  +o\!\left(\abs{c-c_0}\right).
+\]
+The footprints \(G_j\) are disjoint and, by Lemma~\ref{lem:prism-profile}(i)--(ii),
+exhaust the cross-section \(\Gamma_N\) of the box \(R_N\) transverse to
+\(q\); under (Local-Jump) every resulting cell is active. Summing therefore
+gives exactly
+\[
+  \sum_j\omega_{N,j}(c)
+  \ \ge\
+  f_{\min}\operatorname{Leb}_{p-1}(\Gamma_N)\abs{c-c_0}
+  +o\!\left(\abs{c-c_0}\right),
+\]
+and, as fixed above, \(\operatorname{Leb}_{p-1}(\Gamma_N)\ge c_{\mathrm{box}}
+q_{\min}\). Absorbing the \(o(\abs{c-c_0})\) term by shrinking the
+neighbourhood yields the bound
+\[
+  \sum_j\omega_{N,j}(c)\ \ge\ \frac{p_{\min}}{2}\abs{c-c_0}
+\]
+used in Step~3 of the proof sketch above and in~\eqref{eq:prism-drift}. Making
+the cross-sectional factor explicit weakens every drift constant in this
+section by the fixed positive factor \(c_{\mathrm{box}}q_{\min}\),
+and changes nothing else: no condition in this paper requires
+\(p_{\min}\) to exceed a specified threshold.
 
 \begin{remark}[Profiling the descendant-leaf means]
 \label{rem:profiling-correction}
@@ -2085,6 +2066,59 @@ The conclusion concerns threshold locations; the profiled leaf means
 themselves retain their ordinary \(O_p(n^{-1/2})\) rate.
 \end{remark}
 
+\subsection{Transfer to Stage-A descendant thresholds}
+\label{sec:stageb-descendant}
+
+Lemma~\ref{lem:bracket-reduction} and Lemma~\ref{lem:prism-profile} are
+both stated with every descendant threshold at its \emph{true} value.
+Stage~B does not have access to true descendant values: by
+Assumption~\ref{ass:solver-twostage}(b), a node's refinement proceeds
+level-by-level with every strictly-deeper threshold still held at its
+Stage-A grid value. The next lemma closes this gap.
+
+\begin{lemma}[Stability under Stage-A descendant thresholds]
+\label{lem:descendant-stability}
+Let \(N\) be an internal node and let \(\widetilde R^X_{N,n}\) denote the
+population criterion of Lemma~\ref{lem:bracket-reduction} computed with
+every descendant threshold of \(N\) held at its Stage-A value rather than at
+its true value. On the event \(E_n\) of
+Proposition~\ref{prop:boundary-recovery}, every such descendant threshold
+lies within \(C/r_n\) of its true value. Then, with probability tending to
+one:
+\begin{enumerate}[label=(\alph*),nosep]
+  \item \(\sup_{c\in[q_N^-,q_N^+]}
+    \abs{\widetilde R^X_{N,n}(c)-R_N^X(c)}=O(1/r_n)=o(1)\);
+  \item for every fixed \(\eta>0\),
+    \(\inf_{\abs{c-c_0}\ge\eta}
+      \{\widetilde R^X_{N,n}(c)-\widetilde R^X_{N,n}(c_0)\}
+      \ge\tfrac12\delta_N(\eta)>0\);
+  \item the perturbed prism masses and jump marks of
+    Lemma~\ref{lem:prism-profile} satisfy
+    \(\widetilde\omega_{N,j}(c)=\omega_{N,j}(c)\{1+O(1/r_n)\}\) and
+    \(\abs{\widetilde\Delta_{N,j}}\ge\kappa_{\min}/2\), so
+    \eqref{eq:prism-drift} holds for \(\widetilde R^X_{N,n}\) with
+    \(p_{\min}\) replaced by \(p_{\min}/2\).
+\end{enumerate}
+Consequently Lemmas~\ref{lem:bracket-reduction} and~\ref{lem:prism-profile}
+apply verbatim to the criterion Stage~B actually minimises, with the drift
+constant halved.
+\end{lemma}
+\begin{proof}[Proof sketch]
+On the event $E_n$ every descendant threshold is displaced by $O(1/r_n)$,
+which by the upper density bound of (Dens) and the bounded coordinate
+diameters perturbs the $\nu$-mass of the affected leaf regions by $O(1/r_n)$;
+part (a) follows from this and the boundedness of the profiled leaf means
+(Assumptions~\ref{ass:design} and~\ref{ass:construct}(c)). Part (b) combines
+(a) with Lemma~\ref{lem:bracket-reduction}(a): the perturbed infimum lies
+within $O(1/r_n)$ of the true one and so exceeds $\delta_N(\eta)/2$ once
+$1/r_n<\delta_N(\eta)/2$. Part (c) follows because each perturbed
+adjacent-leaf pair differs from a true pair only through regions of $\nu$-mass
+$O(1/r_n)$, whose profiled means therefore differ by $O(1/r_n)$ given the
+leaf-mass floor of (Node), so (Local-Jump) transfers to the perturbed pairs
+with $\kappa_{\min}$ replaced by $\kappa_{\min}/2$. The full proof is given in
+the Supplementary Material, \S\ref{sec:supp-stageb}.
+\end{proof}
+
 \subsection{Ancestor-refinement contamination}\label{sec:stageb-ancestor}
 
 \begin{lemma}[Contamination-robust levelwise localisation]
@@ -2143,13 +2177,11 @@ boundaries, or if node masses vanished with \(n\).
 
 \subsection{All levels and all recovered boundaries}\label{sec:stageb-all}
 
-At the root there is no ancestor contamination.  A root whose children are
-terminal is covered by Tier~1; otherwise it is covered by
-Lemma~\ref{lem:prism-profile}.  Suppose inductively that every boundary above
-level \(\ell\) has the \(n^{-1}\) rate.  Lemma~\ref{lem:ancestor-localisation}
-then transfers the oracle-row-set rate to every node at level \(\ell\).
-Proposition~\ref{prop:boundary-recovery} also places every other recovered
-split within $C/r_n$ of its true split.  Since \(r_n\to\infty\), these
+\begin{remark}[Non-local descendant splits]
+\label{rem:nonlocal-descendants}
+Proposition~\ref{prop:boundary-recovery} places every recovered split, not
+only the one currently being refined, within $C/r_n$ of its true split.
+Since \(r_n\to\infty\), these
 other split locations converge to their true values.  Their induced prism
 masses, jump marks, and positive drift constants therefore differ from their
 population counterparts by \(o_p(1)\), by Lemma~\ref{lem:descendant-stability};
@@ -2158,9 +2190,7 @@ the lower bound in
 value) with probability tending
 to one.  No rate faster than consistency is required for these non-local
 descendant splits.
-
-The induction stops after at most \(\bar D\) levels.  Both \(\bar D\) and the total
-number of boundaries, at most \(\bar L-1\), are fixed.
+\end{remark}
 
 \begin{proposition}[Simultaneous superconsistency of all refined boundaries]
 \label{prop:twostage-superconsistency}
