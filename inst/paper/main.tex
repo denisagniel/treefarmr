@@ -347,8 +347,16 @@ than any conditional average of it. Restricting the argmin to $\cT_n$ is what
 reconciles selection with the minimum-leaf-mass requirement of
 Assumption~\ref{ass:construct}(d): an unconstrained argmin over
 $\cT_{\bar L}$ could return a partition violating it, so the constraint
-belongs in the selection rule rather than being asserted of its output. The
-condition $m_n/n\to0$ follows from $\bar Lm_n\lesssim n$ with $\bar L$ fixed.
+belongs in the selection rule rather than being asserted of its output. It is
+required in addition, as a standing condition on the sequence $m_n$ in its own
+right rather than as a consequence of anything already assumed, that
+\[
+  m_n/n\to0 .
+\]
+This does not follow from the bound $\bar Lm_n\lesssim n$ of
+Assumption~\ref{ass:construct}(d): with $\bar L$ fixed in $n$ that bound gives
+only $m_n/n\lesssim1/\bar L$, a constant, which $m_n=n/(2\bar L)$ already
+attains.
 
 \subsection{The two-stage algorithm}\label{sec:setup-algorithm}
 
@@ -1227,16 +1235,29 @@ $\rho\wedge\rho_0$.
 \end{itemize}]
 
 \noindent\emph{A note on reading Assumptions~\ref{ass:finite},
-\ref{ass:budget}, and~\ref{ass:global} in this section.} Those assumptions
+\ref{ass:construct}, \ref{ass:budget},
+and~\ref{ass:global} in this section.} Those assumptions
 were stated in \S\ref{sec:setup} for the fixed grid $\cA$ and the fixed
 budget $\bar L$. Every invocation below is at the resolution-$r$ grid
 $\cA_r$ (finite for each fixed $r$, exactly as required) with the inflated,
 still-fixed-for-each-$r$ budget $\bar L_A$; nothing below lets $r$ or the
-budget vary within a single application of any of the three assumptions.
+budget vary within a single application of any of the four assumptions.
 Where the text below writes, e.g., "Assumption~\ref{ass:finite}," it means
 "Assumption~\ref{ass:finite}, read at $\cA_r$, for the $r$ fixed in that
 application" throughout; this is restated at
 Lemma~\ref{lem:grid-optimal} but not repeated at every subsequent use.
+For Assumption~\ref{ass:construct} the re-reading has one substantive
+consequence: clause~(d)'s floor of $m_n$ observations applies per leaf of the
+\emph{inflated-budget} partition, not per leaf of a $\bar L$-leaf partition,
+which is exactly what the Stage-A feasible set $\cT^A_n$
+of~\eqref{eq:stage-a-feasible} already imposes and what the accompanying rate
+condition $m_n=o(n/r_n)$ of \S\ref{sec:setup-twostage} is there to make
+attainable for transition leaves.
+Finally, where a result below cites Assumption~\ref{ass:global} alongside
+Assumption~\ref{ass:solver-twostage}(a), the latter is what supplies exact
+global minimisation for Stage~A's own problem --- $\hat t^A$ over $\cT^A_n$,
+not $\widehat\tau$ over $\cT_n$ --- and the former is retained only for its
+second clause, $\lambda_n\to0$, which~(a) does not state.
 
 \begin{lemma}[The grid-optimal class is the projected-sufficient class]
 \label{lem:grid-optimal}
@@ -1267,10 +1288,22 @@ atom mass, and finiteness of the grid.  No stochastic rate or tail bound is
 used.  It can fail if a purported grid atom has zero \(\nu\)-mass.
 
 Fix \(r_0\), depending only on \(\varsigma\), the quasi-uniformity constant
-\(\bar Q\),
+\(\bar Q\), the leaf budget \(\bar L\),
 and the constant \(C\) selected below, such that, for every \(r\ge r_0\),
-the mesh in every coordinate is smaller than \(\varsigma\) and
-\(C/r<\varsigma/2\).  Hence no grid atom contains more than one true boundary.
+the mesh in every coordinate is smaller than \(\varsigma\),
+\(C/r<\varsigma/2\), and the grid carries at least as many cutpoints as the
+comparator constructions below place on it,
+\[
+  N_r\ \ge\ 2\bar L-1
+  \qquad\text{(in particular }N_{r_0}\ge2\bar L-1\text{)}.
+\]
+Hence no grid atom contains more than one true boundary, and the inflated
+budget \eqref{eq:inflated-budget} is untruncated, \(\bar L_A=2\bar L-1\), for
+every \(r\ge r_0\), so a comparator with up to \(2\bar L-1\) grid splits is
+available at every such resolution.  The inflated depth bound \(2\bar D\)
+requires no separate condition on \(r_0\): a tree respecting \(\bar L_A\)
+already has depth at most \(\bar L_A-1\le N_r-1\)
+(\S\ref{sec:setup-algorithm}), so the capacity just imposed accommodates it.
 This convention remains in force in the next three results.
 
 A tree \(\tau\) is said to \emph{omit} a true boundary
@@ -1372,7 +1405,8 @@ degenerate with \(n\).
 \label{prop:parsimony-grid}
 Suppose Assumptions~\ref{ass:iid}, \ref{ass:design},
 \ref{ass:moments}, \ref{ass:construct}, \ref{ass:budget},
-\ref{ass:global}, \ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+\ref{ass:global}, \ref{ass:solver-twostage}(a),
+\ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
 and \ref{ass:local-design} hold for Stage~A.  Let
 \(r_n\ge r_0\) and let
 \[
@@ -1451,7 +1485,8 @@ solver is not globally exact.
 \label{prop:boundary-recovery}
 Under Assumptions~\ref{ass:iid}, \ref{ass:design},
 \ref{ass:moments}, \ref{ass:construct}, \ref{ass:budget},
-\ref{ass:global}, \ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
+\ref{ass:global}, \ref{ass:solver-twostage}(a),
+\ref{ass:continuum-sparsity}, \ref{ass:jump-regularity},
 and \ref{ass:local-design}, let
 \(r_n\ge r_0\) and \(\lambda_n\to0\) satisfy
 \[
@@ -2129,12 +2164,24 @@ number of boundaries, at most \(\bar L-1\), are fixed.
 
 \begin{proposition}[Simultaneous superconsistency of all refined boundaries]
 \label{prop:twostage-superconsistency}
-Suppose Assumptions~\ref{ass:iid}, \ref{ass:design}, and~\ref{ass:moments}
-hold.
+Suppose Assumptions~\ref{ass:iid}, \ref{ass:design}, \ref{ass:moments},
+\ref{ass:construct}, and~\ref{ass:budget} hold.
 Under Assumptions~\ref{ass:continuum-sparsity}--\ref{ass:local-design},
 including (Local-Jump) and (Joint),
-and~\ref{ass:solver-twostage}, and on the topology-recovery conclusion of
-Proposition~\ref{prop:boundary-recovery}, every Stage-B-refined boundary
+and~\ref{ass:solver-twostage}, and under the full hypothesis set of
+Proposition~\ref{prop:boundary-recovery} --- not merely its conclusion --- so
+that along the joint sequence \((n,r_n,\lambda_n,m_n)\)
+\[
+  r_n\ge r_0,
+  \qquad
+  \frac{N_{r_n}}{n}\ll\lambda_n\ll\frac1{r_n},
+  \qquad
+  N_{r_n}\asymp r_n^p,
+  \qquad
+  m_n=o(n/r_n),
+\]
+and with the grid in addition refining, \(r_n\to\infty\), every
+Stage-B-refined boundary
 satisfies
 \[
   \widehat c_k-c_{0,k}=O_p(n^{-1}),
