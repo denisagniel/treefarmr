@@ -104,9 +104,11 @@ thresholds; a collapse map removes the ``transition leaf'' artifacts that the
 inflated budget creates. Stage B then refines each threshold by an exact,
 grid-free
 one-dimensional scan over observed covariate values, node by node,
-root-first. We show that topology is recovered with probability tending to one
-on a refining grid, and that every refined threshold is simultaneously
-superconsistent, at rate $O_p(n^{-1})$. The algorithm is implemented, and its
+root-first. We show that, under a continuum-sparsity condition whose
+minimal-leaf representative we assume, rather than prove, is unique, topology
+is recovered with probability tending to one on a refining grid, and that
+every refined threshold is simultaneously superconsistent, at rate
+$O_p(n^{-1})$. The algorithm is implemented, and its
 guarantees are illustrated empirically, in the \texttt{optimaltrees} package.]
 \end{abstract}
 
@@ -140,13 +142,19 @@ re-expanding to prose; do not re-verify.
   nonparametric class -- silent on whether the fitted \emph{partition}
   matches any true partition. This paper: exact partition recovery, at a
   rate. Different question; not addressed by that theory.
-\item \textbf{Two contributions.} (i) the two-stage algorithm --
+\item \textbf{Two contributions.} (i) the two-stage algorithm
+  (Algorithm~\ref{alg:twostage}, \S\ref{sec:setup-algorithm}) --
   topology on a coarse grid (\S\ref{sec:topology}) + collapse map +
   grid-free root-first threshold refinement (\S\ref{sec:stageb}); (ii)
   topology recovered w.p.$\to1$ as the grid refines, every threshold
   \emph{simultaneously} superconsistent at $O_p(n^{-1})$ -- the same rate a
   single, already-known-topology threshold would attain
-  \citep{chan1993}, despite topology itself being estimated.
+  \citep{chan1993}, despite topology itself being estimated. (Both are
+  stated modulo the standing assumption, flagged as open in
+  Remark~\ref{rem:true-tree-open}, that the minimal-leaf continuum tree is
+  unique -- the algorithm and its guarantees are about a fixed such tree,
+  whose uniqueness under Assumption~\ref{ass:continuum-sparsity} is
+  assumed here, not derived.)
 \item \textbf{Related work, sharpened.}
   \begin{itemize}
   \item \citet{seootsu2018}/\citet{song2016}: cube-root rate because their
