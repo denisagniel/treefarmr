@@ -57,6 +57,7 @@
 % \thetahat, \thetatil, \pihat, \Vhat, \Dw, \Dm, \Lw, \Pn.
 \newcommand{\E}{\mathbb{E}}
 \newcommand{\PP}{\mathbb{P}}
+\newcommand{\R}{\mathbb{R}}
 \newcommand{\cX}{\mathcal{X}}
 \newcommand{\cA}{\mathcal{A}}
 \newcommand{\cB}{\mathcal{B}}
@@ -64,6 +65,13 @@
 \newcommand{\cS}{\mathcal{S}}
 \newcommand{\cC}{\mathcal{C}}
 \newcommand{\cG}{\mathcal{G}}
+% Added 2026-09-04 for \S\ref{sec:setup-uniqueness} (true-partition
+% uniqueness): \cP/\cQ for generic finite partitions, \cF for the
+% boundary-face set (kept distinct from \cB, already in use for grid
+% atoms).
+\newcommand{\cP}{\mathcal{P}}
+\newcommand{\cQ}{\mathcal{Q}}
+\newcommand{\cF}{\mathcal{F}}
 \DeclareMathOperator*{\argmin}{arg\,min}
 \DeclarePairedDelimiter{\abs}{\lvert}{\rvert}
 \DeclarePairedDelimiter{\card}{\lvert}{\rvert}
@@ -155,11 +163,13 @@ re-expanding to prose; do not re-verify.
   \emph{simultaneously} superconsistent at $O_p(n^{-1})$ -- the same rate a
   single, already-known-topology threshold would attain
   \citep{chan1993}, despite topology itself being estimated. (Both are
-  stated modulo the standing assumption, flagged as open in
+  stated modulo the standing assumption, flagged in
   Remark~\ref{rem:true-tree-open}, that the minimal-leaf continuum tree is
-  unique -- the algorithm and its guarantees are about a fixed such tree,
-  whose uniqueness under Assumption~\ref{ass:continuum-sparsity} is
-  assumed here, not derived.)
+  unique -- the algorithm and its guarantees are about a fixed such tree.
+  Under Assumption~\ref{ass:continuum-sparsity} alone this uniqueness is
+  assumed, not derived; Theorem~\ref{thm:true-partition} of
+  \S\ref{sec:setup-uniqueness} derives it under one added geometric
+  condition on the support.)
 \item \textbf{Related work, sharpened.}
   \begin{itemize}
   \item \citet{seootsu2018}/\citet{song2016}: cube-root rate because their
@@ -825,17 +835,27 @@ this equivalence class; a stated bound on the true tree's depth
 realisation of it, per the convention of Definition~\ref{def:tree-vocab}.
 \end{definition}
 
-\begin{remark}[Uniqueness is assumed here, not proved]\label{rem:true-tree-open}
+\begin{remark}[Uniqueness: assumed in general, derived under an added support
+condition]\label{rem:true-tree-open}
 Definition~\ref{def:true-tree} \emph{asserts} that the minimal elements of
-$\cS^{\mathrm{cont}}$ coincide as partitions; it does not derive this from
-clauses (S), (J), (Dens), (Sep), (Node), (Local-Jump), and (Joint) alone. It
-is plausible that those clauses already force this coincidence --- any two
-minimal elements would have to agree on jump locations by (J) and
-(Local-Jump), and (Sep) plausibly rules out two inequivalent minimal
-partitions both satisfying (Dens) --- but no such argument is given here.
-Until one is, Definition~\ref{def:true-tree}'s equivalence claim should be
-read as an additional standing hypothesis, not as a consequence of the
-others; it is carried on the open-questions ledger of
+$\cS^{\mathrm{cont}}$ coincide as partitions; in general this is not derived
+from clauses (S), (J), (Dens), (Sep), (Node), (Local-Jump), (Reduced), and
+(Joint) alone, and in general it is carried as an additional standing
+hypothesis rather than as a consequence of the others. Under one added
+support condition it \emph{is} derived:
+Theorem~\ref{thm:true-partition} of \S\ref{sec:setup-uniqueness} shows that
+(S), (Dens), (Node), and (Reduced) --- together with compactness,
+full-dimensionality, and convexity of $\cX$ (Assumption~\ref{ass:support-geometry}) --- already force
+this coincidence, for a witness satisfying the leaf-level hypotheses, without
+appeal to (J), (Sep), or (Local-Jump). \S\ref{sec:setup-uniqueness} also
+supplies the canonical rooted-tree realisation
+(Definition~\ref{def:canonical-realisation}) that node-indexed assumptions
+such as (J) implicitly require, and shows (Proposition~\ref{prop:ordered-nonunique})
+that partition-level uniqueness does not by itself extend to the ordered
+tree. Whether the geometric condition of
+Assumption~\ref{ass:support-geometry} can be relaxed, or dropped in favour of
+(Sep) and (J) alone, is left open, and is carried on the open-questions
+ledger of
 \texttt{quality\_reports/plans/2026-09-02\_paper-a-theory-clarity-remediation.md}.
 \end{remark}
 
@@ -1296,6 +1316,172 @@ Lemma~\ref{lem:uep-second-moment} requires; see
 Lemma~\ref{lem:empirical-feasible-mass}. Both reappear as clauses (R4) and
 (R5) of the rate conditions~\eqref{eq:stage-a-rates}, where they are collected
 with the conditions on \(r_n\) and \(\lambda_n\).
+
+% ==== BEGIN UNAUDITED (integrated 2026-09-04 from v9 draft; audit chain
+% v1-v9 in quality_reports/2026-09-04_paper-a-true-tree-uniqueness-v*.md;
+% pending an independent audit of THIS integrated form) ====
+\subsection{Uniqueness of the true partition}\label{sec:setup-uniqueness}
+
+Remark~\ref{rem:true-tree-open} leaves Definition~\ref{def:true-tree}'s
+equivalence claim as an open standing hypothesis in general. This subsection
+derives it under one added geometric condition on the support.
+
+\begin{assumption}[Support geometry]\label{ass:support-geometry}
+\(\cX\subset\R^d\) is compact, full-dimensional, and convex; a box is the
+principal intended example. This clause, denoted (Conn), is invoked only by
+the results of this subsection and nowhere else in the paper.
+\end{assumption}
+
+Throughout this subsection, piecewise constancy of \(\gamma_0\)
+(Assumption~\ref{ass:continuum-sparsity}(S)) is read pointwise: for every
+leaf \(L\) of a realising tree there is a number \(v_L\) with
+\(\gamma_0(x)=v_L\) for every \(x\) in \(L\)'s interior, consistent with the
+boundary-face convention of Definition~\ref{def:tree-vocab}.
+
+\begin{definition}[\(\nu\)-equivalence of finite partitions]\label{def:nu-equivalence}
+Finite measurable partitions \(\cP=\{A_1,\ldots,A_K\}\) and
+\(\cQ=\{B_1,\ldots,B_M\}\) of \(\cX\) are \(\nu\)\emph{-equivalent},
+written \(\cP\equiv_\nu\cQ\), if \(K=M\) and there is a bijection
+\(\rho:\cP\to\cQ\) with \(\nu(A\triangle\rho(A))=0\) for every
+\(A\in\cP\). This is a relation between partitions only; it does not
+identify rooted-tree realisations up to reordering split tests, a distinct
+matter taken up in Proposition~\ref{prop:ordered-nonunique}. A partition
+\(\cQ\) \emph{refines} \(\cP\) modulo \(\nu\) if there is
+\(\phi:\cQ\to\cP\) with \(\nu(B\setminus\phi(B))=0\) for every
+\(B\in\cQ\).
+\end{definition}
+
+For a tree \(\tau\), write \(\cP(\tau)\) for its leaf partition. Define
+\[
+L^\star:=\min\{\card\tau:\tau\in\cS^{\mathrm{cont}}\},
+\]
+well defined and finite since \(\cS^{\mathrm{cont}}\ne\emptyset\)
+(Assumption~\ref{ass:continuum-sparsity}(S)) and leaf counts are positive
+integers bounded above by \(\bar L\). Call \(\tau\in\cS^{\mathrm{cont}}\)
+\emph{minimal} if \(\card\tau=L^\star\).
+
+\begin{theorem}[Unique coarsest realising partition]\label{thm:true-partition}
+Suppose Assumptions~\ref{ass:continuum-sparsity}(S),
+\ref{ass:local-design}(Dens), and \ref{ass:support-geometry} hold, and that
+there exists a minimal \(\tau^{\dagger}\in\cS^{\mathrm{cont}}\) such that:
+\begin{enumerate}[leftmargin=*]
+\item every pair of geometrically face-adjacent leaves of \(\tau^{\dagger}\)
+has distinct population values, as required by (Reduced)
+(Assumption~\ref{ass:jump-regularity}) for \(\tau^{\dagger}\). This is a
+genuine additional hypothesis on \(\tau^{\dagger}\), not a consequence of
+its minimality (Remark~\ref{rem:reduced-independent}): merging two
+equal-valued face-adjacent leaves need not yield a partition realisable by
+an axis-aligned tree, so a minimal realisation need not automatically
+satisfy (Reduced).
+\item every leaf \(A\in\cP(\tau^{\dagger})\) satisfies \(\nu(A)\ge q_{\min}>0\),
+as supplied by the leaf instance of (Node) (Assumption~\ref{ass:local-design})
+for \(\tau^{\dagger}\).
+\end{enumerate}
+Then:
+\begin{enumerate}[leftmargin=*]
+\item every \(\tau\in\cS^{\mathrm{cont}}\) refines \(\cP(\tau^{\dagger})\)
+modulo \(\nu\), and consequently \(\card\tau\ge L^\star\);
+\item a realisation \(\tau\in\cS^{\mathrm{cont}}\) is minimal if and only if
+\(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\);
+\item for every minimal \(\tau\), matched cells have equal closures, so all
+minimal realisations share the same geometric leaf closures, boundary
+faces, boundary set, and numerical threshold locations.
+\end{enumerate}
+The proof is given in \S\ref{sec:supp-setup}.
+\end{theorem}
+
+\begin{remark}[Scope of Theorem~\ref{thm:true-partition}]\label{rem:uniqueness-scope}
+The proof uses (Reduced) for \(\tau^{\dagger}\) and the connectedness and
+generic-perturbability of leaf interiors that (Conn) supplies; it uses
+neither minimality of the comparison tree \(\tau\) nor (Dens) at that step,
+which is invoked only afterward, to upgrade a Lebesgue-null bad set to a
+\(\nu\)-null one. Two edge cases are worth recording. If \(L^\star=1\), both
+(Local-Jump) and (J) are vacuous (no adjacent leaf pairs or internal nodes
+exist), every realising partition trivially refines \(\{\cX\}\), and
+uniqueness holds without the transversal-chain argument. The corollary
+below transfers (Reduced) and (Node) to every minimal realisation, but not
+(J): its pooled side value is indexed by an internal node and depends on how
+the common leaf partition is assembled into an ordered rooted tree, which
+equality of leaf partitions, closures, values, and adjacency graphs does not
+determine (Proposition~\ref{prop:ordered-nonunique} makes this concrete).
+Consequently, whenever the manuscript states a node-indexed assumption or
+result ``for the true tree,'' it is to be read as a statement about the
+canonical realisation of Definition~\ref{def:canonical-realisation} below ---
+a well-posing convention, not a claim that the assumption holds. Statements
+depending only on the boundary-face set or numerical threshold locations
+need no such convention, since Theorem~\ref{thm:true-partition}(3) already
+shows those are invariant across minimal realisations.
+\end{remark}
+
+\begin{corollary}[Transfer across minimal elements]\label{cor:minimal-transfer}
+Under the hypotheses of Theorem~\ref{thm:true-partition}, let
+\(\tau\in\cS^{\mathrm{cont}}\) be minimal. The bijection between
+\(\cP(\tau)\) and \(\cP(\tau^{\dagger})\) of
+Theorem~\ref{thm:true-partition}(2)--(3) preserves leaf closures and their
+face-adjacency graph, leaf population values, and leaf masses. Hence the
+leaf-level versions of (Reduced) and (Node) hold for every minimal
+realisation whenever they hold for the witness \(\tau^{\dagger}\); in
+particular, Theorem~\ref{thm:true-partition}'s hypothesis (1) is satisfied
+by every minimal realisation, not only by \(\tau^{\dagger}\).
+\end{corollary}
+
+Let \(\cP^\star\) denote the minimal partition of
+Theorem~\ref{thm:true-partition}, represented by its leaf closures, and let
+\(\mathfrak T(\cP^\star)\) be the set of reduced rooted axis-aligned trees
+in \(\cS^{\mathrm{cont}}\) whose leaf partition is \(\nu\)-equivalent to
+\(\cP^\star\); this set contains \(\tau^{\dagger}\) and so is nonempty. Fix
+the lexicographic order \((q,c)<_{\mathrm{lex}}(q',c')\) iff \(q<q'\), or
+\(q=q'\) and \(c<c'\); breadth-first traversal with left child visited
+before right; and the usual deterministic boundary convention for split
+tests.
+
+\begin{definition}[Canonical realisation]\label{def:canonical-realisation}
+Starting at the root, process unresolved nodes in breadth-first order. At a
+node carrying \(\cA\subseteq\cP^\star\): if \(\card\cA=1\), declare the node
+a leaf; otherwise, among all split tests \((q,c)\) that (i) do not cut the
+interior of any cell in \(\cA\), (ii) place at least one cell of \(\cA\) on
+each side, and (iii) admit at least one completion of the current partial
+tree to an element of \(\mathfrak T(\cP^\star)\) respecting the remaining
+depth budget, choose the lexicographically least \((q,c)\). The resulting
+rooted tree is \(\tau^\star_{\mathrm{can}}\).
+\end{definition}
+
+\begin{proposition}[Well-definedness of the canonical rule]\label{prop:canonical-welldefined}
+The canonical construction terminates and produces a unique
+\(\tau^\star_{\mathrm{can}}\in\cS^{\mathrm{cont}}\) with leaf partition
+\(\nu\)-equivalent to \(\cP^\star\), at most \(\bar L\) leaves, and depth at
+most \(\bar D\). The proof is given in \S\ref{sec:supp-setup}.
+\end{proposition}
+
+\begin{proposition}[Ordered realisations need not be unique]\label{prop:ordered-nonunique}
+Partition \([0,1]^2\) at \(x_1=1/2\) and \(x_2=1/2\), and assign pairwise
+distinct quadrant values \(a,b,c,d\) (bottom-left, top-left, bottom-right,
+top-right) with \(a+b\ne c+d\) and \(a+c\ne b+d\). Under uniform \(\nu\),
+the minimal four-leaf partition admits both an \(x_1\)-first and an
+\(x_2\)-first realisation --- different ordered rooted trees inducing the
+same leaf partition --- and its two possible root jumps under (J),
+\(\tfrac12\abs{a+b-c-d}\) and \(\tfrac12\abs{a+c-b-d}\), are not merely both
+positive but provably unequal (equality would force \(b=c\) or \(a=d\),
+excluded by pairwise distinctness). Concretely, \(a,b,c,d=1,2,4,8\) gives
+root jumps \(9/2\) and \(5/2\). Any bound stated in terms of ``the root jump
+of the true tree'' is therefore numerically ambiguous absent
+Remark~\ref{rem:uniqueness-scope}'s canonical-realisation convention. The
+canonical rule of Definition~\ref{def:canonical-realisation} selects
+between the two here: at the root, \((1,1/2)<_{\mathrm{lex}}(2,1/2)\), so
+\(\tau^\star_{\mathrm{can}}\) is the \(x_1\)-first tree.
+\end{proposition}
+\begin{proof}
+Every quadrant has mass \(1/4\) and every internal node mass at least
+\(1/2\), so (Node) holds with \(q_{\min}=1/4\); every face-adjacent pair
+differs since \(a,b,c,d\) are pairwise distinct, so (Local-Jump) holds; and
+since \(\gamma_0\) is pairwise distinct on the four quadrants, no leaf can
+contain the interior of two of them, so every realisation needs at least
+four leaves and both displayed constructions attain four. The two
+realisations have different roots and different node-descendant groupings
+but induce the same four-quadrant partition, demonstrating that partition
+uniqueness does not extend to the ordered tree.
+\end{proof}
+% ==== END UNAUDITED (main-text portion) ====
 
 \subsection{Solver fidelity for the two stages}\label{sec:setup-solver}
 
@@ -2258,7 +2444,11 @@ Definition~\ref{def:structural-matching} is stated to match. Writing
 \(\PP([\hat\tau^A_n]=[\tau_0])\to1\) once thresholds are read up to the
 \(O_p(1/r_n)\) tolerance, with boundaries matched by geometric signature
 (coordinate, threshold, adjacent faces) under a fixed canonical
-representation of each class. Downstream, the same reading applies:
+representation of each class ---
+Definition~\ref{def:canonical-realisation} of \S\ref{sec:setup-uniqueness}
+supplies one such representation, and
+Proposition~\ref{prop:ordered-nonunique} there gives the split-$x_1$-then-$x_2$-versus-$x_2$-then-$x_1$
+example just invoked in different words. Downstream, the same reading applies:
 \S\ref{sec:stageb}'s conclusion
 \(\max_N\abs{\hat c_N-t_{0,N_0}}=O_p(n^{-1})\) is a statement about the
 matched boundaries of that partition class. A companion paper's
@@ -3363,11 +3553,325 @@ distributed with that package [TODO: add repository URL].
 \addcontentsline{toc}{subsection}{S.1\quad Proofs for
   Section~\protect\ref{sec:setup}}
 
-Section~\ref{sec:setup} states the standing assumptions, the sufficient-class
-definition, and the two-stage construction; none of its numbered results
-carries a proof obligation, so no proof is collected here. The subsection is
-retained so that the supplement's organisation matches the main text's
-section by section.
+Of Section~\ref{sec:setup}'s numbered results, only those of
+\S\ref{sec:setup-uniqueness} carry a proof obligation; the rest of
+Section~\ref{sec:setup} states the standing assumptions, the
+sufficient-class definition, and the two-stage construction, and no proof is
+collected for them here. Two lemmas are needed first, followed by the
+proofs of Theorem~\ref{thm:true-partition} and
+Proposition~\ref{prop:canonical-welldefined} in that order.
+
+% ==== BEGIN UNAUDITED (integrated 2026-09-04 from v9 draft; audit chain
+% v1-v9 in quality_reports/2026-09-04_paper-a-true-tree-uniqueness-v*.md;
+% pending an independent audit of THIS integrated form) ====
+
+\begin{lemma}[Cell closure]\label{lem:cell-closure}
+Assume Assumptions~\ref{ass:local-design}(Dens) and~\ref{ass:support-geometry}.
+Let \(A=R_A\cap\cX\) and \(B=R_B\cap\cX\) be nonempty, full-dimensional
+relative box cells. If \(\nu(A\triangle B)=0\), then \(\overline A=\overline B\).
+\end{lemma}
+\begin{proof}
+By (Dens), \(0=\nu(A\triangle B)\ge f_{\min}\operatorname{Leb}(A\triangle B)\),
+so \(\operatorname{Leb}(A\triangle B)=0\). Suppose
+\(\overline A\ne\overline B\); without loss of generality fix
+\(z\in\overline A\setminus\overline B\), so
+\(\delta:=\operatorname{dist}(z,\overline B)>0\). Since \(A\) is nonempty,
+full-dimensional, and convex, \(\overline A=\overline{\operatorname{int}(A)}\),
+so there is \(z'\in\operatorname{int}(A)\cap B(z,\delta/4)\), and some
+\(\varepsilon<\delta/4\) has \(B(z',\varepsilon)\subseteq A\). Every
+\(w\in B(z',\varepsilon)\) then satisfies
+\(\operatorname{dist}(w,\overline B)\ge\delta-\|w-z'\|-\|z'-z\|>\delta/2\),
+so \(B(z',\varepsilon)\subseteq A\setminus B\), an open ball of positive
+Lebesgue measure, contradicting \(\operatorname{Leb}(A\triangle B)=0\).
+Hence \(\overline A\subseteq\overline B\), and by symmetry
+\(\overline A=\overline B\).
+\end{proof}
+
+\begin{lemma}[Boundary points lie on a split hyperplane]\label{lem:boundary-hyperplane}
+For every leaf \(A=R_A\cap\cX\) of a tree \(\tau^{\dagger}\),
+\(\partial A\cap\operatorname{int}\cX\subseteq\bigcup\{\text{split
+hyperplanes of }\tau^{\dagger}\}\) --- where a split hyperplane attached to
+an internal node with test \((q,c)\) means the full affine hyperplane
+\(\{x_q=c\}\subseteq\R^d\), not merely its trace on that node's own box.
+Consequently \(\cF_0\cap\operatorname{int}\cX\subseteq\bigcup\{\text{split
+hyperplanes of }\tau^{\dagger}\}\) as well, where
+\(\cF_0:=\bigcup_{A\in\cP(\tau^{\dagger})}\partial A\).
+\end{lemma}
+\begin{proof}
+\(\partial A\subseteq(\partial R_A\cap\cX)\cup(\overline{R_A}\cap\partial\cX)\).
+On \(\operatorname{int}\cX\) the second term is empty, so
+\(\partial A\cap\operatorname{int}\cX\subseteq\partial R_A\), a union of the
+finitely many facets of the box \(R_A\); each such facet lies in the split
+hyperplane of some ancestor node of \(A\) (the hyperplane whose test cuts
+out that facet of \(R_A\)).
+\end{proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:true-partition}]
+\emph{Proof strategy.} Fix an arbitrary \(\tau\in\cS^{\mathrm{cont}}\). Step~1
+shows each \(\tau\)-leaf meets the interior of exactly one
+\(\tau^{\dagger}\)-leaf: a generic path inside the \(\tau\)-leaf converts the
+alternative --- straddling two nonadjacent \(\tau^{\dagger}\)-leaves of equal
+value --- into a chain of face-adjacent \(\tau^{\dagger}\)-leaves, and
+(Reduced) then contradicts constancy on the \(\tau\)-leaf. Step~2 upgrades
+this to refinement modulo \(\nu\). Step~3 uses (Node) for surjectivity of
+the induced leaf map; Step~4 uses equal leaf counts for minimal trees to get
+a bijection, and Lemma~\ref{lem:cell-closure} to upgrade \(\nu\)-equivalence
+to equality of closures.
+
+\paragraph*{Step 1: the strong one-cell claim.}
+Assume \(d\ge2\) throughout (for \(d=1\) the argument goes through with the
+set \(\Sigma\) below vacuous: leaf boundaries are single points, \(\cF_0\)
+is finite, and the closing contradiction via (Reduced) is unchanged). Claim:
+for every leaf \(L\in\cP(\tau)\),
+\[
+\tag{\(\star\)}
+\operatorname{int}(L)\text{ meets the interior of exactly one leaf of }\tau^{\dagger}.
+\]
+Existence: \(\cF_0\) has empty interior, so \(\operatorname{int}(L)\), being
+nonempty and open, cannot be contained in it, and meets the interior of at
+least one \(\tau^{\dagger}\)-leaf.
+
+For uniqueness, suppose instead \(L\) meets the interiors of two distinct
+\(\tau^{\dagger}\)-leaves \(L_0^{(1)}\ne L_0^{(2)}\), and fix
+\(x\in\operatorname{int}(L_0^{(1)})\cap\operatorname{int}(L)\); by (Conn),
+\(\operatorname{int}(L)\) is open and convex. A \((d-1)\)-face of
+\(\tau^{\dagger}\) is a set \(F=\overline A\cap\overline{A'}\) of dimension
+\(d-1\) for face-adjacent leaves \(A\ne A'\) of \(\tau^{\dagger}\).
+
+Every point of \(\cF_0\cap\operatorname{int}\cX\) that lies on exactly one
+split hyperplane \(H\) and on no face's relative boundary lies in the
+relative interior of a unique \((d-1)\)-face: such a \(p\) lies in
+\(\partial A\) for some leaf \(A\); since \(\tau^{\dagger}\) has finitely
+many split hyperplanes and boundary faces, and \(p\) lies on only \(H\)
+among the former and on no relative boundary among the latter, there is
+\(\rho>0\) with \(B(p,\rho)\subseteq\operatorname{int}\cX\) meeting no other
+split hyperplane and no face's relative boundary; by
+Lemma~\ref{lem:boundary-hyperplane}, \(B(p,\rho)\cap\cF_0\subseteq
+H\cap B(p,\rho)\), so the open half-ball of \(B(p,\rho)\setminus H\)
+opposite \(A\) is connected and meets \(\cF_0\) nowhere, hence lies entirely
+in the interior of a single leaf \(A''\), giving
+\(p\in\overline A\cap\overline{A''}=:F\), a \((d-1)\)-face not containing
+\(p\) on its relative boundary. (Uniqueness of \(F\) follows from the next
+paragraph: a second such face \(F'\ne F\) would satisfy \(F,F'\subset H\),
+so \(p\in F\cap F'\subseteq\operatorname{rel}\partial F\) by the argument
+given there, a contradiction.)
+
+Two distinct such faces meet only in their relative boundaries. Let
+\(F=\overline A\cap\overline{A'}\), \(F'=\overline B\cap\overline{B'}\),
+both \(\subset H\), \(F\ne F'\), with \(A,B\) on the \(-\) side and
+\(A',B'\) on the \(+\) side of \(H\). If \(A=B\) and \(A'\ne B'\), then
+\(F\cap F'\subseteq\overline{A'}\cap\overline{B'}\); distinct leaves
+\(A',B'\) have a lowest common ancestor node \(N''\) whose split hyperplane
+\(H''\) separates them into its two closed half-spaces --- a purely
+tree-structural fact using no convexity, since descendant boxes nest inside
+ancestor boxes and the two leaves diverge into different children exactly
+at \(N''\). Applying this to \(A,A'\) themselves shows \(F\) lies in their
+own split hyperplane, i.e.\ \(H\); and \(H''\ne H\), since otherwise one of
+\(A',B'\) would lie in the closed half-space of \(H\) opposite the one
+containing it, forcing that leaf into \(H\) itself, contrary to
+full-dimensionality. Since \(\overline{A'},\overline{B'}\) lie in the two
+opposite closed half-spaces of \(H''\), \(F\subseteq\overline{A'}\) lies in
+one closed half-space of \(H''\) while \(\operatorname{aff}(F)=H\not\subseteq H''\),
+so any point of \(F\cap H''\) lies in \(F\)'s relative boundary (a relative-interior
+point would have \(F\)-points strictly on both sides of \(H''\)); this uses
+the convexity of leaf cells, (Conn). Hence
+\(F\cap F'\subseteq\operatorname{rel}\partial F\cap H\cap H''\). The case
+\(A\ne B\) is symmetric, and \(A=B,A'=B'\) gives \(F=F'\), excluded.
+
+Let \(\Sigma\) be the union of the relative boundary of every \((d-1)\)-face
+of \(\tau^{\dagger}\) together with all pairwise intersections of distinct
+split hyperplanes of \(\tau^{\dagger}\) (pairwise intersections of distinct
+faces are already absorbed into one item or the other, by the preceding
+paragraph). The second part is a finite union of affine subspaces of
+codimension two; the first is a finite union of sets of Hausdorff dimension
+\(d-2\), since each \((d-1)\)-face is a compact convex body of dimension
+\(d-1\) (whether or not \(\cX\) is a box) whose relative boundary is
+\((d-2)\)-rectifiable. Hence \(\dim_{\mathcal H}\Sigma\le d-2\), and \(\Sigma\)
+is closed. Separately, \(\cF_0\) itself has Hausdorff dimension at most
+\(d-1\): each leaf is a \(d\)-dimensional compact convex body, so its
+boundary has dimension \(d-1\), and \(\cF_0\) is a finite union of such
+boundaries.
+
+The set \(\Sigma\cup\bigcup\{\text{split hyperplanes}\}\) is closed and
+Lebesgue-null. Since \(\operatorname{int}(L_0^{(1)})\cap\operatorname{int}(L)\)
+is open and nonempty, take \(x\) in it generically, off that closed null
+set; in particular \(x\) lies on no split hyperplane and \(x\notin\Sigma\).
+Let \(U_2:=\operatorname{int}(L_0^{(2)})\cap\operatorname{int}(L)\), nonempty
+and open. Consider bad points \(y\in U_2\) for which \([x,y]\) meets
+\(\Sigma\); since \([x,y]\subseteq\cX\) by convexity, any such meeting point
+lies in \(\Sigma\cap\cX\), which is bounded (unlike \(\Sigma\) itself, whose
+hyperplane-intersection part is unbounded for \(d\ge2\)) and still has
+\(\dim_{\mathcal H}\le d-2\). If \([x,y]\) meets \(\Sigma\cap\cX\) at \(p\),
+then \(y=x+s(p-x)\) for some \(s\in[1,\infty)\), so the bad set lies in the
+image of \((\Sigma\cap\cX)\times[1,\infty)\) under
+\((p,s)\mapsto x+s(p-x)\). This map is Lipschitz on each bounded piece
+\((\Sigma\cap\cX)\times[1,n]\) (bounded because \(\Sigma\cap\cX\subseteq\cX\)
+is), with constant depending on \(n\) and \(\operatorname{diam}(\cX)\), so
+each piece's image has Hausdorff dimension at most \((d-2)+1=d-1\) by the
+product formula for a factor of finite upper box dimension (here \([1,n]\)
+has upper box dimension \(1\); the naive additive bound is false in general
+but valid here). The full image, a countable union of such pieces, thus has
+dimension at most \(d-1<d\), hence Lebesgue measure zero; since \(U_2\) has
+positive measure, some \(y\in U_2\) has \([x,y]\cap\Sigma=\emptyset\); fix
+such a \(y\).
+
+The segment \(\pi(t)=(1-t)x+ty\), \(0\le t\le1\), lies in
+\(\operatorname{int}(L)\) and meets \(\Sigma\) nowhere; since \(x\) is off
+every split hyperplane, every crossing of \(\pi\) with \(\cF_0\) is
+transversal. At any crossing \(p=\pi(t_i)\), \(p\in\cF_0\) and
+\(\pi\subseteq\operatorname{int}\cX\), so by Lemma~\ref{lem:boundary-hyperplane}
+\(p\) lies on some split hyperplane, and on exactly one since \(p\notin\Sigma\);
+call it \(H=\{x_q=c\}\). Since the finitely many other split hyperplanes
+and other faces are at positive distance from \(p\), and
+\(\operatorname{dist}(p,\Sigma)>0\) (\(\Sigma\) closed, \(p\notin\Sigma\))
+and \(\operatorname{dist}(p,\partial\cX)>0\) (\(p\in\operatorname{int}\cX\)),
+there is \(r>0\) smaller than all of these with
+\(B(p,r)\subseteq\operatorname{int}\cX\) meeting \(\Sigma\) nowhere and no
+face other than the one lying locally in \(H\); every point of
+\(B(p,r)\cap\cF_0\) then lies on exactly one split hyperplane and no
+relative boundary, so lies in that face's relative interior, giving
+\(B(p,r)\cap\cF_0\subseteq H\). Hence the two open half-balls of
+\(B(p,r)\setminus H\) meet no boundary and each lies in a single leaf's
+interior --- \(A_{i-1}\) before \(p\) along \(\pi\), \(A_i\) after --- sharing
+the relatively open face \(F\) via the nonempty relatively open set
+\(B(p,r)\cap H\subseteq F\).
+
+Because \(\pi\) avoids \(\Sigma\), no crossing lies on two hyperplanes at
+once, so crossings occur at finitely many well-separated
+\(0<t_1<\cdots<t_m<1\) (finite since \(\pi\) is bounded and each hyperplane
+is hit at most once by a line not contained in it), and \(\pi\) visits a
+finite chain \(A_0=L_0^{(1)},A_1,\ldots,A_m=L_0^{(2)}\) of face-adjacent
+\(\tau^{\dagger}\)-leaves in order, each meeting \(\operatorname{int}(L)\)
+in a nonempty open set. Also \(m\ge1\): otherwise \(\pi([0,1])\) would lie
+in a single leaf interior, forcing \(L_0^{(1)}=L_0^{(2)}\), a contradiction.
+Since \(A_i,A_{i+1}\) are face-adjacent, (Reduced) for \(\tau^{\dagger}\)
+gives \(v_{A_i}\ne v_{A_{i+1}}\) for every \(i\). But (S) gives \(v_1\) with
+\(\gamma_0=v_1\) on \(L\), and choosing \(z_i\in A_i\cap\operatorname{int}(L)\)
+gives \(v_{A_i}=\gamma_0(z_i)=v_1\) for every \(i\), so
+\(v_{A_0}=v_1=v_{A_1}\), contradicting \(v_{A_0}\ne v_{A_1}\). This proves
+\((\star)\); the argument used (Reduced) and (Conn), but neither minimality
+of \(\tau\) nor (Dens).
+
+\paragraph*{Step 2: general refinement.}
+For \(L\in\cP(\tau)\), let \(\phi(L)\) be the unique \(\tau^{\dagger}\)-leaf
+whose interior meets \(\operatorname{int}(L)\). By \((\star)\),
+\(\operatorname{int}(L)\subseteq\phi(L)\cup\cF_0\), and
+\(L\setminus\operatorname{int}(L)\) is contained in a finite union of sets
+of Hausdorff dimension at most \(d-1\) (the box facets of \(L\)'s defining
+rectangle, together with its intersection with \(\partial\cX\) if any,
+which has dimension \(d-1\) whether or not \(\cX\) is a box). Combined with
+\(L\setminus\phi(L)\subseteq(L\setminus\operatorname{int}(L))\cup\cF_0\)
+and the dimension bounds just recalled, \(L\setminus\phi(L)\) is a finite
+union of sets of Hausdorff dimension at most \(d-1\), hence Lebesgue-null,
+hence, by (Dens), \(\nu(L\setminus\phi(L))=0\). Since \(\tau\) was
+arbitrary, every \(\tau\in\cS^{\mathrm{cont}}\) refines
+\(\cP(\tau^{\dagger})\) modulo \(\nu\) (no reverse refinement is asserted
+for a nonminimal \(\tau\)).
+
+Distinct \(\tau^{\dagger}\)-leaves \(A,A''\) have \(\nu\)-null intersection:
+applying the lowest-common-ancestor argument of Step~1 to the pair directly
+(not only to face-adjacent pairs) shows \(\overline A,\overline{A''}\) lie
+in the two opposite closed half-spaces of a single hyperplane \(H''\), so
+\(\overline A\cap\overline{A''}\subseteq H''\) has Hausdorff dimension
+\(d-1\); a fortiori so does \(A\cap A''\), hence it is \(\nu\)-null by
+(Dens).
+
+\paragraph*{Step 3: surjectivity of the leaf map.}
+Fix \(A\in\cP(\tau^{\dagger})\); by (Node), \(\nu(A)\ge q_{\min}>0\). The
+finite \(\tau\)-partition covers \(\cX\), so
+\(A=\bigcup_{L\in\cP(\tau)}(A\cap L)\). If no \(L\) had \(\phi(L)=A\), then
+for every \(L\), \(\phi(L)\ne A\), so \(\nu(A\cap\phi(L))=0\) by the
+null-intersection fact, and with \(\nu(L\setminus\phi(L))=0\) and
+subadditivity, \(\nu(A\cap L)\le\nu(A\cap\phi(L))+\nu(A\cap(L\setminus\phi(L)))=0\)
+for every \(L\); summing over the finitely many \(L\) would give
+\(\nu(A)=0\), contradicting \(\nu(A)\ge q_{\min}>0\). Hence \(\phi\) is
+surjective, so \(\card\tau\ge L^\star\) (a surjection from
+\(\cP(\tau)\) onto the \(L^\star\)-element set
+\(\cP(\tau^{\dagger})\)), and \(\tau^{\dagger}\) is a coarsest realising
+partition.
+
+\paragraph*{Step 4: minimal elements.}
+If \(\tau\) is minimal, \(\card\tau=\card{\tau^{\dagger}}=L^\star\), so the
+surjective \(\phi:\cP(\tau)\to\cP(\tau^{\dagger})\) is a bijection. For
+\(A\in\cP(\tau^{\dagger})\), let \(L_A=\phi^{-1}(A)\); refinement gives
+\(\nu(L_A\setminus A)=0\). If \(\nu(A\setminus L_A)>0\), some \(L'\ne L_A\)
+covering part of \(A\setminus L_A\) would have \(\nu(A\cap L')>0\), yet
+\(\phi(L')\ne A\) gives \(\nu(A\cap\phi(L'))=0\) as before, so
+\(\nu(A\cap L')\le\nu(A\cap\phi(L'))+\nu(A\cap(L'\setminus\phi(L')))=0\), a
+contradiction; hence \(\nu(A\setminus L_A)=0\) too, and
+\(\nu(A\triangle L_A)=0\), giving \(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\).
+Conversely \(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\) gives
+\(\card\tau=L^\star\), i.e.\ minimality. Finally,
+Lemma~\ref{lem:cell-closure} applied to every matched pair gives
+\(\overline{L_A}=\overline A\), so all minimal realisations have identical
+leaf closures, boundary faces, boundary set, and threshold locations.
+\end{proof}
+
+\begin{proof}[Proof of Proposition~\ref{prop:canonical-welldefined}]
+\emph{Proof strategy.} Maintain the invariant that the current partial tree
+has at least one admissible completion in \(\mathfrak T(\cP^\star)\), and
+that every unresolved node's region \(R\) satisfies
+\(R\cap\cX=\bigcup\cA\) exactly, for its assigned target cells
+\(\cA\subseteq\cP^\star\). Feasibility gives a valid next split;
+finiteness of the boundary-face set gives a lexicographically least choice;
+restricting to admissible completions preserves the leaf and depth budgets.
+
+Both invariants hold initially: \(\mathfrak T(\cP^\star)\ne\emptyset\), and
+at the root \(R=\cX\), \(\cA=\cP^\star\), so
+\(R\cap\cX=\cX=\bigcup\cP^\star\) exactly, since \(\cP^\star\) is a genuine
+partition of \(\cX\). The region invariant is preserved by every split,
+since a split satisfying (i) assigns each cell of \(\cA\) entirely to one
+child.
+
+At an unresolved node with more than one target leaf, any admissible
+completion --- a reduced tree --- must split the node, and its split test
+separates two nonempty groups without cutting any target cell's interior
+and admits the completion's remainder; hence at least one feasible split
+exists.
+
+Every feasible threshold \(c\) that is lexicographically least for a fixed
+\(q\) coincides with a recorded boundary coordinate of \(\cA\) along axis
+\(q\) (the finite set \(\{m_A,M_A:A\in\cA\}\) of extents). Suppose \((q,c)\)
+feasible with \(c\) not among them; by condition (ii), \(c\) lies strictly
+between two consecutive recorded coordinates
+\(c_{\mathrm{lo}}<c<c_{\mathrm{hi}}\), with
+\(c_{\mathrm{lo}}:=\max\{\text{recorded}<c\}\) well defined since \(c\)
+exceeds the smallest recorded coordinate. No cell can have
+\(m_A\le c_{\mathrm{lo}}\) and \(M_A\ge c_{\mathrm{hi}}\), since that would
+give \(m_A<c<M_A\), cutting its interior and violating (i) for the feasible
+\((q,c)\); so every cell lies entirely on one side of
+\([c_{\mathrm{lo}},c_{\mathrm{hi}}]\), and by the region invariant the open
+slab \(\{c_{\mathrm{lo}}<x_q<c_{\mathrm{hi}}\}\cap R\cap\cX\) is exactly
+empty. Hence splitting at \(c_{\mathrm{lo}}\) assigns every cell identically
+to splitting at \(c\), satisfying (i)--(ii) identically, and induces the
+identical partition of \(R\cap\cX\) (their symmetric difference lies in the
+now-empty slab), so any completion admissible for \((q,c)\) remains
+admissible, verbatim, for \((q,c_{\mathrm{lo}})\), verifying (iii) too.
+Since \(c_{\mathrm{lo}}<c\), \((q,c_{\mathrm{lo}})<_{\mathrm{lex}}(q,c)\),
+contradicting leastness of \(c\). Hence the least feasible \(c\) for each
+\(q\) is always a recorded coordinate --- though a continuum of
+non-recorded, non-lex-minimal feasible thresholds can still lie in a gap,
+so this does not make the full feasible set finite. It does mean the
+lexicographically least feasible pair, if one exists, lies in the finite
+set \(\cC\) of pairs \((q,c)\) with \(c\) a recorded boundary coordinate of
+\(\cA\) (a subset of the analogous finite set for \(\cP^\star\)): every
+feasible pair outside \(\cC\) is lex-dominated by one inside, so the
+lexicographic infimum over all feasible pairs equals that over
+\(\cC\cap\{\text{feasible}\}\), nonempty and finite, giving existence and
+uniqueness of the lexicographically least feasible pair.
+
+Choosing that split preserves the invariant, and each split increases the
+terminal-node count by one; since every admissible completion has exactly
+\(L^\star\) leaves, no compatible partial tree exceeds \(L^\star-1\)
+internal nodes, so the procedure terminates within \(L^\star-1\) splits,
+with final leaves exactly the cells of \(\cP^\star\), so
+\(\tau^\star_{\mathrm{can}}\) realises \(\gamma_0\) on the minimal
+partition, \(L^\star\le\bar L\), and (respecting the depth budget at every
+stage) \(\operatorname{depth}(\tau^\star_{\mathrm{can}})\le\bar D\); hence
+\(\tau^\star_{\mathrm{can}}\in\cS^{\mathrm{cont}}\). Determinism of the
+traversal and lexicographic choice proves uniqueness.
+\end{proof}
+% ==== END UNAUDITED (S.1 portion) ====
 
 \refstepcounter{subsection}
 \subsection*{S.2\quad Proofs for Section~\ref{sec:topology}}%
