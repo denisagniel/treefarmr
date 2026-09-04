@@ -2635,8 +2635,9 @@ Then:
     n(\widetilde c_N-c_0)=O_p(1),
   \]
   and, by Lemma~\ref{lem:interval-reduction} below, the same rate holds for
-  \(\widehat c_N\), the actual Stage-B output --- the same minimisation over
-  the shrinking search interval \(I_n(N)\):
+  \(\widehat c_N\), the oracle-criterion Stage-B output --- the same
+  minimisation but over the shrinking search interval \(I_n(N)\) rather than
+  the fixed \(B^-\):
   \[
     n(\widehat c_N-c_0)=O_p(1).
   \]
@@ -2759,14 +2760,21 @@ enough to land inside the shrinking set.
 
 \begin{lemma}[Interval reduction]\label{lem:interval-reduction}
 Fix an internal node \(N\) on coordinate \(q\), with true threshold
-\(c_{0,N}\), and let \(\hat c_N\) be \emph{any} measurable selection from the
-Stage-B argmin set over \(I_n(N)\). Assume
-Proposition~\ref{prop:search-interval}, the population drift
-bound~\eqref{eq:prism-drift} for the relevant criterion (or its stump
+\(c_{0,N}\). Let \(S_n\) denote the \emph{oracle} Stage-B criterion at \(N\)
+--- the local criterion formed under the true ancestor row set and the true
+descendant leaf structure, i.e.\ the empirical, fully-profiled subtree SSE of
+Lemma~\ref{lem:prism-profile} (or its Tier-1 stump analogue) --- and let
+\(\hat c_N\) be \emph{any} measurable selection from \(S_n\)'s argmin set over
+\(I_n(N)\). Assume Proposition~\ref{prop:search-interval}, the population
+drift bound~\eqref{eq:prism-drift} for the relevant criterion (or its stump
 analogue), and the rate conditions~\eqref{eq:stage-a-rates}. Then
 \[
   n\bigl(\hat c_N-c_{0,N}\bigr)=O_p(1).
 \]
+Lemma~\ref{lem:descendant-stability} and Lemma~\ref{lem:ancestor-localisation}
+transfer this rate to the fully estimated criterion, under Stage-A-precision
+descendants and Stage-B-refined ancestors respectively; this lemma supplies
+only the base (oracle-ancestor, true-descendant) case those two build on.
 \end{lemma}
 
 \begin{proof}[Proof sketch]
@@ -4133,7 +4141,7 @@ $I_n(N)$ and would be the wrong object here. Finally
 $\abs{B^-}=\varsigma/2<\varsigma$, which is used in the next step.
 
 \emph{Step 3: on the fixed interval, every minimiser is $O_p(1/n)$-confined.}
-Three inputs are available on $B^-$, and each is checked to apply there
+Four inputs are available on $B^-$, and each is checked to apply there
 specifically.
 \begin{enumerate}[label=(\roman*),nosep]
   \item \emph{Separation.} Lemma~\ref{lem:fixed-domain}(a) gives
@@ -4148,40 +4156,62 @@ specifically.
   Assumption~\ref{ass:local-design}(Sep) excludes every other true threshold
   on coordinate $q$ from $B^-$ \emph{outright} --- a deterministic exclusion
   requiring no probabilistic input, and the reason the base radius is fixed at
-  $\varsigma/4$. In particular the drift bound~\eqref{eq:prism-drift} holds on
-  $B^-$, as does its two-group analogue in Tier~1.
+  $\varsigma/4$. The drift bound~\eqref{eq:prism-drift}, stated for small
+  $\abs{c-c_0}$, extends to all of $B^-$ by taking
+  $\psi(\eta):=\min\{\delta_N(\eta),\,\kappa_{\min}^2p_{\min}\eta/4\}$, positive
+  and non-decreasing in $\eta$ by (i); the two-group analogue holds identically
+  in Tier~1.
+  \item \emph{The stochastic control.} Assumption~\ref{ass:moments}'s
+  conditional second-moment bound is the standing hypothesis under which the
+  argmax-consistency arguments of \citet{chan1993,seijosen2011} (Tier~1) and
+  \citet{seootsu2018} (Tier~2) control the empirical criterion's fluctuations
+  uniformly over growing windows --- the same bound
+  Lemma~\ref{lem:ancestor-localisation} invokes for its own escape-exclusion
+  step; nothing further is needed here.
 \end{enumerate}
 The conclusion required is stronger than tightness of a chosen selection: it
 must exclude \emph{every} minimiser from the complement of an $O(1/n)$ window.
 That is obtained by strict domination, not by a weak-convergence argument. The
-escape-exclusion step used in Lemma~\ref{lem:ancestor-localisation}'s proof
---- Step 4b there, applied to the criterion that lemma calls
-$S^{\mathrm{or}}_{n,\ell}$, and available in Tier~1 via
-\citet{chan1993,seijosen2011} and in Tier~2 via \citet{seootsu2018} --- shows,
-applied here on the fixed $B^-$, that for every $\epsilon>0$ there is
-$U<\infty$ such that, with probability at least $1-\epsilon$ for all large
-$n$,
+argmax-consistency arguments cited in (iv) proceed by first showing that,
+outside any fixed neighbourhood of the true threshold, the criterion exceeds
+its minimising value by an amount tending to infinity with the
+neighbourhood's radius, uniformly, and only then concluding that the argmin
+is tight --- the tightness conclusion is a corollary of this escape-exclusion
+step, not an independent fact. Applied here on the fixed $B^-$, using (i) and
+(iv) for the separation and stochastic control and (iii) for the population
+drift that dominates the fluctuations, this gives: for every $\epsilon>0$
+there is $U<\infty$ such that, with probability at least $1-\epsilon$ for all
+large $n$,
 \[
   \inf_{\{c\in B^-:\abs{c-c_{0,N}}>U/n\}}
-  \bigl\{S_n(c)-S_n(c_{0,N})\bigr\}\ >\ 0,
+  \bigl\{S_n(c)-S_n(c_{0,N})\bigr\}\ >\ 0.
 \]
-$S_n$ denoting the relevant empirical criterion; the mechanism is the
-population drift of (iii) dominating the criterion's fluctuations on that
-range. Since $c_{0,N}\in B^-$ is itself an available competitor achieving
-increment exactly zero, no point of $\{c\in B^-:\abs{c-c_{0,N}}>U/n\}$ can be
-a global minimiser of $S_n$ over $B^-$. Because $B^-$ is bounded and the
-criterion attains its infimum on it --- the candidate set being the finite set
-of observed values in Stage~B, or by continuity on $\overline{B^-}$ in the
-population case --- the argmin set is non-empty, and we conclude: with
-probability at least $1-\epsilon$ eventually,
+Since $S_n$ is piecewise constant in $c$, with jumps only at observed values
+of coordinate $q$, the largest such value $c^\star_n\le c_{0,N}$ satisfies
+$S_n(c^\star_n)=S_n(c_{0,N})$; by (Dens), $\PP(c^\star_n\in B^-)\to1$ with
+$\abs{c^\star_n-c_{0,N}}=O_p(1/n)$, an offset absorbed into $U$ below. Since
+$c^\star_n$ is thus an available competitor achieving increment zero up to
+this negligible displacement, no point of
+$\{c\in B^-:\abs{c-c_{0,N}}>U/n\}$ can be a global minimiser of $S_n$ over
+$B^-$. By (Dens) and the interiority half of (Sep), every leaf induced by any
+$c\in B^-$ retains population mass bounded below by a fixed constant, so
+with probability tending to one the observed-value candidate set in $B^-$ is
+non-empty and every such leaf contains observations, making $S_n$ well
+defined throughout $B^-$; $S_n$ attains its minimum on the compact
+$\overline{B^-}$ by continuity, and by the displayed inequality every such
+minimiser lies in the closed $U/n$-window, which is interior to $B^-$ for $n$
+large. Hence $\argmin_{B^-}S_n$ is non-empty and, with probability at least
+$1-\epsilon$ eventually,
 \[
   \argmin_{B^-}S_n\ \subseteq\ \bigl\{c:\abs{c-c_{0,N}}\le U/n\bigr\}.
 \]
-Note this uses only Lemma~\ref{lem:fixed-domain}(a)--(b) and
-Lemma~\ref{lem:prism-profile}(i)--(iv), and in particular nothing about
-$I_n(N)$ and no appeal to Theorem~\ref{thm:stagea-topology} --- so no
-circularity arises with Lemma~\ref{lem:ancestor-localisation}, whose own
-hypothesis is the oracle tightness supplied here.
+This uses only Lemma~\ref{lem:fixed-domain}(a)--(b),
+Lemma~\ref{lem:prism-profile}(i)--(iv), and Assumption~\ref{ass:moments}, and
+in particular nothing about $I_n(N)$ and no appeal to
+Theorem~\ref{thm:stagea-topology} --- so no circularity arises with
+Lemma~\ref{lem:ancestor-localisation}, which invokes the same
+escape-exclusion mechanism independently, for its own oracle criterion
+$S^{\mathrm{or}}_{n,\ell}$, rather than being cited by this step.
 
 \emph{Step 4: nesting.} Fix $\epsilon>0$ and let $U$ be as in Step 3. Let $n$
 be large enough that
