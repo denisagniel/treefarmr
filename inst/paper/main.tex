@@ -168,10 +168,10 @@ re-expanding to prose; do not re-verify.
   unique -- the algorithm and its guarantees are about a fixed such tree.
   Under Assumption~\ref{ass:continuum-sparsity} alone this uniqueness is
   assumed, not derived; Theorem~\ref{thm:true-partition} of
-  \S\ref{sec:setup-uniqueness} derives it from (S), (Dens), (Node), and
-  (Reduced) once one added geometric condition on the support is imposed
-  and a minimal realisation satisfying the leaf-level hypotheses exists
-  (Remark~\ref{rem:true-tree-open}).)
+  \S\ref{sec:setup-uniqueness} derives it from (S), (Reduced), (Node), the
+  mutual absolute continuity of $\nu$ and Lebesgue measure on $\cX$, and
+  one added geometric condition on the support, for a minimal realisation
+  satisfying the leaf-level hypotheses (Remark~\ref{rem:true-tree-open}).)
 \item \textbf{Related work, sharpened.}
   \begin{itemize}
   \item \citet{seootsu2018}/\citet{song2016}: cube-root rate because their
@@ -846,7 +846,8 @@ from clauses (S), (J), (Dens), (Sep), (Node), (Local-Jump), (Reduced), and
 hypothesis rather than as a consequence of the others. Under one added
 support condition it \emph{is} derived:
 Theorem~\ref{thm:true-partition} of \S\ref{sec:setup-uniqueness} shows that
-(S), (Dens), (Node), and (Reduced) --- together with compactness,
+(S), (Reduced), (Node), and mutual absolute continuity of \(\nu\) and
+Lebesgue measure on \(\cX\) --- together with compactness,
 full-dimensionality, and convexity of $\cX$ (Assumption~\ref{ass:support-geometry}) --- already force
 this coincidence, for a witness satisfying the leaf-level hypotheses, without
 appeal to (J), (Sep), or (Local-Jump). \S\ref{sec:setup-uniqueness} also
@@ -1365,10 +1366,13 @@ integers bounded above by \(\bar L\). Call \(\tau\in\cS^{\mathrm{cont}}\)
 Both hypotheses of the theorem below are conditions on the single tree
 \(\tau^{\dagger}\), quantified existentially over \(\cS^{\mathrm{cont}}\),
 which Assumption~\ref{ass:continuum-sparsity}(S) defines without reference
-to Definition~\ref{def:true-tree}. The parenthetical citations to (Reduced)
-and (Node) identify the standing clauses that discharge these conditions in
-the intended application, read with \(\tau^{\dagger}\) in place of ``the
-true tree''; neither clause is invoked as stated, so nothing here
+to Definition~\ref{def:true-tree}. The parenthetical citations to
+(Reduced), (Node), and (Dens-i) identify the standing clauses that
+discharge these conditions in the intended application, read with
+\(\tau^{\dagger}\) in place of ``the true tree''; for (Reduced) and (Node)
+neither clause is invoked as stated, and for (Dens-i) the root-node collar
+\(R_{\mathrm{root}}^+\) equals \(\cX\) regardless of which tree is
+considered, so this citation needs no such reading either. Nothing here
 presupposes Definition~\ref{def:true-tree}'s uniqueness assertion.
 
 \begin{theorem}[Unique coarsest realising partition]\label{thm:true-partition}
@@ -1408,14 +1412,15 @@ The proof is given in \S\ref{sec:supp-setup}.
 \begin{remark}[Scope of Theorem~\ref{thm:true-partition}]\label{rem:uniqueness-scope}
 The proof uses (Reduced) for \(\tau^{\dagger}\) and the connectedness and
 generic-perturbability of leaf interiors that (Conn) supplies; it uses
-neither minimality of the comparison tree \(\tau\) nor (Dens) at that step,
-which is invoked only afterward, to upgrade a Lebesgue-null bad set to a
+neither minimality of the comparison tree \(\tau\) nor the mutual absolute
+continuity of \(\nu\) and Lebesgue measure at that step, which is invoked
+only afterward, to upgrade a Lebesgue-null bad set to a
 \(\nu\)-null one. Two edge cases are worth recording. If \(L^\star=1\), both
 (Local-Jump) and (J) are vacuous (no adjacent leaf pairs or internal nodes
 exist), every realising partition trivially refines \(\{\cX\}\), and
 uniqueness holds without the transversal-chain argument. The corollary
-below transfers (Reduced) and (Node) to every minimal realisation, but not
-(J): its pooled side value is indexed by an internal node and depends on how
+below transfers the leaf-level clauses of (Reduced) and (Node) to every
+minimal realisation, but not the node-indexed content of (J): its pooled side value is indexed by an internal node and depends on how
 the common leaf partition is assembled into an ordered rooted tree, which
 equality of leaf partitions, closures, values, and adjacency graphs does not
 determine (Proposition~\ref{prop:ordered-nonunique} makes this concrete).
@@ -1449,8 +1454,14 @@ which constrains leaf values. Let \(\cP^\star\) denote the minimal
 partition of Theorem~\ref{thm:true-partition}, represented by its leaf
 closures, and let \(\mathfrak T(\cP^\star)\) be the set of non-degenerate
 rooted axis-aligned trees in \(\cS^{\mathrm{cont}}\) whose leaf partition is
-\(\nu\)-equivalent to \(\cP^\star\); this set contains \(\tau^{\dagger}\)
-and so is nonempty. Fix
+\(\nu\)-equivalent to \(\cP^\star\); \(\tau^{\dagger}\) is itself
+non-degenerate --- hypothesis (2) gives every leaf of \(\tau^{\dagger}\)
+positive \(\nu\)-mass, hence, by the mutual absolute continuity assumed in
+Theorem~\ref{thm:true-partition} and convexity of leaf cells under (Conn),
+positive Lebesgue measure and so nonempty interior; an internal node with
+an empty child would force some leaf beneath it to be empty, contradicting
+this --- so \(\mathfrak T(\cP^\star)\) contains \(\tau^{\dagger}\)
+and is nonempty. Fix
 the lexicographic order \((q,c)<_{\mathrm{lex}}(q',c')\) iff \(q<q'\), or
 \(q=q'\) and \(c<c'\); breadth-first traversal with left child visited
 before right; and the usual deterministic boundary convention for split
@@ -3659,8 +3670,16 @@ for every leaf \(L\in\cP(\tau)\),
 \tag{\(\star\)}
 \operatorname{int}(L)\text{ meets the interior of exactly one leaf of }\tau^{\dagger}.
 \]
-Existence: \(\cF_0\) has empty interior, so \(\operatorname{int}(L)\), being
-nonempty and open, cannot be contained in it, and meets the interior of at
+Existence: if \(L\) is convex with \(\operatorname{int}(L)=\emptyset\),
+then \(L\) has affine dimension less than \(d\) and so lies in a
+hyperplane, hence is Lebesgue-null, hence \(\nu\)-null by the mutual
+absolute continuity assumed in Theorem~\ref{thm:true-partition}; assign
+\(\phi(L)\) (defined in Step~2 below) arbitrarily among the
+\(\tau^{\dagger}\)-leaves in this case, and every downstream conclusion
+involving \(L\) holds trivially since \(\nu(L)=0\). For the remaining
+case, \(\operatorname{int}(L)\ne\emptyset\): \(\cF_0\) has empty interior,
+so \(\operatorname{int}(L)\), being nonempty and open, cannot be contained
+in it, and meets the interior of at
 least one \(\tau^{\dagger}\)-leaf.
 
 For uniqueness, suppose instead \(L\) meets the interiors of two distinct
@@ -3788,8 +3807,10 @@ gives \(v_{A_i}\ne v_{A_{i+1}}\) for every \(i\). But (S) gives \(v_1\) with
 choosing \(z_i\in\operatorname{int}(A_i)\cap\operatorname{int}(L)\)
 gives \(v_{A_i}=\gamma_0(z_i)=v_1\) for every \(i\), so
 \(v_{A_0}=v_1=v_{A_1}\), contradicting \(v_{A_0}\ne v_{A_1}\). This proves
-\((\star)\); the argument used (Reduced) and (Conn), but neither minimality
-of \(\tau\) nor (Dens).
+\((\star)\) for every leaf \(L\) with \(\operatorname{int}(L)\ne\emptyset\)
+(the remaining leaves were handled above); the argument used (Reduced) and
+(Conn), but neither minimality of \(\tau\) nor the mutual absolute
+continuity of \(\nu\) and Lebesgue measure.
 
 \paragraph*{Step 2: general refinement.}
 For \(L\in\cP(\tau)\), let \(\phi(L)\) be the unique \(\tau^{\dagger}\)-leaf
@@ -3843,7 +3864,12 @@ covering part of \(A\setminus L_A\) would have \(\nu(A\cap L')>0\), yet
 contradiction; hence \(\nu(A\setminus L_A)=0\) too, and
 \(\nu(A\triangle L_A)=0\), giving \(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\).
 Conversely \(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\) gives
-\(\card\tau=L^\star\), i.e.\ minimality. Finally,
+\(\card\tau=L^\star\), i.e.\ minimality. Each matched pair \(L_A,A\) is
+nonempty and full-dimensional: \(\nu(A)\ge q_{\min}>0\) by hypothesis (2),
+and \(\nu(L_A)=\nu(A)\) since \(\nu(L_A\triangle A)=0\) just shown, so both
+have positive \(\nu\)-mass, hence positive Lebesgue measure by the mutual
+absolute continuity assumed in Theorem~\ref{thm:true-partition}, hence
+nonempty interior since both are convex under (Conn). Finally,
 Lemma~\ref{lem:cell-closure} applied to every matched pair gives
 \(\overline{L_A}=\overline A\), so all minimal realisations have identical
 leaf closures, boundary faces, boundary set, and threshold locations.
@@ -3851,19 +3877,26 @@ leaf closures, boundary faces, boundary set, and threshold locations.
 
 \begin{proof}[Proof of Corollary~\ref{cor:minimal-transfer}]
 Let \(L\in\cP(\tau)\) be matched to \(A\in\cP(\tau^{\dagger})\) under the
-bijection of Theorem~\ref{thm:true-partition}, conclusions (2)--(3).
-Conclusion (3) gives \(\overline L=\overline A\); since face-adjacency and
-the resulting \((d-1)\)-faces of a partition are determined entirely by the
-leaf closures, this yields an identical face-adjacency graph on
-\(\cP(\tau)\) and \(\cP(\tau^{\dagger})\) under the matching, so the
-leaf-level clause of (Reduced) transfers. Since \(L\) and \(A\) are
-full-dimensional convex sets with \(\overline L=\overline A\),
-\(\operatorname{int}(L)=\operatorname{int}(A)\ne\emptyset\); fixing any
-point there, the pointwise reading of (S)
-(\S\ref{sec:setup-uniqueness}) gives \(v_L=v_A\), so leaf population values
-transfer. Finally, \(\cP(\tau)\equiv_\nu\cP(\tau^{\dagger})\) gives
-\(\nu(L\triangle A)=0\), hence \(\nu(L)=\nu(A)\), so the leaf-level clause
-of (Node) transfers.
+bijection of Theorem~\ref{thm:true-partition}, conclusions (2)--(3). Since
+\(\nu(A)\ge q_{\min}>0\) by hypothesis (2) and \(\nu(L\triangle A)=0\) by
+the bijection's defining property, \(\nu(L)=\nu(A)\ge q_{\min}>0\); by the
+mutual absolute continuity assumed in Theorem~\ref{thm:true-partition},
+both \(L\) and \(A\) then have positive Lebesgue measure, hence, being
+convex under (Conn), nonempty interior, so the leaf-level clause of (Node)
+transfers. Conclusion (3) gives \(\overline L=\overline A\); since \(L,A\)
+are convex with nonempty interior, \(\operatorname{int}(L)=
+\operatorname{int}(\overline L)=\operatorname{int}(\overline A)=
+\operatorname{int}(A)\ne\emptyset\) (for a convex set \(C\) with nonempty
+interior, \(\operatorname{int}(\overline C)=\operatorname{int}(C)\));
+fixing any point there, the pointwise reading of (S)
+(\S\ref{sec:setup-uniqueness}) gives \(v_L=v_A\). Since face-adjacency and
+the resulting \((d-1)\)-faces of a partition are determined entirely by
+the leaf closures, \(\overline L=\overline A\) for every matched pair
+yields an identical face-adjacency graph on \(\cP(\tau)\) and
+\(\cP(\tau^{\dagger})\) under the matching; combined with \(v_L=v_A\) for
+every matched pair, distinctness of adjacent population values under
+\(\tau^{\dagger}\) transfers to \(\tau\), so the leaf-level clause of
+(Reduced) transfers.
 \end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:canonical-welldefined}]
