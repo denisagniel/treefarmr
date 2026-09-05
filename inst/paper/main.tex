@@ -3422,13 +3422,38 @@ depth that grows with \(n\).
 Methods conventions (\texttt{quality\_reports/plans/
 2026-09-01\_two-paper-split.md} \S7): software is a
 reproducibility/supplementary-materials artifact, not a primary main-text
-section -- keep this SHORT, not a systems-style section.
+section -- keep this SHORT, not a systems-style section. \textbf{Updated
+2026-09-05} to match the 2026-09-04 architecture revision
+(\texttt{optimaltrees} commit \texttt{235517a}, package reconciled in
+commit \texttt{1cecfb4}) -- the building-block list and, especially, the
+collapse/search-interval framing below are the current package state, not
+the pre-revision one this outline originally described.
 \begin{itemize}
-\item Name \texttt{optimaltrees} and its four building blocks by function
-  only: \texttt{RefinedTreeModel} (S7 class), \texttt{as\_coordinate\_tree()}
-  (Stage-A tree $\to$ coordinate-space representation),
-  \texttt{collapse\_transitions()} (removes transition-leaf artifacts),
-  \texttt{refine\_tree\_cuts()} (the actual Stage-B scan).
+\item Name \texttt{optimaltrees} and its building blocks by function only,
+  fitting the revised two-stage pipeline
+  (\texttt{fit\_twostage()}$\to$\texttt{refine\_tree()}), not the earlier
+  inflated-budget-then-collapse one: \texttt{RefinedTreeModel} (S7 class);
+  \texttt{as\_coordinate\_tree()} (Stage-A tree $\to$ coordinate-space
+  representation); \texttt{refine\_tree\_cuts()} (the Stage-B scan,
+  narrowing each node's structural identifying bracket to the theory's
+  $I_n(N)=[\hat t^A_N\pm\rho_n]$, $\rho_n=M_n/r_n$, search interval --
+  Definition~\ref{def:stageb-interval} -- whenever \texttt{r\_n}/\texttt{M\_n}
+  are supplied); \texttt{collapse\_transitions()} (transition-leaf merging
+  -- \textbf{legacy, opt-in only}: \texttt{refine\_tree()}'s own
+  \texttt{collapse} argument defaults \texttt{FALSE}, and
+  \texttt{fit\_twostage()} never calls it, because Algorithm~\ref{alg:twostage}
+  needs no collapse step under the revised, one-sided penalty regime --
+  state this as a genuine simplification the theory earned, not a
+  deprecated feature kept for compatibility).
+\item State plainly, in one sentence, what changed and why it matters for
+  a reader of the package's own docstrings: Stage A now fits directly at
+  the analyst's declared budget (no working-budget inflation), and the
+  package's own status contract reflects this -- the retired
+  \texttt{"collapse\_unsupported"} rung outcome is gone; a Stage-B
+  refinement that cannot proceed (e.g.\ an ancestor's off-grid cut
+  emptying a descendant's own grid-defined split) now surfaces as the
+  classed condition \texttt{optimaltrees\_refine\_infeasible}, status
+  \texttt{"stage\_b\_refine\_infeasible"}.
 \item Point to the package's own documentation for engineering detail --
   do not re-describe it here.
 \item Close with a forward pointer to the Supplementary Material
@@ -3482,22 +3507,52 @@ covariate spacing $\sim1/n$, the same order as the target rate --
 display $n\abs{\widehat c-c_0}$ stabilising rather than a log-log MSE
 slope, and pin down the scan's tie-breaking convention explicitly.
 
-\textbf{Spec 2 -- leaf-budget/$p$ attribution (separate design logic).} The
-package-side finding that \texttt{leaf\_budget}=8, $p=20$ with a fixed
-$\lambda$ recovers 7 leaves instead of 8 is currently confounded: a fixed
-$\lambda$ is itself a tuning choice, so it cannot distinguish a genuine
-rate-condition boundary from a tuning artifact. Three-cause,
-pre-registered design: (1) an oracle-objective check -- score the true
-8-leaf tree against the returned 7-leaf fit under the same penalised
-objective (requires the package to expose scoring an arbitrary
-user-specified tree -- an implementation prerequisite to confirm before
-drafting, not a design choice); if the true tree scores worse, it's a
-genuine $\lambda$/statistical tradeoff; if it scores better, that's an
-optimisation/certification gap (a package bug, not a paper finding) --
-(2) a $\lambda$-path check -- does any $\lambda$ recover 8 leaves; (3)
-hold $p=20$ fixed and grow $n$ -- recovery returning as $n$ grows is a
-finite-sample/rate phenomenon, never returning implicates the grid or
-(Node)'s $q_{\min}$ instead.
+\emph{Redirected 2026-09-05, on top of the restructuring above, after
+the theory's own Stage-A/B architecture was rewritten (2026-09-03/04) --
+the DGP's jump sizes above are the recalibrated
+$\kappa_1{=}3.0,\kappa_2{=}2.85,\kappa_3{=}2.7$ (ratio $0.9$), not the
+2026-09-01 draft's $\kappa_3{=}0.15$, which is infeasible under the
+revised, reversed penalty regime by roughly $80\times$ at any $r_n$ this
+spec's own grid reaches (computed directly, not estimated, from
+$W_n:=\lambda_{hi}/\lambda_{lo}(r_n,n)$ using
+Lemma~\ref{lem:snapped-oracle}(b)'s $C_{\mathrm{app}}$ and
+Thm.~\ref{thm:gtm-b}'s coarsening bound $c_{\mathrm{top}}$ -- see
+\texttt{quality\_reports/specs/2026-09-01\_twostage-recovery-and-rate.md}
+\S2.2 for the full table). The $r_n$ grid widens correspondingly, to
+$\{64,128,256,512,1024,2048\}$, spanning the infeasible-to-feasible
+transition that computation identified rather than sitting entirely
+inside either region.}
+
+\textbf{Spec 2 -- fixed-$p$ boundary: growing-$p$ stress test, with the
+original leaf-budget attribution demoted to a prerequisite (redirected
+2026-09-05, same architecture rewrite as Spec 1 above -- previously a
+three-cause \texttt{select\_lambda\_plateau()}-based attribution study
+arbitrating between two competing accounts of how $p$ enters the tuning
+window; both the selector and the competing-accounts race are retired,
+not merely superseded).} The current Stage-A concentration argument
+(Lemma~\ref{lem:uep-second-moment}, VC-type entropy, replacing a naive
+union bound over the $\Theta(r_n^{\bar Lp})$ candidate trees that would
+require $r_n^{d+2}/n\to0$, $d=O(\bar Lp)$, strictly stronger than (R1))
+enters $p$ only through a fixed multiplicative constant, \emph{conditional
+on $p$ itself being fixed as $n\to\infty$} -- stated explicitly in that
+lemma's own proof audit ("the bound degrades if $\bar L$ or $p$ grows with
+$n$") and again in Lemma~\ref{lem:empirical-feasible-mass}'s ("requires
+$\bar L$ and $p$ fixed"). Neither of the original design's two competing
+rate accounts survives: there is no $r_n^{p+1}=o(n)$ condition and no
+logarithmic-in-$p$ condition in the current (R1)--(R5) at all, because $p$
+is simply absent from them. The spec's job changes accordingly, from
+arbitrating a race to characterising a stated scope limitation: (0, a
+prerequisite, not the main study) re-confirm the original
+\texttt{leaf\_budget}=8, $p=20$, $n=2000$ under-recovery finding against
+the \emph{current} \texttt{fit\_twostage()} before attributing it to
+anything, since it was diagnosed under the now-superseded inflated-budget
+architecture and may not survive the rewrite; (1) a growing-$p$ sweep at
+fixed, feasible $n,r_n$ (sharing Spec 1's own recalibrated DGP, extended
+only in $p$, so the theory's own $p$-free gate arithmetic is not
+confounded with a DGP change), reporting whichever of three a priori
+equally legitimate shapes obtains -- flat, gracefully degrading, or a
+sharp cliff at some identifiable $p^\ast$ -- with no privileged outcome
+going in.
 
 \textbf{Timing (extend the existing benchmark script, not a spec).}
 Stage~A vs.\ Stage~B wall-clock vs.\ $n$, extending
@@ -3505,13 +3560,26 @@ Stage~A vs.\ Stage~B wall-clock vs.\ $n$, extending
 $(\texttt{leaf\_budget},p)$ sweep along the $n$ axis, plus a
 Stage-A-only ablation (context for why Stage~B is needed). No greedy-CART
 comparison -- a different estimand, and this venue (JASA T\&M) wants a
-rate illustration, not a competitor leaderboard.
+rate illustration, not a competitor leaderboard. \textbf{Flagged
+2026-09-05}: this benchmark script's own name documents the
+now-superseded inflated-budget architecture; it needs a compatibility
+read (does it still run against the current \texttt{fit\_twostage()}?)
+and likely a rename before this timing table can be drafted -- out of
+scope for either spec above, tracked separately.
 
-\emph{Pilot gate, before drafting either spec}: one favourable cell,
-$\sim$20 replications, to (a) confirm the interval scale $M_n$ can be set so
-that $t_{0,N}\in I_n(N)$ at a usable rate at realistic $(n,r_n)$ and
-(b) confirm the package can construct and score a specified true tree.
-Both answers change the specs' design, per the Oracle consult.]
+\emph{Pilot gate, run before the original 2026-09-01 specs were drafted}:
+one favourable cell, $\sim$20 replications, confirmed (a) the interval
+scale $M_n$ can be set so that $t_{0,N}\in I_n(N)$ at a usable rate at
+realistic $(n,r_n)$, under the pre-revision architecture, and (b) the
+package can construct and score a specified true tree. Both were
+folded into the original specs' design. \textbf{Not re-run after the
+2026-09-05 redirect}: the redirected specs instead ground their own
+feasibility directly in closed-form gate arithmetic ($W_n$, Spec 1 \S2.2)
+computed from the theory's own explicit constants, which the original
+pilot gate's more informal empirical check predates and does not
+supersede -- if that arithmetic's own predictions do not hold up once the
+redirected specs are actually run, that is itself a finding, not a sign
+the gate computation was wrong.]
 
 \section{Discussion}\label{sec:discussion}
 [OUTLINE -- not yet started.
