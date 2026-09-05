@@ -25,32 +25,34 @@ NULL
 #' Resolve `fit_twostage()`'s per-call Stage-A budgets, before any fitting
 #'
 #' @description
-#' Applies `prop:transition-leaves`' inflated working-budget formula
-#' (\eqn{L_A = \min(2\bar L - 1, |A_m|)}, plan file §4.3) together with the
-#' depth-cap product decision (Oracle-consulted, Milestone E addendum): the
-#' cap applies to `d_0` (the analyst's declared belief about the TRUE tree's
-#' depth), never to the already-inflated `d_A` -- so the inflation formula
-#' (\eqn{d_A = \min(2 d_0, \mathrm{depth\_required}_A)}) keeps its exact
-#' theory-derived role regardless of which `d_0` was used, and the default
-#' cap lands on the one quantity that is genuinely an assumption about an
-#' unobservable population tree, not on the derived working budget.
+#' \strong{2026-09-04 architecture revision.} Earlier versions of this
+#' function applied a "transition-leaf-inflated" working-budget formula
+#' (`L_A = min(2*leaf_budget-1, |A_m|)`, `d_A = min(2*d_0, depth_required_A)`)
+#' derived from the paper's then-current Stage-A/B design, in which Stage A
+#' searched an inflated class and a `collapse_transitions()` post-processing
+#' step merged the resulting "transition leaf" artifacts back down. That
+#' design's headline topology-recovery result was found to be FALSE (the
+#' collapse-map's exclusion argument fails generically, not at an edge
+#' case) and was replaced in the theory (`inst/paper/main.tex`, Algorithm 1
+#' / `alg:twostage`): Stage A now fits DIRECTLY under the analyst's TRUE
+#' leaf/depth budget, with NO inflation and no collapse step ("no collapse,
+#' no post-processing" -- main.tex's own Step 3 comment), under a REVERSED
+#' penalty regime (`lambda_n >> 1/r_n`, enforced by the caller via
+#' `lambda_n`/`m_ladder`, not by this function) that accepts `O(1/r_n)`
+#' threshold-localization error at each node instead of trying to exactly
+#' represent a grid-misaligned boundary. This function now simply validates
+#' and passes the declared budgets through, with the same depth-cap
+#' three-valued contract as before -- it is kept as the single validation
+#' point for budgets, not because inflation logic remains.
 #'
 #' `depth_budget`'s three-valued contract mirrors this package's existing
 #' `discretize_bins` string-sentinel convention (numeric, OR
 #' `"adaptive"`/`"log"`/`"cv"`; see [fit_tree()]):
 #' \itemize{
 #'   \item `NULL` (default): the STAGED cap,
-#'     \eqn{d_0 = \lceil \log_2(\bar L) \rceil}. This reproduces
-#'     Milestone D's two measured, validated benchmark points EXACTLY
-#'     (`leaf_budget = 4` -> `d_A = 4`; `leaf_budget = 8` -> `d_A = 6`) and
-#'     invents no new number -- it is not full compliance, and
-#'     `depth_sufficient` will be `FALSE` on this path for every
-#'     `leaf_budget >= 4`. See [.twostage_emit_depth_message()] for the
-#'     disclosure text a caller should show on this path.
-#'   \item `"full"`: full compliance over the inflated class,
-#'     `d_A = depth_required_A` (the worst-case chain-shaped topology).
-#'     Cost grows superlinearly in `p` at this setting -- see Milestone D's
-#'     benchmark table in the plan file.
+#'     \eqn{d_0 = \lceil \log_2(\bar L) \rceil}.
+#'   \item `"full"`: full compliance, `d_A = depth_required_A` (the
+#'     worst-case chain-shaped topology at the declared leaf budget).
 #'   \item A single positive integer: the analyst's own declared belief
 #'     about the true tree's depth, `d_0`.
 #' }
@@ -62,11 +64,14 @@ NULL
 #' @param n Single positive integer/numeric, `nrow(X)`. Used only as a safe,
 #'   cheap upper bound on \eqn{|A_m|} (the number of distinct cells any
 #'   binned design could produce) so `L_A` stays honest at tiny `n`; for
-#'   `p >= 2`, `m >= 16` this bound never actually binds in practice.
-#' @return A list: `leaf_budget` (echoed, coerced to integer), `L_A`,
-#'   `depth_required_A`, `depth_reachable_A`, `d_0` (`NA_integer_` when
-#'   `d_0_source = "full"`, since full compliance has no separate `d_0`),
-#'   `d_0_source` (one of `"default_balanced"`, `"full"`, `"user"`), `d_A`,
+#'   `p >= 2, m >= 16` this bound never actually binds in practice.
+#' @return A list: `leaf_budget` (echoed, coerced to integer), `L_A`
+#'   (now simply `min(leaf_budget, A_m)` -- the declared budget, clamped
+#'   only by the trivial `A_m` safety bound), `depth_required_A`,
+#'   `depth_reachable_A`, `d_0` (`NA_integer_` when `d_0_source = "full"`,
+#'   since full compliance has no separate `d_0`), `d_0_source` (one of
+#'   `"default_balanced"`, `"full"`, `"user"`), `d_A` (now simply the
+#'   resolved `d_0`, clamped by `depth_required_A`/`depth_reachable_A`),
 #'   `depth_restricted_A` (`TRUE` iff `d_A < depth_required_A` -- what
 #'   `fit_twostage()` will pass to `bisect_lambda_to_budget()`'s own
 #'   `depth_restricted` argument).
@@ -89,7 +94,9 @@ NULL
   # tighter number would matter, which is not this function's job.
   A_m <- n
 
-  L_A <- max(min(2L * leaf_budget - 1L, A_m), 1L)
+  # No inflation (2026-09-04 revision): Stage A now fits at the declared
+  # true leaf budget directly.
+  L_A <- max(min(leaf_budget, A_m), 1L)
   depth_required_A <- max(L_A - 1L, 1L)
   depth_reachable_A <- max(as.integer(ceiling(log2(L_A))), 1L)
 
@@ -109,17 +116,16 @@ NULL
     )
   }
 
+  # No inflation (2026-09-04 revision): d_A is simply d_0, clamped by the
+  # structural bounds below -- not 2*d_0.
   d_A <- if (identical(d_0_source, "full")) {
     depth_required_A
   } else {
-    min(2L * d_0, depth_required_A)
+    min(d_0, depth_required_A)
   }
-  # Load-bearing clamps (Oracle consult, not in the original plan draft):
-  # bisect_lambda_to_budget() errors unconditionally if max_depth is below
-  # ceiling(log2(leaf_budget)) (mechanically unreachable, regardless of
-  # depth_restricted), and rejects max_depth = 0L outright. Both clamps
-  # apply here against L_A/depth_reachable_A -- Stage A's leaf_budget IS
-  # L_A, not the analyst's declared leaf_budget.
+  # Load-bearing clamps: bisect_lambda_to_budget() errors unconditionally if
+  # max_depth is below ceiling(log2(leaf_budget)) (mechanically unreachable,
+  # regardless of depth_restricted), and rejects max_depth = 0L outright.
   d_A <- max(as.integer(d_A), depth_reachable_A, 1L)
 
   depth_restricted_A <- d_A < depth_required_A
@@ -155,32 +161,43 @@ NULL
     return(invisible(NULL))
   }
   cli::cli_inform(c(
-    "!" = "fit_twostage: depth_budget = NULL defaults to the STAGED cap d_0 = ceiling(log2({res$leaf_budget})) = {res$d_0}, giving Stage-A search depth d_A = {res$d_A} (working leaf budget L_A = {res$L_A}).",
-    "i" = "This EXCLUDES deeper, chain-shaped topologies: full compliance over the inflated class needs depth {res$depth_required_A}. `depth_sufficient` will be FALSE and `certified_full_class` cannot be TRUE.",
-    "i" = "Pass an explicit integer `depth_budget` if you have a view on the true tree's depth, or `depth_budget = \"full\"` for the full-compliance search (measured cost grows superlinearly in p -- see quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md Milestone D in the global-scholars project)."
+    "!" = "fit_twostage: depth_budget = NULL defaults to the STAGED cap d_0 = ceiling(log2({res$leaf_budget})) = {res$d_0}, giving Stage-A search depth d_A = {res$d_A} (leaf budget L_A = {res$L_A}).",
+    "i" = "This EXCLUDES deeper, chain-shaped topologies: full compliance at this leaf budget needs depth {res$depth_required_A}. `depth_sufficient` will be FALSE and `certified_full_class` cannot be TRUE.",
+    "i" = "Pass an explicit integer `depth_budget` if you have a view on the true tree's depth, or `depth_budget = \"full\"` for the full-compliance search."
   ))
   invisible(NULL)
 }
 
-#' Validate and prune an `m`-ladder against what the sample can support
+#' Validate an `m`-ladder's basic structural requirements
 #'
 #' @description
 #' Pure: enforces the structural requirements `fit_twostage()`'s ladder loop
 #' depends on (at least 2 distinct rungs -- `topology_stable` requires
 #' comparing two completed rungs, so a 1-rung ladder can never be certified;
 #' every rung `>= 2`, since [fit_tree()]'s own `discretize_bins` validation
-#' requires that), then prunes any rung the sample cannot support under
-#' `prop:parsimony-grid`'s rate condition (\eqn{m_n = o(n/r_n)}, the plan
-#' file's theory.tex-scan finding) using the SAME total per-leaf floor
-#' `fit_twostage()` will pass through to Stage A/B (`m_n` -- not the group
-#' floor, which is orthogonal to grid resolution).
+#' requires that).
+#'
+#' \strong{2026-09-04 architecture revision.} This function previously also
+#' pruned any rung the sample could not support under the (now-removed)
+#' `prop:parsimony-grid`'s rate condition, `m_n = o(n/r_n)`. That result was
+#' specific to the old inflated-budget/collapse-map design and does not
+#' carry over to the revised architecture; the new theory's rate condition
+#' on the penalty (`lambda_n >> 1/r_n`, Theorem [Stage-A topology recovery])
+#' does not, by itself, imply any particular grid-resolution ceiling as a
+#' function of `n`. Rather than guess a replacement rate condition the
+#' package's own theory does not supply, this function no longer prunes the
+#' ladder at all -- callers are responsible for choosing a sample-
+#' appropriate `m_ladder`. (This is an explicitly open question, tracked in
+#' the paper's own Discussion outline as "the m-ladder / depth-budget
+#' question raised on the package side.") `dropped_rungs`/`m_max_supported`
+#' are kept in the return value, always vacuous, for call-site stability.
 #'
 #' @param m_ladder Numeric vector of candidate bin counts.
 #' @param n Single positive integer/numeric, `nrow(X)`.
 #' @param m_n Single positive integer/numeric, the total per-leaf floor.
-#' @return A list: `m_ladder` (sorted, deduplicated, pruned to what `n`/`m_n`
-#'   support), `dropped_rungs` (the rungs removed for exceeding
-#'   `m_max_supported`, possibly `integer(0)`), `m_max_supported`.
+#' @return A list: `m_ladder` (sorted, deduplicated), `dropped_rungs`
+#'   (always `integer(0)`, kept for call-site stability), `m_max_supported`
+#'   (always `NA_integer_`, kept for call-site stability).
 #' @keywords internal
 .twostage_validate_ladder <- function(m_ladder, n, m_n) {
   if (!is.numeric(m_ladder) || length(m_ladder) == 0L || anyNA(m_ladder)) {
@@ -207,18 +224,7 @@ NULL
   }
   m_n <- as.integer(m_n)
 
-  m_max_supported <- max(2L, as.integer(floor(n / max(2L * m_n, 2L))))
-  dropped_rungs <- m_ladder[m_ladder > m_max_supported]
-  kept <- m_ladder[m_ladder <= m_max_supported]
-
-  if (length(kept) < 2L) {
-    cli::cli_abort(c(
-      "fit_twostage: after pruning rungs the sample cannot support (m_max_supported = {m_max_supported}, from n = {n} and m_n = {m_n}), fewer than 2 rungs remain.",
-      "i" = "Lower `m_n`, supply a coarser `m_ladder`, or use more data."
-    ))
-  }
-
-  list(m_ladder = kept, dropped_rungs = dropped_rungs, m_max_supported = m_max_supported)
+  list(m_ladder = m_ladder, dropped_rungs = integer(0), m_max_supported = NA_integer_)
 }
 
 # ---------------------------------------------------------------------------
@@ -273,12 +279,22 @@ NULL
 #' @description
 #' Computes everything `fit_twostage()`'s ladder needs about a SINGLE grid
 #' resolution `m`, in isolation from every other rung. Never throws for the
-#' two ORDINARY refusal outcomes this composition can hit (a
-#' `collapse_transitions()` refusal, or a Stage-A deadline exhaustion) --
-#' both are reported via `status`/`reason`, since a caller escalating the
-#' ladder needs to distinguish them from a genuine bug (an unclassed error
-#' still propagates normally, on purpose: see the classed-condition design
-#' in `collapse_transitions()`/`build_coord_node()`, sub-step E0b).
+#' ORDINARY refusal outcome this composition can hit (a Stage-A deadline
+#' exhaustion) -- reported via `status`/`reason`, since a caller escalating
+#' the ladder needs to distinguish it from a genuine bug.
+#'
+#' \strong{2026-09-04 architecture revision.} [refine_tree()] is called with
+#' its (now default-off) `collapse` argument left at `FALSE`: the revised
+#' theory's Algorithm 1, Step 3 needs no collapse step at all ("no collapse,
+#' no post-processing" -- because Stage A now fits directly at the true
+#' budget, there are no transition-leaf artifacts to remove). The
+#' `optimaltrees_collapse_unsupported` refusal this function previously
+#' caught and turned into a `status = "collapse_unsupported"` rung outcome
+#' can therefore no longer occur on this call path, and that handling has
+#' been removed. `r_n = m` (this rung's own grid resolution) and `M_n` are
+#' threaded to [refine_tree()] so Stage B's search interval is sized to the
+#' theory's `rho_n = M_n/r_n` radius (`prop:search-interval`) rather than
+#' being unbounded within the identifying bracket.
 #'
 #' `max_leaves` is deliberately `NULL` on the [refine_tree()] call (never
 #' `L_A`) -- Stage A has no native leaf-count cap (`bisect_lambda_to_budget()`
@@ -287,7 +303,7 @@ NULL
 #' `max_leaves` here would silently let [certify_local_optimality()]'s
 #' `add` perturbation ignore a genuinely objective-improving split that WAS
 #' in Stage A's search space and lost on the penalized objective -- double-
-#' counting what lambda already prices in (Oracle consult, Q5.1).
+#' counting what lambda already prices in.
 #'
 #' The local certificate is evaluated TWICE: once at the fit's own
 #' (possibly bisected) `lambda` -- this is what gates `certified` -- and
@@ -297,15 +313,21 @@ NULL
 #' `certified` at that lambda a WEAKER claim than at `lambda_n` (harder for
 #' a perturbation to look improving against a bigger per-leaf penalty) --
 #' an honest artifact of certifying the objective Stage A actually
-#' minimized, invisible unless both are reported (Oracle consult, Q5.2).
+#' minimized, invisible unless both are reported.
 #'
 #' @param X,y Training data.
-#' @param m Grid resolution (`discretize_bins`) for this rung.
+#' @param m Grid resolution (`discretize_bins`) for this rung; also used as
+#'   the theory's `r_n` for Stage-B's search-interval radius.
 #' @param leaf_budget The ANALYST's declared leaf budget (for `budget_slack`
 #'   only -- Stage A itself is run against `L_A`, not this value).
 #' @param L_A,d_A,depth_restricted_A The already-resolved (once, outside the
 #'   ladder loop -- they do not depend on `m`) working budgets from
 #'   [.twostage_resolve_budgets()].
+#' @param M_n Numeric, or `NULL` (default). `NULL` resolves HERE to
+#'   `sqrt(m)`, mirroring [fit_twostage()]'s own default so direct callers
+#'   of this internal function need not pass it; see that function's `M_n`
+#'   argument for the rationale and the theory's `M_n -> Inf`,
+#'   `M_n/r_n -> 0` requirements.
 #' @param lambda_n,m_n,group,group_value,m_n_group,min_leaf_n Forwarded to
 #'   [bisect_lambda_to_budget()]/[refine_tree()]; see their own docs.
 #' @param fit_time_limit,deadline,tol_iter Forwarded to
@@ -315,24 +337,29 @@ NULL
 #'   (and, through it, to [fit_tree()]).
 #' @return A list (one record for `fit_twostage()`'s `ladder_topologies`
 #'   table): `m`, `status` (`"ok"`, `"stage_a_deadline"`,
-#'   `"collapse_unsupported"`, or `"stage_b_binary_split"` -- only `"ok"`
-#'   populates the remaining fields beyond this and `n_leaves_A`/
-#'   `n_fits`/`stage_a_truncated`, which are set whenever Stage A itself
-#'   completed), `n_leaves_A`, `lambda`, `lambda_case` (one of `"i"`,
-#'   `"ii"`, `"iii"`, `"infeasible"`), `gap`, `feasible_A`, `n_fits`,
-#'   `stage_a_truncated`, `lambda_binding` (`n_leaves_A >= L_A`, the
-#'   Milestone-D-signature diagnostic), `n_collapses`,
-#'   `n_leaves_collapsed`, `budget_slack` (`leaf_budget - n_leaves_collapsed`),
-#'   `feasible_refined` (group-aware, on the REFINED tree -- see
-#'   [.refined_leaf_floor_ok()]), `local_certified`, `local_margin`,
-#'   `local_certified_at_lambda_n`, `local_margin_at_lambda_n`,
-#'   `depth_sufficient` (echoed from Stage A), `topology_key` (from
-#'   [canonical_partition()], for E3's cross-rung comparison), `model` (the
-#'   [RefinedTreeModel], or `NULL` unless `status == "ok"`).
+#'   `"stage_b_binary_split"`, or `"stage_b_refine_infeasible"` -- only
+#'   `"ok"` populates the remaining fields
+#'   beyond this and `n_leaves_A`/`n_fits`/`stage_a_truncated`, which are set
+#'   whenever Stage A itself completed), `n_leaves_A`, `lambda`,
+#'   `lambda_case` (one of `"i"`, `"ii"`, `"iii"`, `"infeasible"`), `gap`,
+#'   `feasible_A`, `n_fits`, `stage_a_truncated`, `lambda_binding`
+#'   (`n_leaves_A >= L_A`, i.e. whether the leaf budget actually bound),
+#'   `n_collapses` (always `0` -- collapse is off by default under the
+#'   revised architecture; kept for schema stability), `n_leaves_collapsed`
+#'   (the refined tree's leaf count -- Stage B never changes tree
+#'   structure, only threshold values, so this equals `n_leaves_A`),
+#'   `budget_slack` (`leaf_budget - n_leaves_collapsed`), `feasible_refined`
+#'   (group-aware, on the REFINED tree -- see [.refined_leaf_floor_ok()]),
+#'   `local_certified`, `local_margin`, `local_certified_at_lambda_n`,
+#'   `local_margin_at_lambda_n`, `depth_sufficient` (echoed from Stage A),
+#'   `topology_key` (from [canonical_partition()], for E3's cross-rung
+#'   comparison), `model` (the [RefinedTreeModel], or `NULL` unless
+#'   `status == "ok"`).
 #' @keywords internal
 .twostage_run_rung <- function(X, y, m, leaf_budget, L_A, d_A, depth_restricted_A,
-                                lambda_n, m_n, group = NULL, group_value = 0,
-                                m_n_group = m_n, min_leaf_n,
+                                lambda_n, m_n, min_leaf_n,
+                                M_n = NULL, group = NULL, group_value = 0,
+                                m_n_group = m_n,
                                 fit_time_limit = NULL, deadline = NULL,
                                 tol_iter = 12L, ...) {
   rec <- list(
@@ -385,26 +412,33 @@ NULL
     "infeasible"
   }
 
-  # -- 2. STAGE B. Collapse/binary-split refusal is the ORDINARY case
-  #    (Milestone A sub-step 2's finding, confirmed routine once depth > 2
-  #    with 2+ informative coordinates) -- caught by CLASS (E0b), not by
-  #    string-matching, so an unrelated real bug still propagates raw. -------
+  # -- 2. STAGE B. A binary-split refusal, or a refine-infeasible refusal
+  #    (an ancestor's off-grid refinement shrank a descendant's row set
+  #    below what its own split needs -- see refine_tree_cuts()'s roxygen;
+  #    reachable now that collapse is off by default), is the ORDINARY case
+  #    -- caught by CLASS (E0b), not by string-matching, so an unrelated
+  #    real bug still propagates raw. `collapse` left at its default
+  #    `FALSE`: see this function's roxygen. `M_n` defaults to `sqrt(m)`
+  #    when not supplied (mirrors fit_twostage()'s own default; resolved
+  #    here too so direct callers of this internal function need not pass
+  #    it). ---------------------------------------------------------------
+  M_n_resolved <- if (is.null(M_n)) sqrt(m) else M_n
   refined <- tryCatch(
     refine_tree(res_A$fit, X, y, min_leaf_n = min_leaf_n, tree_index = 1L,
-                max_depth = d_A, max_leaves = NULL),
-    optimaltrees_collapse_unsupported = function(c) {
-      structure(list(msg = conditionMessage(c)), class = "twostage_collapse_refused")
-    },
+                max_depth = d_A, max_leaves = NULL, r_n = m, M_n = M_n_resolved),
     optimaltrees_stage_b_binary_split = function(c) {
       structure(list(msg = conditionMessage(c)), class = "twostage_binary_split")
+    },
+    optimaltrees_refine_infeasible = function(c) {
+      structure(list(msg = conditionMessage(c)), class = "twostage_refine_infeasible")
     }
   )
-  if (inherits(refined, "twostage_collapse_refused")) {
-    rec$status <- "collapse_unsupported"
-    return(rec)
-  }
   if (inherits(refined, "twostage_binary_split")) {
     rec$status <- "stage_b_binary_split"
+    return(rec)
+  }
+  if (inherits(refined, "twostage_refine_infeasible")) {
+    rec$status <- "stage_b_refine_infeasible"
     return(rec)
   }
 
@@ -443,50 +477,57 @@ NULL
 #' Fit a two-stage tree: discrete grid search, then off-grid refinement
 #'
 #' @description
-#' Orchestrates the full two-stage estimator (Milestone E; see
-#' `quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md`
-#' §4 in the `global-scholars` project for the full theory/design and its
-#' provenance -- an Oracle-consulted architecture, verified empirically
-#' before being accepted): an escalating `m`-ladder of grid resolutions,
-#' each rung running Stage A ([bisect_lambda_to_budget()] at the
-#' transition-leaf-inflated working budget), Stage B
-#' ([refine_tree()], off-grid threshold refinement), and the
-#' local-optimality certificate ([certify_local_optimality()]); stopping at
-#' the first rung whose collapsed topology agrees with the previous
-#' completed rung's ([compare_topology()]).
+#' Orchestrates the full two-stage estimator: an escalating `m`-ladder of
+#' grid resolutions, each rung running Stage A ([bisect_lambda_to_budget()]
+#' at the analyst's DECLARED leaf/depth budget -- no inflation, per the
+#' 2026-09-04 architecture revision below), Stage B ([refine_tree()],
+#' off-grid threshold refinement within a `rho_n = M_n/r_n`-radius search
+#' interval), and the local-optimality certificate
+#' ([certify_local_optimality()]); stopping at the first rung whose
+#' topology agrees with the previous completed rung's ([compare_topology()]).
+#'
+#' \strong{2026-09-04 architecture revision.} Earlier versions of this
+#' function ran Stage A at an inflated working budget and required a
+#' `collapse_transitions()` post-processing step to merge the resulting
+#' "transition leaf" artifacts, escalating to the next `m` rung whenever
+#' that step refused. The theory's headline topology-recovery result for
+#' that design was found to be FALSE and was replaced
+#' (`inst/paper/main.tex`, Algorithm 1): Stage A now fits directly at the
+#' declared budget under a REVERSED penalty regime (`lambda_n >> 1/r_n`;
+#' the analyst controls this via `lambda_n` and `m_ladder`, this function
+#' does not enforce it), and Step 3 needs no collapse step at all ("no
+#' collapse, no post-processing" -- main.tex's own comment). Accordingly:
+#' `collapse_transitions()` is no longer called by this pipeline (it
+#' remains available, off by default, directly on [refine_tree()] for
+#' other callers); the `"collapse_unsupported"` rung status and its
+#' associated ladder escalation have been removed; and Stage B's search
+#' interval is now sized to the theory's `rho_n = M_n/r_n` radius (see the
+#' `M_n` argument) rather than left unbounded within the identifying
+#' bracket.
 #'
 #' \strong{Scope, disclosed}: regression (`loss_function = "squared_error"`)
-#' only, matching Milestones A/B. \strong{`certified` is LOCAL}: it
-#' certifies exactness over the DECLARED problem
-#' `(leaf_budget, depth_budget, m_used)`, per the returned fit's own local
-#' certificate -- it does NOT assert `ass:global` compliance over the full
-#' continuum class (`theory.tex`'s `prop:greedy` is a proven counterexample
-#' showing a distant topology can beat a locally-unimprovable one with zero
-#' one-split signal). `certified_full_class` additionally requires
+#' only. \strong{`certified` is LOCAL}: it certifies exactness over the
+#' DECLARED problem `(leaf_budget, depth_budget, m_used)`, per the returned
+#' fit's own local certificate -- it does NOT assert global compliance over
+#' the full continuum class. `certified_full_class` additionally requires
 #' `depth_sufficient` -- see the `depth_budget` argument below for why this
 #' is `FALSE` on every default call, by design, not a fit failure.
 #'
-#' \strong{Cost guard, three layers} (Oracle consult; see
-#' [bisect_lambda_to_budget()]'s `fit_time_limit`/`deadline` for layers 1-2):
-#' a per-fit `fit_time_limit` inside the C++ solver; a `deadline` threaded
-#' into each rung's Stage-A search (so bisection cannot silently overrun the
-#' remaining budget); and `time_budget`, a SHRINKING budget across the whole
-#' ladder, checked before every rung starts. A rung that hits ITS OWN
-#' deadline, or whose Stage-A search truncated ANY internal fit (see
-#' `any_truncated` in [bisect_lambda_to_budget()]'s return value), STOPS the
-#' ladder immediately rather than escalating to a finer `m` -- Stage-A cost
-#' is monotone increasing in `m` (more discretized features per continuous
+#' \strong{Cost guard, three layers} (see [bisect_lambda_to_budget()]'s
+#' `fit_time_limit`/`deadline` for layers 1-2): a per-fit `fit_time_limit`
+#' inside the C++ solver; a `deadline` threaded into each rung's Stage-A
+#' search (so bisection cannot silently overrun the remaining budget); and
+#' `time_budget`, a SHRINKING budget across the whole ladder, checked
+#' before every rung starts. A rung that hits ITS OWN deadline, or whose
+#' Stage-A search truncated ANY internal fit (see `any_truncated` in
+#' [bisect_lambda_to_budget()]'s return value), STOPS the ladder
+#' immediately rather than escalating to a finer `m` -- Stage-A cost is
+#' monotone increasing in `m` (more discretized features per continuous
 #' coordinate), so a rung that could not finish guarantees every later rung
 #' cannot either; retrying would be a guaranteed-waste, exactly the
 #' "silently commit to hours" failure mode this guard exists to prevent.
 #'
-#' \strong{`collapse_transitions()` refusal is the ORDINARY case}, confirmed
-#' routine once search depth exceeds 2 with 2+ informative coordinates
-#' (Milestone A sub-step 2's finding) -- escalates to the next `m` rung,
-#' carrying the last SUCCESSFULLY COMPLETED rung's model forward across the
-#' skip (comparing `m = 16` to `m = 64` after `m = 32` refused is a
-#' STRONGER stability claim than comparing adjacent rungs, not an invalid
-#' one). A Stage-B binary-passthrough-split refusal
+#' A Stage-B binary-passthrough-split refusal
 #' (`"optimaltrees_stage_b_binary_split"`) escalates only ONCE, then stops
 #' -- if the solver keeps splitting on a binary column, a finer grid will
 #' not change that, and repeated escalation would be a guaranteed waste.
@@ -498,25 +539,39 @@ NULL
 #'   any Stage-A time is spent, though the AUTHORITATIVE check happens
 #'   per-rung against each fit's own discretization metadata).
 #' @param leaf_budget Integer, the analyst's declared leaf budget
-#'   (\eqn{\bar L}).
+#'   (\eqn{\bar L}). Stage A is fit directly at this budget -- no inflation
+#'   (see [.twostage_resolve_budgets()]).
 #' @param depth_budget `NULL` (default), `"full"`, or a single positive
 #'   integer -- see [.twostage_resolve_budgets()] for the exact formula.
 #'   `NULL` resolves to the STAGED cap (\eqn{d_0 = \lceil\log_2(\bar
-#'   L)\rceil}), reproducing Milestone D's two measured, validated points
-#'   exactly; on this path `depth_sufficient` is `FALSE` and
+#'   L)\rceil}); on this path `depth_sufficient` is `FALSE` and
 #'   `certified_full_class` can never be `TRUE`, by design -- pass an
 #'   explicit `depth_budget` (your own belief about the true tree's depth)
-#'   or `depth_budget = "full"` (full compliance over the inflated class;
-#'   cost grows superlinearly in `p`, per Milestone D's benchmark) to
-#'   change this.
+#'   or `depth_budget = "full"` (full compliance at the declared leaf
+#'   budget) to change this.
 #' @param lambda_n Numeric, the analyst's declared regularization -- the
 #'   estimand `certified` is stated relative to. Tried first at every rung;
-#'   see [bisect_lambda_to_budget()].
-#' @param m_ladder Numeric vector of grid resolutions (`discretize_bins`) to
-#'   escalate through, ascending. Pruned against
-#'   `prop:parsimony-grid`'s rate condition by
-#'   [.twostage_validate_ladder()]; must retain at least 2 rungs
-#'   (`topology_stable` needs two completed rungs to compare).
+#'   see [bisect_lambda_to_budget()]. The revised theory's Stage-A
+#'   topology-recovery guarantee requires `lambda_n >> 1/r_n` (the REVERSE
+#'   of a grid-exact analysis' sandwich condition) -- this function does
+#'   not enforce or select this itself; choosing `lambda_n` relative to
+#'   `m_ladder` is the caller's responsibility (an explicitly open
+#'   question on the package side, tracked in the paper's own Discussion
+#'   outline; see this file's own `NEWS.md` entry for provenance).
+#' @param m_ladder Numeric vector of grid resolutions (`discretize_bins`,
+#'   the theory's `r_n`) to escalate through, ascending. Must retain at
+#'   least 2 rungs (`topology_stable` needs two completed rungs to
+#'   compare); see [.twostage_validate_ladder()] (no longer prunes rungs
+#'   against a rate condition -- see that function's docs for why).
+#' @param M_n Numeric, or `NULL` (default). Stage-B's interval-scale tuning
+#'   constant: the search interval at each node is `[t_hat +/- M_n/r_n]`
+#'   intersected with the node's identifying bracket (`r_n` is that rung's
+#'   own `m`; Definition [Stage-B search interval], `inst/paper/main.tex`).
+#'   The theory requires `M_n -> Inf` with `M_n/r_n -> 0` but does not pin
+#'   down a specific sequence. `NULL` defaults to `sqrt(m)` per rung, which
+#'   satisfies both limits -- an explicit package default, not a
+#'   theory-derived one; pass a numeric value (or a function of `r_n`, via
+#'   your own wrapper) to override.
 #' @param m_n,group,group_value,m_n_group Leaf-size floor(s); see
 #'   [check_leaf_feasibility()]/[bisect_lambda_to_budget()]. `group` is the
 #'   propensity-tree control-count use case (`doubletree::estimate_att()`'s
@@ -534,9 +589,6 @@ NULL
 #'   description above.
 #' @param fit_time_limit Numeric, seconds, default `600`. Per-fit cap inside
 #'   the C++ solver, forwarded to every [bisect_lambda_to_budget()] call.
-#'   Sized from Milestone D's own measurements (worst observed single fit:
-#'   307s at `leaf_budget = 8`, `p = 20`) -- large enough to never truncate
-#'   known-good work, small enough to bound a genuine blow-up.
 #' @param tol_iter Integer, default `12L`. Forwarded to
 #'   [bisect_lambda_to_budget()]'s own bisection-iteration cap (its own
 #'   default is `40`; `12` keeps a single rung's worst case near 25 fits
@@ -553,7 +605,7 @@ NULL
 #' @return A list, class `"optimaltrees_twostage_fit"`:
 #'   \item{model}{The winning [RefinedTreeModel], or `NULL` if no rung
 #'     completed (`predict()` on this object must abort, not silently
-#'     return garbage -- see the S3 methods, sub-step E4).}
+#'     return garbage -- see the S3 methods).}
 #'   \item{m_used}{The grid resolution `model` came from.}
 #'   \item{certified}{`TRUE` iff EVERY one of: a rung completed;
 #'     `lambda_case %in% c("i","ii")`; `n_leaves_collapsed <= leaf_budget`;
@@ -572,15 +624,17 @@ NULL
 #'     `topology_stable`), else `NA`.}
 #'   \item{lambda_case,gap,n_leaves_collapsed,max_depth,depth_required,depth_sufficient,feasible,stage_b_local_margin}{
 #'     The "guaranteed" field group from the winning rung (or `NA`/`FALSE`
-#'     defaults if none completed); see [.twostage_run_rung()].}
+#'     defaults if none completed); see [.twostage_run_rung()].
+#'     `n_leaves_collapsed` is now simply the refined tree's leaf count
+#'     (collapse is off by default; kept for schema stability).}
 #'   \item{budget_slack,lambda_binding}{`leaf_budget - n_leaves_collapsed`
-#'     and whether Stage A's leaf count actually bound `L_A` -- the
-#'     Milestone-D-signature diagnostics for "the budget did not
-#'     meaningfully constrain the fit."}
+#'     and whether Stage A's leaf count actually bound `leaf_budget` --
+#'     diagnostics for "the budget did not meaningfully constrain the fit."}
 #'   \item{topology_stable,n_rungs_completed}{Whether topology agreed
 #'     across any two adjacent completed rungs, and how many rungs reached
 #'     `status == "ok"` at all.}
-#'   \item{n_transition_leaves_collapsed}{From the winning rung.}
+#'   \item{n_transition_leaves_collapsed}{From the winning rung; always `0`
+#'     under the default pipeline (kept for schema stability).}
 #'   \item{stop_reason}{Why the ladder stopped: `"topology_stable"`
 #'     (success), `"stage_a_truncated"`, `"stage_a_deadline"`,
 #'     `"stage_b_binary_split"`, `"budget_exhausted"`, or
@@ -589,19 +643,16 @@ NULL
 #'     (including refused/timed-out ones), for the disclosure print method
 #'     and manual inspection.}
 #'   \item{leaf_budget,L_A,d_A,depth_restricted_A,d_0,d_0_source,dropped_rungs}{
-#'     Echoed budget-resolution/ladder-validation inputs, for full disclosure.}
+#'     Echoed budget-resolution/ladder-validation inputs, for full
+#'     disclosure. `L_A`/`d_A` are now simply the declared/resolved budgets
+#'     (no inflation); `dropped_rungs` is always empty.}
 #'   \item{elapsed_secs}{Total wall-clock time across the whole call.}
-#'
-#'   \strong{Explicitly NOT included} (present in the original plan
-#'   sketch's field list, never given a concrete formula in the
-#'   Oracle-consulted design that implements this function):
-#'   `snapping_cost_bound`, `est_topology_gap`. Omitted rather than
-#'   fabricated -- see the plan file's Milestone E addendum.
 #' @export
 fit_twostage <- function(X, y, leaf_budget,
                           depth_budget = NULL,
                           lambda_n = 0.1,
                           m_ladder = c(16, 32, 64, 128),
+                          M_n = NULL,
                           m_n = 1L, group = NULL, group_value = 0, m_n_group = m_n,
                           min_leaf_n = NULL,
                           loss_function = "squared_error",
@@ -643,6 +694,37 @@ fit_twostage <- function(X, y, leaf_budget,
   if (!is.null(worker_limit) && !identical(as.integer(worker_limit), 1L)) {
     cli::cli_abort("fit_twostage: {.arg worker_limit} must be 1 -- no parallel execution.")
   }
+  if (!is.null(M_n) && (!is.numeric(M_n) || length(M_n) != 1L || is.na(M_n) || M_n <= 0)) {
+    cli::cli_abort(c(
+      "fit_twostage: {.arg M_n} must be {.code NULL} or a single positive number, got {.val {M_n}}.",
+      "i" = "Validated here, before any Stage-A time is spent -- refine_tree_cuts() \\
+             would otherwise only catch it after the first rung's full fit."
+    ))
+  }
+  # rho_n = M_n/r_n (Stage-B's search-interval radius) is computed in RAW
+  # covariate units, and M_n's default (sqrt(r_n)) presumes those units are
+  # roughly unit-scale -- the standard nonparametric normalization the
+  # theory's own exposition assumes, nowhere enforced by this package. Off
+  # that scale the radius silently does the wrong thing in either
+  # direction: negligible (every candidate excluded, Stage B becomes a
+  # no-op) on a covariate ranging in the hundreds, or vacuous (no
+  # restriction at all, silently reverting to the legacy structural-only
+  # bracket) on one ranging in the thousandths. Warn rather than guess a
+  # rescaling -- rescaling is the caller's job and depends on choices
+  # (which quantile, which reference range) this function has no basis for.
+  rng <- vapply(X, function(col) diff(range(col, na.rm = TRUE)), numeric(1))
+  off_scale <- names(rng)[rng > 10 | rng < 0.1]
+  if (isTRUE(verbose) && length(off_scale) > 0L) {
+    cli::cli_warn(c(
+      "fit_twostage: Stage-B's search radius rho_n = M_n/r_n is computed in RAW covariate units.",
+      "i" = "Coordinate(s) {.val {off_scale}} have range far from the unit scale the \\
+             default {.arg M_n} = sqrt(r_n) assumes; the radius will be either \\
+             negligible or effectively unrestricted for them, not the theory's \\
+             intended few-mesh-widths window.",
+      "i" = "Rescale {.arg X} to roughly [0, 1] per coordinate, or pass an explicit \\
+             {.arg M_n} sized to your own covariate scale."
+    ))
+  }
 
   n <- nrow(X)
   budgets <- .twostage_resolve_budgets(leaf_budget, depth_budget, n)
@@ -651,11 +733,6 @@ fit_twostage <- function(X, y, leaf_budget,
   min_leaf_n <- if (is.null(min_leaf_n)) as.integer(m_n) else as.integer(min_leaf_n)
 
   ladder_spec <- .twostage_validate_ladder(m_ladder, n, m_n)
-  if (length(ladder_spec$dropped_rungs) > 0L && isTRUE(verbose)) {
-    cli::cli_inform(
-      "fit_twostage: dropped m_ladder rung(s) {paste(ladder_spec$dropped_rungs, collapse = ', ')} -- the sample cannot support them under m_n = o(n/r_n) (m_max_supported = {ladder_spec$m_max_supported})."
-    )
-  }
 
   # Configuration is PROCESS-GLOBAL (see bisect_lambda_to_budget()'s
   # fit_time_limit roxygen) -- reset it unconditionally on exit, or this
@@ -688,6 +765,7 @@ fit_twostage <- function(X, y, leaf_budget,
         X, y, m = m, leaf_budget = budgets$leaf_budget,
         L_A = budgets$L_A, d_A = budgets$d_A,
         depth_restricted_A = budgets$depth_restricted_A,
+        M_n = M_n,
         lambda_n = lambda_n, m_n = m_n, group = group, group_value = group_value,
         m_n_group = m_n_group, min_leaf_n = min_leaf_n,
         fit_time_limit = fit_time_limit, deadline = rung_deadline,
@@ -713,8 +791,16 @@ fit_twostage <- function(X, y, leaf_budget,
       stop_reason <- "stage_a_deadline"
       break
     }
-    if (identical(rec$status, "collapse_unsupported")) {
-      binary_split_streak <- 0L
+    if (identical(rec$status, "stage_b_refine_infeasible")) {
+      # Geometry-dependent (an ancestor's off-grid refinement shrank a
+      # descendant's row set below its own split's floor) -- may not recur
+      # at a different grid resolution, so escalate to the next rung rather
+      # than stopping outright, the same treatment the OLD architecture
+      # gave collapse_transitions()'s refusal. Deliberately does NOT reset
+      # binary_split_streak: the binary-split cap's own rationale ("a finer
+      # grid will not change that") is grid-independent, so an interleaved
+      # refine-infeasible rung must not buy the ladder another
+      # binary-split attempt.
       next
     }
     if (identical(rec$status, "stage_b_binary_split")) {
@@ -894,11 +980,11 @@ print.optimaltrees_twostage_fit <- function(x, ...) {
         x$leaf_budget, x$d_0
       ))
       cat(sprintf(
-        "  so Stage A searched to depth %d. Full compliance over the transition-leaf-\n",
+        "  so Stage A searched to depth %d. Full compliance at this leaf budget\n",
         x$max_depth
       ))
       cat(sprintf(
-        "  inflated class needs depth %d (a %d-leaf chain), which is not the\n",
+        "  needs depth %d (a %d-leaf chain), which is not the\n",
         x$depth_required, x$L_A
       ))
       cat("  computational regime this default is validated for. Deep chain-shaped\n")

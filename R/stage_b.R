@@ -477,9 +477,33 @@ coord_tree_set_node_at <- function(tree, path, value) {
   tree
 }
 
-#' Detect and collapse transition-leaf pairs (`prop:transition-leaves`)
+#' Detect and collapse transition-leaf pairs (LEGACY; off by default)
 #'
 #' @description
+#' \strong{2026-09-04 architecture revision: this function is LEGACY, no
+#' longer called by the default pipeline.} It implemented `theory.tex`'s
+#' then-current `prop:transition-leaves`, part of a Stage-A/B design in
+#' which Stage A searched an inflated working leaf/depth budget (to
+#' accommodate a true boundary landing inside one grid atom), producing
+#' spurious "transition leaf" artifacts this function detected and merged
+#' back down before off-grid refinement. That design's headline
+#' topology-recovery result was found to be FALSE (the exclusion argument
+#' underlying the collapse map's validity fails generically, not at an
+#' edge case) and was replaced (`inst/paper/main.tex`, Algorithm 1): Stage
+#' A now fits directly at the analyst's declared (uninflated) budget under
+#' a reversed penalty regime, and needs no collapse step at all -- "no
+#' collapse, no post-processing" is that section's own comment on its
+#' Step 3. [refine_tree()] therefore no longer calls this function by
+#' default (`collapse = FALSE`); [fit_twostage()] does not expose a way to
+#' turn it back on. Kept, rather than deleted, as an opt-in escape hatch
+#' for callers who still want the old collapse-then-refine behavior on a
+#' fixed grid (pass `collapse = TRUE` to [refine_tree()]) -- not because
+#' any current theory recommends it.
+#'
+#' The description below (mechanism, detection rule, refusal conditions)
+#' is retained UNCHANGED from before the revision, since the mechanism
+#' itself was not shown incorrect -- only its role in the default pipeline.
+#'
 #' A true boundary that lands interior to one grid atom forces a
 #' grid-optimal Stage-A tree to split the SAME coordinate at both grid
 #' cutpoints bracketing that atom, sandwiching a thin spurious leaf (the
@@ -878,11 +902,23 @@ scan_cutoff <- function(xj, y, lid_left, lid_right, K, candidates,
 #' ancestor first means a later same-coordinate descendant's row set
 #' ([coord_tree_rows_at()]) is already filtered by the ancestor's REFINED
 #' cut, while a not-yet-refined descendant node still contributes its GRID
-#' cut as the bounding value seen by its parent. This asymmetry is
-#' monotone-safe and requires no second pass, because after
-#' [collapse_transitions()] any two same-coordinate splits that remain
-#' distinct nodes are separated by the (Sep) margin, not by one grid atom --
-#' do not "fix" this into an alternating minimization.
+#' cut as the bounding value seen by its parent.
+#'
+#' \strong{2026-09-04: what makes this asymmetry safe changed.} The
+#' pre-revision argument was that after [collapse_transitions()], any two
+#' same-coordinate splits surviving as distinct nodes are separated by the
+#' (Sep) margin rather than one grid atom, so a single root-first pass could
+#' not strand a descendant. With `collapse = FALSE` the default (see
+#' [refine_tree()]), that premise NO LONGER HOLDS -- a same-coordinate pair
+#' one grid atom apart now routinely survives as two nodes, and an
+#' ancestor's off-grid move CAN empty a side of a descendant's own split.
+#' This is handled explicitly, not assumed away: the classed
+#' `optimaltrees_refine_infeasible` refusal below detects exactly that case.
+#' The single pass remains correct in the sense that it never returns a
+#' tree with an empty leaf; it is no longer claimed to always SUCCEED. Do
+#' not "fix" this into an alternating minimization without re-deriving the
+#' theory first -- the refusal, not a second pass, is the sanctioned
+#' outcome for now.
 #'
 #' \strong{Robustness fixes relative to the ported original} (Oracle
 #' consult, plan file's Milestone A addendum, §Q4): \code{min_leaf_n} as an
@@ -894,8 +930,23 @@ scan_cutoff <- function(xj, y, lid_left, lid_right, K, candidates,
 #' catastrophic-cancellation risk for \code{y} far from zero); a full
 #' \code{refined} log with \code{sse_before}/\code{sse_after} per node.
 #'
-#' @param tree Coordinate-space tree from [as_coordinate_tree()], already
-#'   passed through [collapse_transitions()].
+#' \strong{2026-09-04 architecture revision: the search interval.} Each
+#' node's bracket from [node_bracket()] is a purely STRUCTURAL identifying
+#' bracket (nearest same-coordinate descendant cuts) -- it does not, by
+#' itself, implement the theory's Definition [Stage-B search interval],
+#' \code{inst/paper/main.tex}: \eqn{I_n(N) = [\hat t^A_N \pm \rho_n]},
+#' \eqn{\rho_n = M_n/r_n}, centered on the node's own Stage-A grid
+#' threshold. Passing \code{r_n}/\code{M_n} (both non-`NULL`) intersects
+#' that radius into the structural bracket before candidates are drawn,
+#' so refinement additionally respects Proposition [search-interval
+#' validity]'s finite-sample guarantee rather than only the identifying
+#' bracket's exactness-for-a-fixed-grid guarantee. Leaving either `NULL`
+#' (the default) reproduces the pre-revision, structural-bracket-only
+#' behavior.
+#'
+#' @param tree Coordinate-space tree from [as_coordinate_tree()], optionally
+#'   already passed through [collapse_transitions()] (no longer required by
+#'   the default pipeline -- see [refine_tree()]).
 #' @param X,y Training data. \code{y} is centered internally (once, by its
 #'   overall mean) before any SSE is computed; leaf \code{prediction}s in
 #'   the RETURNED tree are on the ORIGINAL scale (the centering is undone
@@ -903,12 +954,16 @@ scan_cutoff <- function(xj, y, lid_left, lid_right, K, candidates,
 #' @param min_leaf_n Integer floor on rows per side of every candidate cut
 #'   (default \code{1L} -- no floor beyond "non-empty"). Set higher to
 #'   guard against unstable leaf means.
+#' @param r_n,M_n Numeric, or \code{NULL} (both default). The theory's grid
+#'   resolution and interval-scale tuning constant; see this function's
+#'   description above. Both must be supplied together to narrow the
+#'   bracket -- either `NULL` leaves it structural-only.
 #' @return List(tree, refined) where \code{refined} is a data.frame with one
 #'   row per split: \code{path, coord, grid_cut_lo, grid_cut_hi, incumbent_cut,
 #'   refined_cut, bracket_lo, bracket_hi, n_node, n_candidates, sse_before,
 #'   sse_after, collapsed, refined, reason}.
 #' @keywords internal
-refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
+refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L, r_n = NULL, M_n = NULL) {
   if (!is.data.frame(X) && !is.matrix(X)) {
     cli::cli_abort("refine_tree_cuts: {.arg X} must be a data.frame or matrix.")
   }
@@ -921,6 +976,26 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
   min_leaf_n <- as.integer(min_leaf_n)
   if (is.na(min_leaf_n) || min_leaf_n < 1L) {
     cli::cli_abort("refine_tree_cuts: {.arg min_leaf_n} must be a positive integer.")
+  }
+  n_rho_given <- sum(!is.null(r_n), !is.null(M_n))
+  if (n_rho_given == 1L) {
+    cli::cli_abort(c(
+      "refine_tree_cuts: {.arg r_n} and {.arg M_n} must be supplied TOGETHER or both left {.code NULL}.",
+      "x" = "Got {.arg {if (is.null(r_n)) 'M_n' else 'r_n'}} only.",
+      "i" = "One alone cannot define the theory's search radius rho_n = M_n/r_n; \\
+             accepting it would silently fall back to the structural-bracket-only \\
+             behavior while looking like the theory-guaranteed path."
+    ))
+  }
+  use_rho <- n_rho_given == 2L
+  if (use_rho) {
+    if (!is.numeric(r_n) || length(r_n) != 1L || is.na(r_n) || r_n <= 0) {
+      cli::cli_abort("refine_tree_cuts: {.arg r_n} must be a single positive number.")
+    }
+    if (!is.numeric(M_n) || length(M_n) != 1L || is.na(M_n) || M_n <= 0) {
+      cli::cli_abort("refine_tree_cuts: {.arg M_n} must be a single positive number.")
+    }
+    rho_n <- M_n / r_n
   }
 
   y <- as.numeric(y)
@@ -935,7 +1010,64 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
   for (p in paths) {
     idx  <- coord_tree_rows_at(tree, X, p)
     node <- coord_tree_node_at(tree, p)
+
+    # Is retaining the incumbent cut SAFE against this node's CURRENT row
+    # set? An ancestor's off-grid refinement (processed earlier, root-first)
+    # can shrink that set enough to empty a side of this node's own
+    # original grid split -- previously unreachable in practice because
+    # collapse_transitions() intercepted the specific chained-split
+    # geometry that produces it before Stage B ever saw it; reachable now
+    # that collapse is off by default (see refine_tree()'s roxygen).
+    # Computed here, once, but ACTED ON only at the three points below
+    # where this loop would actually keep the incumbent unchanged --
+    # refining past a degenerate incumbent via a feasible candidate found
+    # further down is legitimate and must not be pre-emptively refused.
+    # This is a strictly weaker check than the min_leaf_n floor further
+    # down (which the incumbent is NOT otherwise guaranteed to satisfy --
+    # see "refine_tree_cuts distinguishes too_few_rows_at_node from
+    # min_leaf_n_infeasible" in test-stage-b.R, a legitimate, pre-existing
+    # case where an incumbent split can leave a side under min_leaf_n
+    # without being an error): the one invariant this function's own
+    # attach_final_stats() step actually enforces end to end is that no
+    # leaf is literally EMPTY, not that every leaf clears min_leaf_n.
+    xj_all <- X[[node$coord]][idx]
+    n_leq_incumbent <- sum(xj_all <= node$cut)
+    incumbent_safe  <- n_leq_incumbent >= 1L &&
+      (length(idx) - n_leq_incumbent) >= 1L
+
+    abort_refine_infeasible <- function() {
+      cli::cli_abort(c(
+        "refine_tree_cuts: node {node$id} (coord {.val {node$coord}})'s \\
+         incumbent cut leaves one side completely empty against its \\
+         current row set, and no feasible replacement candidate exists.",
+        "i" = "An ancestor's off-grid refinement moved a threshold enough \\
+               to empty a side of this node's own original grid split -- a \\
+               genuine, reachable case once an ancestor and a descendant \\
+               split nearby on different coordinates, not a bug in this \\
+               function.",
+        "i" = "Not handled: repairing this would mean re-deriving a \\
+               structurally different tree (pruning this split, or backing \\
+               off the ancestor's refinement), behavior this single-pass, \\
+               root-first refinement was not derived for. This error is the \\
+               honest alternative to silently returning an empty leaf."
+      ), class = "optimaltrees_refine_infeasible")
+    }
+
     br   <- node_bracket(tree, p)
+    if (use_rho) {
+      # Intersect the theory's rho_n-radius search interval, anchored at
+      # this node's own Stage-A grid threshold, into the structural
+      # identifying bracket (Definition [Stage-B search interval]). A
+      # `collapsed` node's grid_cuts has length 2 (both original grid
+      # cutpoints); anchoring at their midpoint (node$cut, the collapsed
+      # node's starting value) is the closest available analogue -- the
+      # theory's I_n(N) is defined for the uncollapsed case, and collapse
+      # is off by default under the revised architecture (see
+      # refine_tree()'s roxygen).
+      anchor <- if (length(node$grid_cuts) == 1L) node$grid_cuts[[1L]] else node$cut
+      br$lo <- max(br$lo, anchor - rho_n)
+      br$hi <- min(br$hi, anchor + rho_n)
+    }
 
     grid_lo <- if (length(node$grid_cuts) >= 1L) node$grid_cuts[[1L]] else NA_real_
     grid_hi <- if (length(node$grid_cuts) >= 2L) node$grid_cuts[[2L]] else NA_real_
@@ -953,6 +1085,7 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
     }
 
     if (length(idx) < 2L * min_leaf_n) {
+      if (!incumbent_safe) abort_refine_infeasible()
       log_rows[[length(log_rows) + 1L]] <- base_row(
         node$cut, NA_real_, NA_real_, 0L, FALSE, "too_few_rows_at_node"
       )
@@ -961,10 +1094,11 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
 
     Xn <- X[idx, , drop = FALSE]
     yn <- y_centered[idx]
-    xj <- Xn[[node$coord]]
+    xj <- xj_all
 
     cands_raw <- bracket_candidates(xj, node, br)
     if (length(cands_raw) == 0L) {
+      if (!incumbent_safe) abort_refine_infeasible()
       log_rows[[length(log_rows) + 1L]] <- base_row(
         node$cut, NA_real_, NA_real_, 0L, FALSE, "no_candidates_in_bracket"
       )
@@ -982,6 +1116,7 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L) {
     feasible_cand <- cands_raw[n_leq >= min_leaf_n & n_gt >= min_leaf_n]
 
     if (length(feasible_cand) == 0L) {
+      if (!incumbent_safe) abort_refine_infeasible()
       log_rows[[length(log_rows) + 1L]] <- base_row(
         node$cut, NA_real_, NA_real_, 0L, FALSE, "min_leaf_n_infeasible"
       )
@@ -1067,18 +1202,30 @@ coord_tree_training_sse <- function(tree, X, y) {
 #'
 #' @description
 #' The public entry point for Stage B: converts \code{model} to
-#' coordinate-space ([as_coordinate_tree()]), collapses transition-leaf
-#' pairs ([collapse_transitions()]), refines every remaining threshold to
-#' an exact, off-grid data value ([refine_tree_cuts()]), and wraps the
-#' result in a [RefinedTreeModel]. See \code{\link{stage_b}} for the
-#' overall mechanism and \code{quality_reports/plans/2026-09-01_two-stage-
-#' package-defaults-session.md} Milestone A in the \code{global-scholars}
-#' project for the design history.
+#' coordinate-space ([as_coordinate_tree()]), optionally collapses
+#' transition-leaf pairs ([collapse_transitions()] -- OFF by default, see
+#' below), refines every remaining threshold to an exact, off-grid data
+#' value ([refine_tree_cuts()]), and wraps the result in a
+#' [RefinedTreeModel].
 #'
-#' \strong{Scope, 2026-09-01 (Milestone A): regression (\code{squared_error})
-#' only}, enforced by [as_coordinate_tree()] (loudly rejects any other
-#' \code{loss_function}, not silently). Classification support is a
-#' separate, later milestone.
+#' \strong{2026-09-04 architecture revision: \code{collapse} defaults to
+#' \code{FALSE}.} Earlier versions of this function called
+#' [collapse_transitions()] unconditionally. The theory that motivated it
+#' (Stage A searching an inflated working budget, producing "transition
+#' leaf" artifacts that a collapse step must merge back down) was replaced
+#' after its headline result was found to be false: the revised
+#' architecture (\code{inst/paper/main.tex}, Algorithm 1) fits Stage A
+#' directly at the declared budget and needs no collapse step at all ("no
+#' collapse, no post-processing" -- that section's own comment). Pass
+#' \code{collapse = TRUE} to opt back into the legacy behavior (kept as an
+#' escape hatch, not part of the default pipeline -- see
+#' [collapse_transitions()]'s own docs for why re-enabling it can reopen a
+#' known class of refusals under depth > 2 with 2+ informative
+#' coordinates).
+#'
+#' \strong{Scope: regression (\code{squared_error}) only}, enforced by
+#' [as_coordinate_tree()] (loudly rejects any other \code{loss_function},
+#' not silently). Classification support is a separate, later milestone.
 #'
 #' @param model A fitted \code{OptimalTreesModel} (S7), from [fit_tree()]
 #'   with \code{loss_function = "squared_error"}.
@@ -1100,13 +1247,46 @@ coord_tree_training_sse <- function(tree, X, y) {
 #'   perturbation cannot distinguish an out-of-class candidate split (which
 #'   should be marked infeasible, not a certificate failure) from an
 #'   in-class one.
+#' @param collapse Logical, default \code{FALSE}. Whether to run
+#'   [collapse_transitions()] before refinement. See this function's
+#'   description above.
+#' @param r_n,M_n Numeric, or \code{NULL} (both default). The theory's grid
+#'   resolution and interval-scale tuning constant for Stage B's search
+#'   interval (Definition [Stage-B search interval],
+#'   \code{inst/paper/main.tex}): each node's candidate cuts are restricted
+#'   to \code{[grid_cut +/- M_n/r_n]}, intersected with its identifying
+#'   bracket. \code{NULL} (either argument) leaves the identifying bracket
+#'   unrestricted -- the legacy behavior, still exact for a fixed grid but
+#'   without the theory's finite-sample interval-validity guarantee
+#'   (Proposition [search-interval validity]). See [refine_tree_cuts()].
+#' @section Classed refusal conditions:
+#' This function raises two ORDINARY-REFUSAL conditions (not bugs) that a
+#' caller orchestrating a search over grid resolutions should catch by
+#' CLASS, not by message text:
+#' \describe{
+#'   \item{`optimaltrees_stage_b_binary_split`}{Stage A split on a
+#'     binary-passthrough column; there is no continuous threshold to
+#'     refine. A different `discretize_bins` will NOT help -- the column
+#'     is binary at every resolution. Do not retry indefinitely.}
+#'   \item{`optimaltrees_refine_infeasible`}{An ancestor's off-grid
+#'     refinement shrank a descendant's row set until the descendant's own
+#'     grid split empties one side. Geometry-dependent, so a DIFFERENT
+#'     `discretize_bins` may well succeed -- retrying at another resolution
+#'     is reasonable. Reachable since the 2026-09-04 revision made
+#'     `collapse = FALSE` the default; see [refine_tree_cuts()].}
+#' }
+#' [fit_twostage()] catches both and reports them as per-rung `status`
+#' values (`"stage_b_binary_split"` / `"stage_b_refine_infeasible"`)
+#' rather than propagating them.
 #' @return A [RefinedTreeModel].
 #' @export
 refine_tree <- function(model, X, y, min_leaf_n = 1L, tree_index = 1L,
-                         max_depth = NULL, max_leaves = NULL) {
+                         max_depth = NULL, max_leaves = NULL,
+                         collapse = FALSE, r_n = NULL, M_n = NULL) {
   ct <- as_coordinate_tree(model, X, y, tree_index = tree_index)
-  collapsed <- collapse_transitions(ct)
-  refined <- refine_tree_cuts(collapsed$tree, X, y, min_leaf_n = min_leaf_n)
+  tree_in <- if (isTRUE(collapse)) collapse_transitions(ct)$tree else ct
+  refined <- refine_tree_cuts(tree_in, X, y, min_leaf_n = min_leaf_n,
+                               r_n = r_n, M_n = M_n)
 
   RefinedTreeModel(
     tree = refined$tree,

@@ -516,6 +516,109 @@ test_that("refine_tree_cuts distinguishes too_few_rows_at_node from min_leaf_n_i
   expect_equal(ref3$tree$cut, fixture$cut)
 })
 
+# ---------------------------------------------------------------------------
+# optimaltrees_refine_infeasible (2026-09-04 architecture revision): an
+# ancestor's off-grid refinement can shrink a descendant's row set enough
+# to empty a side of the descendant's own original grid split. Previously
+# unreachable in practice -- collapse_transitions() always intercepted the
+# specific chained same-coordinate-then-cross-coordinate geometry that
+# produces it -- reachable now that refine_tree()'s `collapse` defaults to
+# FALSE. See refine_tree_cuts()'s roxygen.
+# ---------------------------------------------------------------------------
+
+test_that("refine_tree_cuts raises the classed optimaltrees_refine_infeasible condition on a real fit's chained-split geometry", {
+  # Not hand-built: reproducing the exact ancestor/descendant row-set
+  # interaction on demand is not reliably controllable by construction (same
+  # reasoning as the min_leaf_n_infeasible fixture above, which IS hand-built
+  # because that one only needs two fixed groups of observed values). This
+  # fixture/seed/lambda combination was confirmed, directly, to produce a
+  # 3-level chain (root splits x1, root's right child splits x1 again one
+  # grid atom over, that node's own child splits x2 into a leaf with only 3
+  # rows pre-refinement) whose x2-split empties entirely once the x1
+  # ancestors are refined off-grid.
+  set.seed(20260901)
+  n <- 500
+  X <- data.frame(x1 = runif(n), x2 = runif(n))
+  y <- ifelse(X$x1 <= 0.4, 0, 3) + ifelse(X$x2 <= 0.5, 0, 1) + rnorm(n, sd = 0.05)
+  fit_A <- bisect_lambda_to_budget(
+    X, y, leaf_budget = 8L, lambda_n = 0.01, max_depth = 3L,
+    depth_restricted = TRUE, loss_function = "squared_error",
+    m_n = 1L, discretize_bins = 16L
+  )
+  ct <- as_coordinate_tree(fit_A$fit, X, y, tree_index = 1L)
+
+  err <- tryCatch(refine_tree_cuts(ct, X, y, min_leaf_n = 1L),
+                   condition = identity)
+  expect_s3_class(err, "optimaltrees_refine_infeasible")
+  expect_match(conditionMessage(err), "completely empty")
+
+  # And the same condition, raised through the exported refine_tree()
+  # entry point -- refine_tree() is the surface external callers actually
+  # depend on for this classed contract, not the internal helper directly.
+  err2 <- tryCatch(refine_tree(fit_A$fit, X, y, min_leaf_n = 1L, tree_index = 1L,
+                                max_depth = 3L, max_leaves = NULL),
+                    condition = identity)
+  expect_s3_class(err2, "optimaltrees_refine_infeasible")
+})
+
+test_that("refine_tree_cuts validates r_n/M_n and rejects a half-specified pair", {
+  fixture <- list(kind = "split", id = 1L, coord = "x1", cut = 0.5,
+                   grid_cuts = 0.5, collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
+                   left = list(kind = "leaf", id = 2L),
+                   right = list(kind = "leaf", id = 3L))
+  X <- data.frame(x1 = seq(0, 1, length.out = 40))
+  y <- ifelse(X$x1 <= 0.37, 0, 2)
+
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 0,  M_n = 4), "r_n")
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = -1, M_n = 4), "r_n")
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = c(8, 16), M_n = 4), "r_n")
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 16, M_n = 0), "M_n")
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 16, M_n = NA_real_), "M_n")
+  # Half-specified: must be refused outright, not silently fall back to the
+  # structural-only bracket while looking like the theory-guaranteed path.
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 16), "TOGETHER")
+  expect_error(refine_tree_cuts(fixture, X, y, M_n = 4), "TOGETHER")
+})
+
+test_that("r_n/M_n narrow the bracket to anchor +/- M_n/r_n, anchored at the grid cut", {
+  fixture <- list(kind = "split", id = 1L, coord = "x1", cut = 0.5,
+                   grid_cuts = 0.5, collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
+                   left = list(kind = "leaf", id = 2L),
+                   right = list(kind = "leaf", id = 3L))
+  X <- data.frame(x1 = seq(0, 1, length.out = 200))
+  y <- ifelse(X$x1 <= 0.12, 0, 2)   # true boundary FAR from the grid cut
+
+  wide  <- refine_tree_cuts(fixture, X, y)                      # structural only
+  tight <- refine_tree_cuts(fixture, X, y, r_n = 100, M_n = 2)   # rho_n = 0.02
+
+  expect_equal(tight$refined$bracket_lo, 0.5 - 0.02)
+  expect_equal(tight$refined$bracket_hi, 0.5 + 0.02)
+  # The radius must actually BIND: unrestricted refinement reaches the true
+  # boundary; the tight radius cannot.
+  expect_lt(abs(wide$tree$cut - 0.12), 0.02)
+  expect_gt(abs(tight$tree$cut - 0.12), 0.02)
+  # And the incumbent grid cut always survives as a candidate, so the
+  # never-worse-than-grid guarantee is preserved under narrowing.
+  expect_gte(tight$refined$bracket_hi, 0.5)
+  expect_lte(tight$refined$bracket_lo, 0.5)
+})
+
+test_that("refine_tree(collapse = TRUE) still runs the legacy collapse-then-refine path", {
+  set.seed(20260901)
+  n <- 1500
+  X <- data.frame(x1 = runif(n))
+  y <- ifelse(X$x1 <= 0.4123456, 0, 3) + rnorm(n, sd = 0.05)
+  fit <- fit_tree(X, y, loss_function = "squared_error", regularization = 0.01,
+                   discretize_bins = 8L, max_depth = 2L)
+  rt_legacy  <- refine_tree(fit, X, y, collapse = TRUE)
+  rt_default <- refine_tree(fit, X, y)
+  expect_s7_class(rt_legacy, RefinedTreeModel)
+  # The escape hatch is claimed supported -- exercise it, do not just
+  # document it.
+  expect_true(all(is.finite(predict(rt_legacy, X))))
+  expect_lte(n_leaves(rt_legacy), n_leaves(rt_default))
+})
+
 test_that("scan_cutoff's tie-break prefers the candidate closest to incumbent_cut, then smallest", {
   # Hand-constructed exact tie: xj = c(1,2,3), y = c(0,10,0) gives IDENTICAL
   # total SSE = 50 whether the cut falls at x=1 or x=2. The pre-port

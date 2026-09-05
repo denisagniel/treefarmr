@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_twostage.R
 \name{.twostage_validate_ladder}
 \alias{.twostage_validate_ladder}
-\title{Validate and prune an `m`-ladder against what the sample can support}
+\title{Validate an `m`-ladder's basic structural requirements}
 \usage{
 .twostage_validate_ladder(m_ladder, n, m_n)
 }
@@ -14,19 +14,30 @@
 \item{m_n}{Single positive integer/numeric, the total per-leaf floor.}
 }
 \value{
-A list: `m_ladder` (sorted, deduplicated, pruned to what `n`/`m_n`
-  support), `dropped_rungs` (the rungs removed for exceeding
-  `m_max_supported`, possibly `integer(0)`), `m_max_supported`.
+A list: `m_ladder` (sorted, deduplicated), `dropped_rungs`
+  (always `integer(0)`, kept for call-site stability), `m_max_supported`
+  (always `NA_integer_`, kept for call-site stability).
 }
 \description{
 Pure: enforces the structural requirements `fit_twostage()`'s ladder loop
 depends on (at least 2 distinct rungs -- `topology_stable` requires
 comparing two completed rungs, so a 1-rung ladder can never be certified;
 every rung `>= 2`, since [fit_tree()]'s own `discretize_bins` validation
-requires that), then prunes any rung the sample cannot support under
-`prop:parsimony-grid`'s rate condition (\eqn{m_n = o(n/r_n)}, the plan
-file's theory.tex-scan finding) using the SAME total per-leaf floor
-`fit_twostage()` will pass through to Stage A/B (`m_n` -- not the group
-floor, which is orthogonal to grid resolution).
+requires that).
+
+\strong{2026-09-04 architecture revision.} This function previously also
+pruned any rung the sample could not support under the (now-removed)
+`prop:parsimony-grid`'s rate condition, `m_n = o(n/r_n)`. That result was
+specific to the old inflated-budget/collapse-map design and does not
+carry over to the revised architecture; the new theory's rate condition
+on the penalty (`lambda_n >> 1/r_n`, Theorem [Stage-A topology recovery])
+does not, by itself, imply any particular grid-resolution ceiling as a
+function of `n`. Rather than guess a replacement rate condition the
+package's own theory does not supply, this function no longer prunes the
+ladder at all -- callers are responsible for choosing a sample-
+appropriate `m_ladder`. (This is an explicitly open question, tracked in
+the paper's own Discussion outline as "the m-ladder / depth-budget
+question raised on the package side.") `dropped_rungs`/`m_max_supported`
+are kept in the return value, always vacuous, for call-site stability.
 }
 \keyword{internal}

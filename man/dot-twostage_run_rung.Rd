@@ -14,10 +14,11 @@
   depth_restricted_A,
   lambda_n,
   m_n,
+  min_leaf_n,
+  M_n = NULL,
   group = NULL,
   group_value = 0,
   m_n_group = m_n,
-  min_leaf_n,
   fit_time_limit = NULL,
   deadline = NULL,
   tol_iter = 12L,
@@ -27,7 +28,8 @@
 \arguments{
 \item{X, y}{Training data.}
 
-\item{m}{Grid resolution (`discretize_bins`) for this rung.}
+\item{m}{Grid resolution (`discretize_bins`) for this rung; also used as
+the theory's `r_n` for Stage-B's search-interval radius.}
 
 \item{leaf_budget}{The ANALYST's declared leaf budget (for `budget_slack`
 only -- Stage A itself is run against `L_A`, not this value).}
@@ -39,6 +41,12 @@ ladder loop -- they do not depend on `m`) working budgets from
 \item{lambda_n, m_n, group, group_value, m_n_group, min_leaf_n}{Forwarded to
 [bisect_lambda_to_budget()]/[refine_tree()]; see their own docs.}
 
+\item{M_n}{Numeric, or `NULL` (default). `NULL` resolves HERE to
+`sqrt(m)`, mirroring [fit_twostage()]'s own default so direct callers
+of this internal function need not pass it; see that function's `M_n`
+argument for the rationale and the theory's `M_n -> Inf`,
+`M_n/r_n -> 0` requirements.}
+
 \item{fit_time_limit, deadline, tol_iter}{Forwarded to
 [bisect_lambda_to_budget()]; see its own docs for `fit_time_limit`/
 `deadline`.}
@@ -49,30 +57,44 @@ ladder loop -- they do not depend on `m`) working budgets from
 \value{
 A list (one record for `fit_twostage()`'s `ladder_topologies`
   table): `m`, `status` (`"ok"`, `"stage_a_deadline"`,
-  `"collapse_unsupported"`, or `"stage_b_binary_split"` -- only `"ok"`
-  populates the remaining fields beyond this and `n_leaves_A`/
-  `n_fits`/`stage_a_truncated`, which are set whenever Stage A itself
-  completed), `n_leaves_A`, `lambda`, `lambda_case` (one of `"i"`,
-  `"ii"`, `"iii"`, `"infeasible"`), `gap`, `feasible_A`, `n_fits`,
-  `stage_a_truncated`, `lambda_binding` (`n_leaves_A >= L_A`, the
-  Milestone-D-signature diagnostic), `n_collapses`,
-  `n_leaves_collapsed`, `budget_slack` (`leaf_budget - n_leaves_collapsed`),
-  `feasible_refined` (group-aware, on the REFINED tree -- see
-  [.refined_leaf_floor_ok()]), `local_certified`, `local_margin`,
-  `local_certified_at_lambda_n`, `local_margin_at_lambda_n`,
-  `depth_sufficient` (echoed from Stage A), `topology_key` (from
-  [canonical_partition()], for E3's cross-rung comparison), `model` (the
-  [RefinedTreeModel], or `NULL` unless `status == "ok"`).
+  `"stage_b_binary_split"`, or `"stage_b_refine_infeasible"` -- only
+  `"ok"` populates the remaining fields
+  beyond this and `n_leaves_A`/`n_fits`/`stage_a_truncated`, which are set
+  whenever Stage A itself completed), `n_leaves_A`, `lambda`,
+  `lambda_case` (one of `"i"`, `"ii"`, `"iii"`, `"infeasible"`), `gap`,
+  `feasible_A`, `n_fits`, `stage_a_truncated`, `lambda_binding`
+  (`n_leaves_A >= L_A`, i.e. whether the leaf budget actually bound),
+  `n_collapses` (always `0` -- collapse is off by default under the
+  revised architecture; kept for schema stability), `n_leaves_collapsed`
+  (the refined tree's leaf count -- Stage B never changes tree
+  structure, only threshold values, so this equals `n_leaves_A`),
+  `budget_slack` (`leaf_budget - n_leaves_collapsed`), `feasible_refined`
+  (group-aware, on the REFINED tree -- see [.refined_leaf_floor_ok()]),
+  `local_certified`, `local_margin`, `local_certified_at_lambda_n`,
+  `local_margin_at_lambda_n`, `depth_sufficient` (echoed from Stage A),
+  `topology_key` (from [canonical_partition()], for E3's cross-rung
+  comparison), `model` (the [RefinedTreeModel], or `NULL` unless
+  `status == "ok"`).
 }
 \description{
 Computes everything `fit_twostage()`'s ladder needs about a SINGLE grid
 resolution `m`, in isolation from every other rung. Never throws for the
-two ORDINARY refusal outcomes this composition can hit (a
-`collapse_transitions()` refusal, or a Stage-A deadline exhaustion) --
-both are reported via `status`/`reason`, since a caller escalating the
-ladder needs to distinguish them from a genuine bug (an unclassed error
-still propagates normally, on purpose: see the classed-condition design
-in `collapse_transitions()`/`build_coord_node()`, sub-step E0b).
+ORDINARY refusal outcome this composition can hit (a Stage-A deadline
+exhaustion) -- reported via `status`/`reason`, since a caller escalating
+the ladder needs to distinguish it from a genuine bug.
+
+\strong{2026-09-04 architecture revision.} [refine_tree()] is called with
+its (now default-off) `collapse` argument left at `FALSE`: the revised
+theory's Algorithm 1, Step 3 needs no collapse step at all ("no collapse,
+no post-processing" -- because Stage A now fits directly at the true
+budget, there are no transition-leaf artifacts to remove). The
+`optimaltrees_collapse_unsupported` refusal this function previously
+caught and turned into a `status = "collapse_unsupported"` rung outcome
+can therefore no longer occur on this call path, and that handling has
+been removed. `r_n = m` (this rung's own grid resolution) and `M_n` are
+threaded to [refine_tree()] so Stage B's search interval is sized to the
+theory's `rho_n = M_n/r_n` radius (`prop:search-interval`) rather than
+being unbounded within the identifying bracket.
 
 `max_leaves` is deliberately `NULL` on the [refine_tree()] call (never
 `L_A`) -- Stage A has no native leaf-count cap (`bisect_lambda_to_budget()`
@@ -81,7 +103,7 @@ so `L_A` is a target hit by tuning lambda, not a class boundary. Capping
 `max_leaves` here would silently let [certify_local_optimality()]'s
 `add` perturbation ignore a genuinely objective-improving split that WAS
 in Stage A's search space and lost on the penalized objective -- double-
-counting what lambda already prices in (Oracle consult, Q5.1).
+counting what lambda already prices in.
 
 The local certificate is evaluated TWICE: once at the fit's own
 (possibly bisected) `lambda` -- this is what gates `certified` -- and
@@ -91,6 +113,6 @@ raised lambda above `lambda_n`) is LARGER than `lambda_n`, making
 `certified` at that lambda a WEAKER claim than at `lambda_n` (harder for
 a perturbation to look improving against a bigger per-leaf penalty) --
 an honest artifact of certifying the objective Stage A actually
-minimized, invisible unless both are reported (Oracle consult, Q5.2).
+minimized, invisible unless both are reported.
 }
 \keyword{internal}

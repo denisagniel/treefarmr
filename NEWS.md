@@ -1,5 +1,57 @@
 # optimaltrees 0.4.1 (dev)
 
+## Breaking Changes
+
+### `fit_twostage()`/`refine_tree()`: reconciled with the 2026-09-04 theory revision
+
+The theory paper's Stage-A/B architecture (`inst/paper/main.tex`) was rewritten
+after its headline topology-recovery result was found to be false (the
+collapse-map's exclusion argument fails generically, not at an edge case).
+This release reconciles the package with the new architecture:
+
+- `fit_twostage()`/`.twostage_resolve_budgets()` no longer inflate Stage A's
+  working leaf/depth budget (old: `L_A = min(2*leaf_budget-1, A_m)`,
+  `d_A = min(2*d_0, depth_required_A)`). Stage A now fits directly at the
+  analyst's declared budget (`L_A = leaf_budget`, `d_A = d_0`, both still
+  clamped the same way as before). **This changes `fit_twostage()`'s default
+  numeric output** (`L_A`, `d_A`, `depth_required`, the depth-cap disclosure
+  message, and downstream `certified`/`certified_full_class` results) for
+  every existing caller -- not just an internal formula tweak.
+- `refine_tree()` no longer calls `collapse_transitions()` by default
+  (new `collapse = FALSE` argument; pass `collapse = TRUE` for the old
+  behavior). The revised theory's Algorithm 1, Step 3 needs no collapse step
+  at all under the new penalty regime (`lambda_n >> 1/r_n`) -- see
+  `collapse_transitions()`'s own (now-legacy) docs. `fit_twostage()`'s
+  `"collapse_unsupported"` rung status is retired; `n_collapses`/
+  `n_leaves_collapsed`/`n_transition_leaves_collapsed` are kept for schema
+  stability but are always `0`/vacuous under the default pipeline.
+- New `fit_twostage(M_n = NULL)` argument and `refine_tree()`/
+  `refine_tree_cuts(r_n =, M_n =)` arguments implement the theory's Stage-B
+  search-interval radius `rho_n = M_n/r_n` (Definition [Stage-B search
+  interval]), intersected into the existing structural identifying bracket.
+  `M_n = NULL` (default) resolves to `sqrt(r_n)` per rung -- a documented
+  package default, not a theory-derived one.
+- New `fit_twostage()`/`.twostage_run_rung()` rung status
+  `"stage_b_refine_infeasible"`, and a correspondingly new classed condition
+  `optimaltrees_refine_infeasible` raised by `refine_tree_cuts()`: an
+  ancestor's off-grid refinement can shrink a descendant node's row set
+  enough that even its own original grid split would empty one side entirely
+  -- previously unreachable in practice (intercepted upstream by
+  `collapse_transitions()`), now surfaced as an honest, classed, ordinary
+  refusal (escalates to the next `m`-ladder rung) instead of a deep,
+  generic-message crash inside `attach_final_stats()`.
+- `.twostage_validate_ladder()` no longer prunes `m_ladder` rungs against a
+  rate condition (`m_n = o(n/r_n)`, specific to the removed inflated-budget
+  architecture); `dropped_rungs`/`m_max_supported` are kept for call-site
+  stability but are always empty/`NA`. Choosing an `m_ladder` appropriate to
+  the sample is now the caller's responsibility -- an explicitly open
+  question on the package side (see `inst/paper/main.tex`'s Discussion
+  outline).
+- `R/select_lambda_plateau.R` (uncommitted, never released) is parked to
+  `dev-scripts/superseded/` rather than shipped: it implemented lambda
+  selection under the removed sandwich condition
+  (`nu_n << lambda_n << mu_n`), not the revised regime.
+
 ## Fixes
 
 ### `devtools::document()` / `pkgload::load_all()` no longer fail on `predict`

@@ -4,11 +4,12 @@
 \alias{refine_tree_cuts}
 \title{Refine every split threshold of a coordinate-space tree, root first}
 \usage{
-refine_tree_cuts(tree, X, y, min_leaf_n = 1L)
+refine_tree_cuts(tree, X, y, min_leaf_n = 1L, r_n = NULL, M_n = NULL)
 }
 \arguments{
-\item{tree}{Coordinate-space tree from [as_coordinate_tree()], already
-passed through [collapse_transitions()].}
+\item{tree}{Coordinate-space tree from [as_coordinate_tree()], optionally
+already passed through [collapse_transitions()] (no longer required by
+the default pipeline -- see [refine_tree()]).}
 
 \item{X, y}{Training data. \code{y} is centered internally (once, by its
 overall mean) before any SSE is computed; leaf \code{prediction}s in
@@ -18,6 +19,11 @@ before values are written back).}
 \item{min_leaf_n}{Integer floor on rows per side of every candidate cut
 (default \code{1L} -- no floor beyond "non-empty"). Set higher to
 guard against unstable leaf means.}
+
+\item{r_n, M_n}{Numeric, or \code{NULL} (both default). The theory's grid
+resolution and interval-scale tuning constant; see this function's
+description above. Both must be supplied together to narrow the
+bracket -- either `NULL` leaves it structural-only.}
 }
 \value{
 List(tree, refined) where \code{refined} is a data.frame with one
@@ -35,11 +41,23 @@ is refined ([node_bracket()]), not stored statically: refining an
 ancestor first means a later same-coordinate descendant's row set
 ([coord_tree_rows_at()]) is already filtered by the ancestor's REFINED
 cut, while a not-yet-refined descendant node still contributes its GRID
-cut as the bounding value seen by its parent. This asymmetry is
-monotone-safe and requires no second pass, because after
-[collapse_transitions()] any two same-coordinate splits that remain
-distinct nodes are separated by the (Sep) margin, not by one grid atom --
-do not "fix" this into an alternating minimization.
+cut as the bounding value seen by its parent.
+
+\strong{2026-09-04: what makes this asymmetry safe changed.} The
+pre-revision argument was that after [collapse_transitions()], any two
+same-coordinate splits surviving as distinct nodes are separated by the
+(Sep) margin rather than one grid atom, so a single root-first pass could
+not strand a descendant. With `collapse = FALSE` the default (see
+[refine_tree()]), that premise NO LONGER HOLDS -- a same-coordinate pair
+one grid atom apart now routinely survives as two nodes, and an
+ancestor's off-grid move CAN empty a side of a descendant's own split.
+This is handled explicitly, not assumed away: the classed
+`optimaltrees_refine_infeasible` refusal below detects exactly that case.
+The single pass remains correct in the sense that it never returns a
+tree with an empty leaf; it is no longer claimed to always SUCCEED. Do
+not "fix" this into an alternating minimization without re-deriving the
+theory first -- the refusal, not a second pass, is the sanctioned
+outcome for now.
 
 \strong{Robustness fixes relative to the ported original} (Oracle
 consult, plan file's Milestone A addendum, §Q4): \code{min_leaf_n} as an
@@ -50,5 +68,19 @@ candidate set); a deterministic tie-break in [scan_cutoff()]; \code{y}
 centered once, globally, before any scan (SSE-exact, removes a
 catastrophic-cancellation risk for \code{y} far from zero); a full
 \code{refined} log with \code{sse_before}/\code{sse_after} per node.
+
+\strong{2026-09-04 architecture revision: the search interval.} Each
+node's bracket from [node_bracket()] is a purely STRUCTURAL identifying
+bracket (nearest same-coordinate descendant cuts) -- it does not, by
+itself, implement the theory's Definition [Stage-B search interval],
+\code{inst/paper/main.tex}: \eqn{I_n(N) = [\hat t^A_N \pm \rho_n]},
+\eqn{\rho_n = M_n/r_n}, centered on the node's own Stage-A grid
+threshold. Passing \code{r_n}/\code{M_n} (both non-`NULL`) intersects
+that radius into the structural bracket before candidates are drawn,
+so refinement additionally respects Proposition [search-interval
+validity]'s finite-sample guarantee rather than only the identifying
+bracket's exactness-for-a-fixed-grid guarantee. Leaving either `NULL`
+(the default) reproduces the pre-revision, structural-bracket-only
+behavior.
 }
 \keyword{internal}

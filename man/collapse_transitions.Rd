@@ -2,7 +2,7 @@
 % Please edit documentation in R/stage_b.R
 \name{collapse_transitions}
 \alias{collapse_transitions}
-\title{Detect and collapse transition-leaf pairs (`prop:transition-leaves`)}
+\title{Detect and collapse transition-leaf pairs (LEGACY; off by default)}
 \usage{
 collapse_transitions(tree, max_iter = NULL)
 }
@@ -22,6 +22,30 @@ not a legitimate input; it is not meant to be tuned by callers.}
 List(tree, n_collapses).
 }
 \description{
+\strong{2026-09-04 architecture revision: this function is LEGACY, no
+longer called by the default pipeline.} It implemented `theory.tex`'s
+then-current `prop:transition-leaves`, part of a Stage-A/B design in
+which Stage A searched an inflated working leaf/depth budget (to
+accommodate a true boundary landing inside one grid atom), producing
+spurious "transition leaf" artifacts this function detected and merged
+back down before off-grid refinement. That design's headline
+topology-recovery result was found to be FALSE (the exclusion argument
+underlying the collapse map's validity fails generically, not at an
+edge case) and was replaced (`inst/paper/main.tex`, Algorithm 1): Stage
+A now fits directly at the analyst's declared (uninflated) budget under
+a reversed penalty regime, and needs no collapse step at all -- "no
+collapse, no post-processing" is that section's own comment on its
+Step 3. [refine_tree()] therefore no longer calls this function by
+default (`collapse = FALSE`); [fit_twostage()] does not expose a way to
+turn it back on. Kept, rather than deleted, as an opt-in escape hatch
+for callers who still want the old collapse-then-refine behavior on a
+fixed grid (pass `collapse = TRUE` to [refine_tree()]) -- not because
+any current theory recommends it.
+
+The description below (mechanism, detection rule, refusal conditions)
+is retained UNCHANGED from before the revision, since the mechanism
+itself was not shown incorrect -- only its role in the default pipeline.
+
 A true boundary that lands interior to one grid atom forces a
 grid-optimal Stage-A tree to split the SAME coordinate at both grid
 cutpoints bracketing that atom, sandwiching a thin spurious leaf (the

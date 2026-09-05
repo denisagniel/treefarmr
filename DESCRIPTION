@@ -1,7 +1,7 @@
 Package: optimaltrees
 Type: Package
 Title: Optimal Decision Trees with Flexible Loss Functions
-Version: 0.4.0
+Version: 0.4.1
 Author: OptimalTrees Development Team
 Maintainer: OptimalTrees Development Team <optimaltrees@example.com>
 Description: Optimal decision tree learning with support for classification and

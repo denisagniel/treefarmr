@@ -1,41 +1,44 @@
 # Tests for fit_twostage()'s pure, no-fitting-required budget-resolution
-# helpers (Milestone E sub-step E1). fit_twostage() itself (E2/E3/E4) is not
-# yet built -- see R/fit_twostage.R and
-# quality_reports/plans/2026-09-01_two-stage-package-defaults-session.md's
-# Milestone E addendum for the full architecture (Oracle-consulted) these
-# helpers implement a piece of.
+# helpers. See R/fit_twostage.R.
+#
+# 2026-09-04 architecture revision: `.twostage_resolve_budgets()` no longer
+# inflates the working budget (old formula: L_A = min(2*leaf_budget-1, A_m),
+# d_A = min(2*d_0, depth_required_A)). It now passes the declared budgets
+# through directly (L_A = min(leaf_budget, A_m), d_A = min(d_0,
+# depth_required_A)), clamped the same way as before. Expected values below
+# were recomputed under the new formula, not merely copied forward.
 
 # ---------------------------------------------------------------------------
 # .twostage_resolve_budgets()
 # ---------------------------------------------------------------------------
 
-test_that("default depth_budget reproduces Milestone D's leaf_budget=4 benchmark point exactly", {
+test_that("default depth_budget resolves leaf_budget = 4 to the un-inflated budget", {
   res <- .twostage_resolve_budgets(leaf_budget = 4, depth_budget = NULL, n = 2000)
   expect_equal(res$leaf_budget, 4L)
-  expect_equal(res$L_A, 7L)                 # 2*4 - 1
-  expect_equal(res$depth_required_A, 6L)    # L_A - 1
-  expect_equal(res$depth_reachable_A, 3L)   # ceiling(log2(7))
+  expect_equal(res$L_A, 4L)                 # leaf_budget itself -- no inflation
+  expect_equal(res$depth_required_A, 3L)    # L_A - 1
+  expect_equal(res$depth_reachable_A, 2L)   # ceiling(log2(4))
   expect_equal(res$d_0, 2L)                 # ceiling(log2(4))
   expect_equal(res$d_0_source, "default_balanced")
-  expect_equal(res$d_A, 4L)                 # min(2*2, 6) -- Milestone D's measured d_A
+  expect_equal(res$d_A, 2L)                 # min(d_0, depth_required_A), clamped
   expect_true(res$depth_restricted_A)
 })
 
-test_that("default depth_budget reproduces Milestone D's leaf_budget=8 benchmark point exactly", {
+test_that("default depth_budget resolves leaf_budget = 8 to the un-inflated budget", {
   res <- .twostage_resolve_budgets(leaf_budget = 8, depth_budget = NULL, n = 2000)
-  expect_equal(res$L_A, 15L)                # 2*8 - 1
-  expect_equal(res$depth_required_A, 14L)
-  expect_equal(res$depth_reachable_A, 4L)   # ceiling(log2(15))
+  expect_equal(res$L_A, 8L)                 # leaf_budget itself -- no inflation
+  expect_equal(res$depth_required_A, 7L)
+  expect_equal(res$depth_reachable_A, 3L)   # ceiling(log2(8))
   expect_equal(res$d_0, 3L)                 # ceiling(log2(8))
-  expect_equal(res$d_A, 6L)                 # min(2*3, 14) -- Milestone D's measured d_A
+  expect_equal(res$d_A, 3L)                 # min(d_0, depth_required_A), clamped
   expect_true(res$depth_restricted_A)
 })
 
-test_that("depth_budget = 'full' gives full compliance over the inflated class, not the staged cap", {
+test_that("depth_budget = 'full' gives full compliance at the declared leaf budget, not the staged cap", {
   res <- .twostage_resolve_budgets(leaf_budget = 8, depth_budget = "full", n = 2000)
   expect_equal(res$d_0_source, "full")
   expect_true(is.na(res$d_0))
-  expect_equal(res$d_A, res$depth_required_A)   # d_A = 14, full compliance
+  expect_equal(res$d_A, res$depth_required_A)   # d_A = 7, full compliance
   expect_false(res$depth_restricted_A)
 })
 
@@ -43,7 +46,10 @@ test_that("an explicit integer depth_budget is honored as the user's own d_0", {
   res <- .twostage_resolve_budgets(leaf_budget = 8, depth_budget = 2, n = 2000)
   expect_equal(res$d_0_source, "user")
   expect_equal(res$d_0, 2L)
-  expect_equal(res$d_A, 4L)   # min(2*2, 14)
+  # min(d_0 = 2, depth_required_A = 7) = 2, then clamped up to
+  # depth_reachable_A = 3 (bisect_lambda_to_budget() rejects max_depth below
+  # ceiling(log2(leaf_budget)) unconditionally).
+  expect_equal(res$d_A, 3L)
   expect_true(res$depth_restricted_A)
 })
 
@@ -57,21 +63,22 @@ test_that("leaf_budget = 1 never resolves to the disallowed max_depth = 0L", {
 })
 
 test_that("d_A is clamped up to depth_reachable_A when the depth_budget-derived value would fall below it", {
-  # leaf_budget = 20 -> L_A = 39, depth_reachable_A = ceiling(log2(39)) = 6.
-  # An explicit tiny depth_budget = 1 would naively give d_A = min(2, 38) = 2,
-  # which is BELOW depth_reachable_A = 6 -- bisect_lambda_to_budget() would
-  # reject max_depth < depth_reachable unconditionally. The clamp must lift
-  # d_A to depth_reachable_A, not merely warn.
+  # leaf_budget = 20 -> L_A = 20 (no inflation), depth_reachable_A =
+  # ceiling(log2(20)) = 5. An explicit tiny depth_budget = 1 gives
+  # d_A = min(1, 19) = 1, which is BELOW depth_reachable_A = 5 --
+  # bisect_lambda_to_budget() would reject max_depth < depth_reachable
+  # unconditionally. The clamp must lift d_A to depth_reachable_A, not
+  # merely warn.
   res <- .twostage_resolve_budgets(leaf_budget = 20, depth_budget = 1, n = 2000)
-  expect_equal(res$L_A, 39L)
-  expect_equal(res$depth_reachable_A, 6L)
-  expect_equal(res$d_A, 6L)
+  expect_equal(res$L_A, 20L)
+  expect_equal(res$depth_reachable_A, 5L)
+  expect_equal(res$d_A, 5L)
   expect_true(res$depth_restricted_A)
 })
 
 test_that("degenerate tiny n does not crash and stays internally consistent", {
   res <- .twostage_resolve_budgets(leaf_budget = 8, depth_budget = NULL, n = 3)
-  expect_equal(res$L_A, 3L)                 # min(15, A_m=3)
+  expect_equal(res$L_A, 3L)                 # min(8, A_m=3)
   expect_true(is.finite(res$depth_required_A))
   expect_true(is.finite(res$depth_reachable_A))
   expect_true(is.finite(res$d_A))
@@ -123,13 +130,21 @@ test_that("the depth-cap message reports the actual resolved numbers, not placeh
   res <- .twostage_resolve_budgets(leaf_budget = 8, depth_budget = NULL, n = 2000)
   msg <- gsub("\\s+", " ", capture_condition(.twostage_emit_depth_message(res))$message)
   expect_match(msg, "log2\\(8\\)\\) = 3")   # d_0
-  expect_match(msg, "d_A = 6")
-  expect_match(msg, "L_A = 15")
-  expect_match(msg, "depth 14")
+  expect_match(msg, "d_A = 3")
+  expect_match(msg, "L_A = 8")
+  expect_match(msg, "depth 7")
 })
 
 # ---------------------------------------------------------------------------
 # .twostage_validate_ladder()
+#
+# 2026-09-04 architecture revision: this function no longer prunes rungs
+# against a rate condition (the old `prop:parsimony-grid`'s
+# `m_n = o(n/r_n)`, specific to the removed inflated-budget architecture,
+# does not carry over -- see the function's own roxygen). It now only
+# enforces the basic structural requirements (>= 2 rungs, every rung >= 2);
+# `dropped_rungs`/`m_max_supported` are always vacuous, kept for call-site
+# stability.
 # ---------------------------------------------------------------------------
 
 test_that("a well-formed ladder passes through unchanged (sorted, deduplicated)", {
@@ -157,25 +172,16 @@ test_that("a 1-rung ladder errors -- topology_stable needs two rungs", {
                "at least 2")
 })
 
-test_that("rungs the sample cannot support (m_n = o(n/r_n)) are pruned and reported", {
-  # n = 200, m_n = 20 -> m_max_supported = floor(200 / 40) = 5. Every
-  # requested rung exceeds that, so all get dropped -- and since fewer than
-  # 2 rungs then remain, this must error, not silently return an empty/
-  # 1-rung ladder.
-  expect_error(
-    .twostage_validate_ladder(m_ladder = c(16, 32, 64), n = 200, m_n = 20),
-    "fewer than 2 rungs remain"
-  )
-})
-
-test_that("partial pruning keeps the supported rungs and reports the dropped ones", {
-  # n = 2000, m_n = 20 -> m_max_supported = floor(2000/40) = 50. 16 and 32
-  # survive (<=), 64/128 do not -- 2 rungs remain, so this must succeed
-  # (not error), unlike the fully-pruned case above.
-  res <- .twostage_validate_ladder(m_ladder = c(16, 32, 64, 128), n = 2000, m_n = 20)
-  expect_equal(res$m_max_supported, 50L)
-  expect_equal(res$m_ladder, c(16L, 32L))
-  expect_equal(res$dropped_rungs, c(64L, 128L))
+test_that("no rate-condition pruning occurs, even for a tiny n/large m_n combination", {
+  # Pre-revision, this exact combination (n = 200, m_n = 20) pruned every
+  # rung and errored ("fewer than 2 rungs remain"). The rate condition that
+  # drove that pruning was specific to the removed inflated-budget
+  # architecture and does not carry over -- see this function's roxygen.
+  # This must now succeed, unpruned.
+  res <- .twostage_validate_ladder(m_ladder = c(16, 32, 64), n = 200, m_n = 20)
+  expect_equal(res$m_ladder, c(16L, 32L, 64L))
+  expect_equal(res$dropped_rungs, integer(0))
+  expect_true(is.na(res$m_max_supported))
 })
 
 test_that("invalid n/m_n/m_ladder inputs are rejected", {
@@ -213,7 +219,12 @@ test_that(".twostage_run_rung() completes an ordinary rung and populates every '
   expect_type(rec$stage_a_truncated, "logical")
   expect_false(rec$stage_a_truncated)
   expect_type(rec$lambda_binding, "logical")
-  expect_true(rec$n_leaves_collapsed <= rec$n_leaves_A)
+  # Equality, not <=: with collapse off by default, Stage B mutates only
+  # threshold VALUES, never tree structure, so the refined leaf count must
+  # match Stage A's exactly. <= was correct only while collapse_transitions()
+  # could genuinely merge leaves.
+  expect_equal(rec$n_leaves_collapsed, rec$n_leaves_A)
+  expect_equal(rec$n_collapses, 0L)   # documented as always 0 on this path
   expect_equal(rec$budget_slack, 4L - rec$n_leaves_collapsed)
   expect_true(rec$feasible_refined)
   expect_type(rec$local_certified, "logical")
@@ -266,11 +277,24 @@ test_that(".twostage_run_rung() runs the local certificate at both lambda and la
   expect_true(is.finite(rec$local_margin_at_lambda_n))
 })
 
-test_that(".twostage_run_rung() reports collapse_unsupported without erroring (the ordinary case)", {
-  # Same fixture/lambda as test-stage-b.R's dedicated "genuine cross-
-  # coordinate structure" test, routed through bisect_lambda_to_budget() at
-  # a leaf_budget large enough that lambda_n itself is accepted (no search),
-  # reproducing the exact same fit.
+test_that(".twostage_run_rung() reports stage_b_refine_infeasible on a fixture that used to hit collapse_unsupported (collapse is off by default)", {
+  # 2026-09-04 architecture revision: this exact fixture/lambda used to
+  # trigger the OLD architecture's optimaltrees_collapse_unsupported
+  # refusal (genuine cross-coordinate structure inside a transition band --
+  # see test-stage-b.R's dedicated test for that mechanism, still exercised
+  # there directly against collapse_transitions() with collapse = TRUE).
+  # Under the revised architecture, refine_tree() no longer calls
+  # collapse_transitions() by default -- but the SAME underlying geometry
+  # (a chained same-coordinate split pair with a genuine cross-coordinate
+  # split sandwiched between them) now surfaces a DIFFERENT ordinary
+  # refusal instead: once Stage B refines the outer (x1) ancestor split
+  # off-grid, the inner (x2) split's own row set shrinks enough to empty
+  # one of its children entirely. refine_tree_cuts() detects this
+  # immediately and raises a classed `optimaltrees_refine_infeasible`
+  # condition (see its own roxygen) rather than crashing or silently
+  # returning an empty leaf; this function catches it as an ordinary
+  # per-rung refusal, same treatment as the retired collapse_unsupported
+  # status got.
   set.seed(20260901)
   n <- 500
   X <- data.frame(x1 = runif(n), x2 = runif(n))
@@ -280,7 +304,7 @@ test_that(".twostage_run_rung() reports collapse_unsupported without erroring (t
     X, y, m = 16L, leaf_budget = 8L, L_A = 8L, d_A = 3L, depth_restricted_A = TRUE,
     lambda_n = 0.01, m_n = 1L, min_leaf_n = 1L
   )
-  expect_equal(rec$status, "collapse_unsupported")
+  expect_equal(rec$status, "stage_b_refine_infeasible")
   expect_null(rec$model)
   # Stage A itself completed -- those fields are populated even on this refusal.
   expect_false(is.na(rec$n_leaves_A))
@@ -289,6 +313,7 @@ test_that(".twostage_run_rung() reports collapse_unsupported without erroring (t
   expect_true(is.na(rec$n_leaves_collapsed))
   expect_true(is.na(rec$local_certified))
 })
+
 
 test_that(".twostage_run_rung() reports stage_b_binary_split without erroring", {
   set.seed(20260901)
@@ -419,18 +444,31 @@ test_that("fit_twostage() succeeds end to end: 2 stable rungs, certified and cer
 })
 
 test_that("fit_twostage() reports certified TRUE but certified_full_class FALSE under the default depth cap", {
-  # The core distinction the whole Milestone-E design resolved this session
-  # (decision #2's actual mechanics): the DEFAULT depth_budget = NULL cap
-  # restricts below full compliance at leaf_budget = 4 (unlike the
-  # leaf_budget = 2 test above), so depth_sufficient/certified_full_class
-  # must be FALSE even though every other check passes.
+  # The core distinction: the DEFAULT depth_budget = NULL cap restricts
+  # below full compliance at leaf_budget = 4 (unlike the leaf_budget = 2
+  # test above), so depth_sufficient/certified_full_class must be FALSE
+  # even though every other check passes.
+  #
+  # lambda_n = 0.3, not 0.05: this DGP's true boundary (x1 = 0.4) generically
+  # lands inside one grid atom of a coarse m_ladder rung. The revised
+  # architecture requires lambda_n >> 1/r_n (Theorem [Stage-A topology
+  # recovery]) precisely so Stage A does not split twice around such a
+  # boundary; 1/r_n = 1/8 = 0.125 at the coarsest rung here, so lambda_n
+  # must clear that. lambda_n = 0.05 is in the OLD, now-wrong regime
+  # (lambda_n << 1/r_n) and reproducibly causes exactly the over-splitting
+  # failure mode the theory predicts for that regime -- confirmed directly:
+  # Stage A returns an extra "transition leaf" that collapse_transitions()
+  # used to clean up (see stage_b.R's roxygen) and the revised architecture
+  # deliberately no longer calls by default, so the local-optimality
+  # certificate correctly fails on the un-collapsed 3-leaf result. This is
+  # not a package bug; it is the paper's own (R3) diagnostic in miniature.
   set.seed(20260901)
   n <- 400
   X <- data.frame(x1 = runif(n), x2 = runif(n))
   y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
 
   res <- expect_message(
-    fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05, m_ladder = c(8, 16),
+    fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.3, m_ladder = c(8, 16),
                  time_budget = 60, fit_time_limit = 20),
     "STAGED cap"
   )
@@ -559,7 +597,9 @@ test_that("print.optimaltrees_twostage_fit() reports the full disclosure on a su
   n <- 400
   X <- data.frame(x1 = runif(n), x2 = runif(n))
   y <- ifelse(X$x1 <= 0.4, 0, 3) + rnorm(n, sd = 0.05)
-  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.05,
+  # lambda_n = 0.3, not 0.05: see the lambda_n comment on "reports certified
+  # TRUE but certified_full_class FALSE" above -- same DGP, same reasoning.
+  res <- suppressMessages(fit_twostage(X, y, leaf_budget = 4, lambda_n = 0.3,
                                         m_ladder = c(8, 16),
                                         time_budget = 60, fit_time_limit = 20))
 

@@ -16,44 +16,49 @@ above.}
 \item{n}{Single positive integer/numeric, `nrow(X)`. Used only as a safe,
 cheap upper bound on \eqn{|A_m|} (the number of distinct cells any
 binned design could produce) so `L_A` stays honest at tiny `n`; for
-`p >= 2`, `m >= 16` this bound never actually binds in practice.}
+`p >= 2, m >= 16` this bound never actually binds in practice.}
 }
 \value{
-A list: `leaf_budget` (echoed, coerced to integer), `L_A`,
-  `depth_required_A`, `depth_reachable_A`, `d_0` (`NA_integer_` when
-  `d_0_source = "full"`, since full compliance has no separate `d_0`),
-  `d_0_source` (one of `"default_balanced"`, `"full"`, `"user"`), `d_A`,
+A list: `leaf_budget` (echoed, coerced to integer), `L_A`
+  (now simply `min(leaf_budget, A_m)` -- the declared budget, clamped
+  only by the trivial `A_m` safety bound), `depth_required_A`,
+  `depth_reachable_A`, `d_0` (`NA_integer_` when `d_0_source = "full"`,
+  since full compliance has no separate `d_0`), `d_0_source` (one of
+  `"default_balanced"`, `"full"`, `"user"`), `d_A` (now simply the
+  resolved `d_0`, clamped by `depth_required_A`/`depth_reachable_A`),
   `depth_restricted_A` (`TRUE` iff `d_A < depth_required_A` -- what
   `fit_twostage()` will pass to `bisect_lambda_to_budget()`'s own
   `depth_restricted` argument).
 }
 \description{
-Applies `prop:transition-leaves`' inflated working-budget formula
-(\eqn{L_A = \min(2\bar L - 1, |A_m|)}, plan file §4.3) together with the
-depth-cap product decision (Oracle-consulted, Milestone E addendum): the
-cap applies to `d_0` (the analyst's declared belief about the TRUE tree's
-depth), never to the already-inflated `d_A` -- so the inflation formula
-(\eqn{d_A = \min(2 d_0, \mathrm{depth\_required}_A)}) keeps its exact
-theory-derived role regardless of which `d_0` was used, and the default
-cap lands on the one quantity that is genuinely an assumption about an
-unobservable population tree, not on the derived working budget.
+\strong{2026-09-04 architecture revision.} Earlier versions of this
+function applied a "transition-leaf-inflated" working-budget formula
+(`L_A = min(2*leaf_budget-1, |A_m|)`, `d_A = min(2*d_0, depth_required_A)`)
+derived from the paper's then-current Stage-A/B design, in which Stage A
+searched an inflated class and a `collapse_transitions()` post-processing
+step merged the resulting "transition leaf" artifacts back down. That
+design's headline topology-recovery result was found to be FALSE (the
+collapse-map's exclusion argument fails generically, not at an edge
+case) and was replaced in the theory (`inst/paper/main.tex`, Algorithm 1
+/ `alg:twostage`): Stage A now fits DIRECTLY under the analyst's TRUE
+leaf/depth budget, with NO inflation and no collapse step ("no collapse,
+no post-processing" -- main.tex's own Step 3 comment), under a REVERSED
+penalty regime (`lambda_n >> 1/r_n`, enforced by the caller via
+`lambda_n`/`m_ladder`, not by this function) that accepts `O(1/r_n)`
+threshold-localization error at each node instead of trying to exactly
+represent a grid-misaligned boundary. This function now simply validates
+and passes the declared budgets through, with the same depth-cap
+three-valued contract as before -- it is kept as the single validation
+point for budgets, not because inflation logic remains.
 
 `depth_budget`'s three-valued contract mirrors this package's existing
 `discretize_bins` string-sentinel convention (numeric, OR
 `"adaptive"`/`"log"`/`"cv"`; see [fit_tree()]):
 \itemize{
   \item `NULL` (default): the STAGED cap,
-    \eqn{d_0 = \lceil \log_2(\bar L) \rceil}. This reproduces
-    Milestone D's two measured, validated benchmark points EXACTLY
-    (`leaf_budget = 4` -> `d_A = 4`; `leaf_budget = 8` -> `d_A = 6`) and
-    invents no new number -- it is not full compliance, and
-    `depth_sufficient` will be `FALSE` on this path for every
-    `leaf_budget >= 4`. See [.twostage_emit_depth_message()] for the
-    disclosure text a caller should show on this path.
-  \item `"full"`: full compliance over the inflated class,
-    `d_A = depth_required_A` (the worst-case chain-shaped topology).
-    Cost grows superlinearly in `p` at this setting -- see Milestone D's
-    benchmark table in the plan file.
+    \eqn{d_0 = \lceil \log_2(\bar L) \rceil}.
+  \item `"full"`: full compliance, `d_A = depth_required_A` (the
+    worst-case chain-shaped topology at the declared leaf budget).
   \item A single positive integer: the analyst's own declared belief
     about the true tree's depth, `d_0`.
 }

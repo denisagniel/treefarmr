@@ -11,7 +11,10 @@ refine_tree(
   min_leaf_n = 1L,
   tree_index = 1L,
   max_depth = NULL,
-  max_leaves = NULL
+  max_leaves = NULL,
+  collapse = FALSE,
+  r_n = NULL,
+  M_n = NULL
 )
 }
 \arguments{
@@ -39,22 +42,70 @@ values used at the original [fit_tree()] call if you plan to run
 perturbation cannot distinguish an out-of-class candidate split (which
 should be marked infeasible, not a certificate failure) from an
 in-class one.}
+
+\item{collapse}{Logical, default \code{FALSE}. Whether to run
+[collapse_transitions()] before refinement. See this function's
+description above.}
+
+\item{r_n, M_n}{Numeric, or \code{NULL} (both default). The theory's grid
+resolution and interval-scale tuning constant for Stage B's search
+interval (Definition [Stage-B search interval],
+\code{inst/paper/main.tex}): each node's candidate cuts are restricted
+to \code{[grid_cut +/- M_n/r_n]}, intersected with its identifying
+bracket. \code{NULL} (either argument) leaves the identifying bracket
+unrestricted -- the legacy behavior, still exact for a fixed grid but
+without the theory's finite-sample interval-validity guarantee
+(Proposition [search-interval validity]). See [refine_tree_cuts()].}
 }
 \value{
 A [RefinedTreeModel].
 }
 \description{
 The public entry point for Stage B: converts \code{model} to
-coordinate-space ([as_coordinate_tree()]), collapses transition-leaf
-pairs ([collapse_transitions()]), refines every remaining threshold to
-an exact, off-grid data value ([refine_tree_cuts()]), and wraps the
-result in a [RefinedTreeModel]. See \code{\link{stage_b}} for the
-overall mechanism and \code{quality_reports/plans/2026-09-01_two-stage-
-package-defaults-session.md} Milestone A in the \code{global-scholars}
-project for the design history.
+coordinate-space ([as_coordinate_tree()]), optionally collapses
+transition-leaf pairs ([collapse_transitions()] -- OFF by default, see
+below), refines every remaining threshold to an exact, off-grid data
+value ([refine_tree_cuts()]), and wraps the result in a
+[RefinedTreeModel].
 
-\strong{Scope, 2026-09-01 (Milestone A): regression (\code{squared_error})
-only}, enforced by [as_coordinate_tree()] (loudly rejects any other
-\code{loss_function}, not silently). Classification support is a
-separate, later milestone.
+\strong{2026-09-04 architecture revision: \code{collapse} defaults to
+\code{FALSE}.} Earlier versions of this function called
+[collapse_transitions()] unconditionally. The theory that motivated it
+(Stage A searching an inflated working budget, producing "transition
+leaf" artifacts that a collapse step must merge back down) was replaced
+after its headline result was found to be false: the revised
+architecture (\code{inst/paper/main.tex}, Algorithm 1) fits Stage A
+directly at the declared budget and needs no collapse step at all ("no
+collapse, no post-processing" -- that section's own comment). Pass
+\code{collapse = TRUE} to opt back into the legacy behavior (kept as an
+escape hatch, not part of the default pipeline -- see
+[collapse_transitions()]'s own docs for why re-enabling it can reopen a
+known class of refusals under depth > 2 with 2+ informative
+coordinates).
+
+\strong{Scope: regression (\code{squared_error}) only}, enforced by
+[as_coordinate_tree()] (loudly rejects any other \code{loss_function},
+not silently). Classification support is a separate, later milestone.
 }
+\section{Classed refusal conditions}{
+
+This function raises two ORDINARY-REFUSAL conditions (not bugs) that a
+caller orchestrating a search over grid resolutions should catch by
+CLASS, not by message text:
+\describe{
+  \item{`optimaltrees_stage_b_binary_split`}{Stage A split on a
+    binary-passthrough column; there is no continuous threshold to
+    refine. A different `discretize_bins` will NOT help -- the column
+    is binary at every resolution. Do not retry indefinitely.}
+  \item{`optimaltrees_refine_infeasible`}{An ancestor's off-grid
+    refinement shrank a descendant's row set until the descendant's own
+    grid split empties one side. Geometry-dependent, so a DIFFERENT
+    `discretize_bins` may well succeed -- retrying at another resolution
+    is reasonable. Reachable since the 2026-09-04 revision made
+    `collapse = FALSE` the default; see [refine_tree_cuts()].}
+}
+[fit_twostage()] catches both and reports them as per-rung `status`
+values (`"stage_b_binary_split"` / `"stage_b_refine_infeasible"`)
+rather than propagating them.
+}
+
