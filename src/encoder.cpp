@@ -37,6 +37,28 @@ namespace {
             throw std::runtime_error("Float value out of range: " + str);
         }
     }
+
+    // Double-precision counterpart to safe_stof, added 2026-09-09. Used only for
+    // regression_targets_ parsing below -- safe_stof stays the parser for feature
+    // thresholds/values elsewhere in this file (Oracle-reviewed: not a same-diff
+    // change, do not repoint those call sites).
+    double safe_stod(const std::string& str) {
+        try {
+            size_t pos;
+            double value = std::stod(str, &pos);
+            if (pos != str.length()) {
+                throw std::runtime_error("Invalid double value (extra characters): " + str);
+            }
+            if (!std::isfinite(value)) {
+                throw std::runtime_error("Non-finite double value: " + str);
+            }
+            return value;
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("Invalid double value: " + str);
+        } catch (const std::out_of_range&) {
+            throw std::runtime_error("Double value out of range: " + str);
+        }
+    }
 }
 
 Encoder::Encoder(void) {}
@@ -58,7 +80,7 @@ Encoder::Encoder(std::istream & input) {
         const unsigned int m = this -> number_of_columns;
         this -> regression_targets_.resize(n);
         for (unsigned int i = 0; i < n; ++i) {
-            this -> regression_targets_[i] = safe_stof(tokens[i][m - 1]);
+            this -> regression_targets_[i] = safe_stod(tokens[i][m - 1]);
         }
     }
 }
@@ -557,6 +579,6 @@ unsigned int Encoder::binary_targets(void) const {
     return this -> number_of_binary_targets;
 }
 
-std::vector< float > const & Encoder::regression_targets(void) const {
+std::vector< double > const & Encoder::regression_targets(void) const {
     return this -> regression_targets_;
 }

@@ -1,6 +1,7 @@
 #include "model.hpp"
 #include <iomanip>
 #include <cmath>
+#include <sstream>
 
 Model::Model(void) {}
 
@@ -19,6 +20,7 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state, unsigned int w
         unsigned int n = capture_set -> count();
         if (n == 0) {
             this -> prediction = "0";
+            this -> regression_prediction_value = 0.0;
         } else {
             double sum_y = 0.0;  // Use double precision for accumulation
             unsigned int count = 0;
@@ -35,11 +37,20 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state, unsigned int w
             if (count == 0) {
                 throw std::runtime_error("Empty capture set - cannot compute prediction");
             }
-            float pred = static_cast<float>(sum_y / count);
+            double pred = sum_y / count;
             if (!std::isfinite(pred)) {
                 throw std::runtime_error("Non-finite prediction: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(count));
             }
-            this -> prediction = std::to_string(pred);
+            this -> regression_prediction_value = pred;
+            // Round-trip-safe double->string conversion, kept for Model::predict()/
+            // print_readable() (both read `prediction`, not the double above).
+            // std::to_string(float) formats with a fixed 6 decimal places (not
+            // significant figures), which silently truncated leaf values to ~6 sig
+            // figs for small-magnitude predictions (bug found 2026-09-09). 17
+            // significant digits is the documented minimum for exact double round-trip.
+            std::ostringstream pred_stream;
+            pred_stream << std::setprecision(17) << pred;
+            this -> prediction = pred_stream.str();
         }
         state.dataset.encoder.header(prediction_name);
         this -> name = prediction_name;
@@ -403,14 +414,14 @@ void Model::to_json(json & node, State & state) const {
 void Model::_to_json(json & node) const {
     if (this -> terminal) {
         if (Configuration::loss_function == SQUARED_ERROR) {
-            // For regression: convert string prediction to double
-            try {
-                double pred_value = std::stod(this -> prediction);
-                node["prediction"] = pred_value;
-            } catch (...) {
-                // Fallback if conversion fails
-                node["prediction"] = 0.0;
-            }
+            // Read the double directly -- no string round-trip. The previous
+            // std::stod(this->prediction) here both re-lost precision (moot once
+            // `prediction` was made lossless, 2026-09-09 fix) and was an unguarded,
+            // locale-dependent parse (strtod honors LC_NUMERIC; std::stod does not
+            // check that the whole string was consumed, unlike safe_stof elsewhere
+            // in this codebase) whose failure silently produced a wrong prediction
+            // of 0.0 instead of an error.
+            node["prediction"] = this -> regression_prediction_value;
         } else {
             node["prediction"] = this -> binary_target;
         }

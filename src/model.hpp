@@ -124,6 +124,11 @@ private:
     // Terminal members
     unsigned int binary_target; // index of the encoded prediction
     std::string prediction; // string representation of the predicted value
+    // Regression only, kept in sync with `prediction`; _to_json() reads this
+    // directly instead of stod(prediction) (2026-09-09 precision/locale fix).
+    // NOT the same as the classification-branch local var `prediction_value`
+    // in model.cpp -- do not rename to collide with it.
+    double regression_prediction_value = 0.0;
     float _loss; // loss incurred by this leaf
     float _complexity; // complexity penalty incurred by this leaf
     std::shared_ptr< Bitmask > capture_set; // indicator specifying the points captured by this leaf

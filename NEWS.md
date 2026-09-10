@@ -88,6 +88,35 @@ over data-adaptive tuning of `epsilon_n`.
 
 ## Bug Fixes
 
+### Regression leaf values were silently truncated to ~6-7 significant figures
+
+**Problem:** a fitted regression (`squared_error`) leaf's reported value could
+lose precision two independent, stacked ways: (1) in the C++ `Model` constructor,
+the leaf's control-mean was narrowed to `float` and serialized via
+`std::to_string(float)`, which formats with a fixed 6 decimal places (not
+significant figures) -- catastrophic for small-magnitude leaves (e.g.
+`-0.058940614050488` came back as `-0.058941`); (2) on the R side,
+`treefarms()`/`auto_tune_*()` built the fit's CSV payload via
+`apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))`, which
+forces the whole row -- including the outcome `y` -- through
+`as.matrix.data.frame`'s homogeneous-type coercion, silently downgrading to
+7-significant-figure formatting the moment any column (e.g. a factor-encoded
+feature) was non-numeric.
+
+**Fix:** the C++ `Model` now keeps the leaf prediction as a `double` and
+serializes it at full round-trip precision (17 significant digits); regression
+targets (`Encoder::regression_targets_`, `Dataset::target_values`) are now
+parsed and stored as `double` throughout (a new `safe_stod()` parses them,
+alongside -- not replacing -- the existing `safe_stof()` used for feature
+thresholds), with the internal loss/bound accumulators in `Dataset::summary()`
+widened to `double` for internal consistency; the R-side CSV payload is now
+built column-wise with `sprintf("%.17g", .)` for numeric columns. Verified
+zero effect on tree selection (point estimates and fitted structure are
+bit-identical before/after on a re-run committed simulation cell) -- this is a
+precision fix, not a behavior change. Split-threshold values still round to 6
+decimal places internally (`Encoder::build()`'s `std::to_string(threshold)`) --
+self-consistent for training, deferred separately.
+
 ### `fit_rashomon` with `squared_error` no longer crashes (segfault at 0x47)
 
 **Problem:** `fit_rashomon()` with `loss_function = "squared_error"` crashed

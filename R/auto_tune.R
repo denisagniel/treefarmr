@@ -136,11 +136,22 @@ auto_tune_optimaltrees <- function(X, y, loss_function = "misclassification",
   X <- discretization_result$X_binary
   discretization_metadata <- discretization_result$metadata
 
-  # Build CSV string once for reuse in the loop
+  # Build CSV string once for reuse in the loop, column-wise (2026-09-09 fix,
+  # same rationale as treefarms.R: apply(data_df, 1L, ...) downgrades the whole
+  # row -- including y -- to 7-sig-fig formatting if any column is non-numeric).
+  # Logical columns route through the numeric branch (2026-09-10 fix, same as
+  # treefarms.R): is.numeric(TRUE) is FALSE, and this function has no upstream
+  # y <- as.numeric(y) normalization, so a logical y would otherwise reach the
+  # solver as "TRUE"/"FALSE" and silently become an NA prediction.
   data_df <- as.data.frame(X)
   data_df$class <- y
   header <- paste(names(data_df), collapse = ",")
-  body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
+  formatted_cols <- lapply(data_df, function(col) {
+    if (is.logical(col)) sprintf("%.17g", as.numeric(col))
+    else if (is.numeric(col)) sprintf("%.17g", col)
+    else as.character(col)
+  })
+  body <- do.call(paste, c(unname(formatted_cols), list(sep = ",")))
   csv_string <- paste(c(header, body), collapse = "\n")
   # Extract max_depth/depth_budget/model_limit from ... if provided
   dots <- list(...)

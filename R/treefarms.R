@@ -950,9 +950,25 @@ huber_delta = 1.0, quantile_tau = 0.5, custom_loss = NULL, ...) {
   data_df <- X
   data_df$class <- y
   
-  # Build CSV string in one pass (no capture.output(write.csv))
+  # Build CSV string column-wise (2026-09-09 fix: apply(data_df, 1L, ...) forces
+  # as.matrix.data.frame first, which silently downgrades ALL columns -- including
+  # the unrelated `class` (y) column -- to 7-sig-fig character formatting the
+  # moment any one column is non-numeric, e.g. a factor-encoded feature. Numeric
+  # columns keep full round-trip precision via sprintf("%.17g", .); non-numeric
+  # columns are left as as.character(.). Logical columns route through the
+  # numeric branch (2026-09-10, r-reviewer finding): is.numeric(TRUE) is FALSE,
+  # so without this they'd emit "TRUE"/"FALSE" instead of "1"/"0" -- a real
+  # behavior change from the old apply()/as.matrix() path, which coerced
+  # logical+numeric frames to a double matrix before formatting.
   header <- paste(names(data_df), collapse = ",")
-  body <- apply(data_df, 1L, function(r) paste(as.character(r), collapse = ","))
+  formatted_cols <- lapply(data_df, function(col) {
+    if (is.logical(col)) sprintf("%.17g", as.numeric(col))
+    else if (is.numeric(col)) sprintf("%.17g", col)
+    else as.character(col)
+  })
+  # unname(): a feature column named "sep" or "collapse" would otherwise be
+  # matched to paste()'s own formals by do.call()'s name matching.
+  body <- do.call(paste, c(unname(formatted_cols), list(sep = ",")))
   csv_string <- paste(c(header, body), collapse = "\n")
 
   # Set custom loss specification if provided

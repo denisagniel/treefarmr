@@ -307,7 +307,7 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
             max_loss = 0.0f;
             return;
         }
-        float sum_y = 0.0f;
+        double sum_y = 0.0;
         for (unsigned int i = 0; i < height(); ++i) {
             if (capture_set.get(i)) {
                 sum_y += this -> target_values[i];
@@ -316,26 +316,31 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
         if (n == 0) {
             throw std::runtime_error("Cannot compute mean of empty sample");
         }
-        float mean_y = sum_y / (float)n;
+        double mean_y = sum_y / (double)n;
         if (!std::isfinite(mean_y)) {
             throw std::runtime_error("Non-finite mean: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(n));
         }
-        float sse = 0.0f;
+        double sse = 0.0;
         for (unsigned int i = 0; i < height(); ++i) {
             if (capture_set.get(i)) {
-                float d = this -> target_values[i] - mean_y;
+                double d = this -> target_values[i] - mean_y;
                 sse += d * d;
             }
         }
-        min_loss = sse;
-        max_loss = sse;
+        // Narrow once here: Dataset::summary's min_loss/max_loss/potential are
+        // float& (an intentional, unwidened boundary -- see 2026-09-09 precision
+        // fix plan; Task/Optimizer/Rashomon bounds downstream all stay float and
+        // must not be perturbed by this fix). Everything above and below this
+        // point up to those three assignments accumulates in double.
+        min_loss = static_cast<float>(sse);
+        max_loss = static_cast<float>(sse);
 
         // Compute lower bounds for regression (n > 1 required for meaningful bounds)
         if (n > 1) {
             // ALWAYS compute equivalent points bound (OSRT approach when k_cluster=false)
             // Group samples by feature vector - samples with identical features
             // must receive the same prediction, so within-group variance is unavoidable
-            std::map<Bitmask, std::vector<float>> equiv_groups;
+            std::map<Bitmask, std::vector<double>> equiv_groups;
 
             for (unsigned int i = 0; i < height(); ++i) {
                 if (capture_set.get(i)) {
@@ -348,11 +353,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
             // This is the MINIMUM achievable loss because samples with same features
             // must get the same prediction, so variance within each group is unavoidable
             std::vector<double> weights, values;
-            float equiv_points_loss = 0.0f;  // Sum of within-group SSE
+            double equiv_points_loss = 0.0;  // Sum of within-group SSE
 
             // C++11 compatible iteration (no structured bindings)
             for (auto it = equiv_groups.begin(); it != equiv_groups.end(); ++it) {
-                const std::vector<float> & targets = it->second;
+                const std::vector<double> & targets = it->second;
                 double w = (double)targets.size();
                 double sum = 0.0;
                 double sum_sq = 0.0;
@@ -378,7 +383,7 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
             }
 
             // Use equiv_points_loss as base lower bound
-            float min_achievable_loss = equiv_points_loss;
+            double min_achievable_loss = equiv_points_loss;
 
             // If k-means enabled, try to get an even tighter bound
             if (Configuration::k_cluster) {
@@ -393,23 +398,24 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 // k-Means bound includes both:
                 // - Between-cluster SSE (from k-means on aggregated points)
                 // - Within-cluster SSE (from equiv_points_loss)
-                min_achievable_loss = (float)(kmeans_sse + equiv_points_loss);
+                min_achievable_loss = (double)(kmeans_sse + equiv_points_loss);
             }
 
             // Safeguard: bound should never exceed current SSE
-            if (min_achievable_loss > sse || min_achievable_loss < 0.0f) {
+            if (min_achievable_loss > sse || min_achievable_loss < 0.0) {
                 // Bound is invalid - fall back to equiv points only
                 min_achievable_loss = equiv_points_loss;
             }
 
             // Ensure bound is non-negative and doesn't exceed current loss
-            min_achievable_loss = std::max(0.0f, std::min(min_achievable_loss, sse));
+            min_achievable_loss = std::max(0.0, std::min(min_achievable_loss, sse));
 
-            // potential = maximum possible reduction in loss
-            potential = sse - min_achievable_loss;
+            // potential = maximum possible reduction in loss. Narrow once here,
+            // same boundary as min_loss/max_loss above.
+            potential = static_cast<float>(sse - min_achievable_loss);
 
             // Update min_loss to reflect lower bound
-            min_loss = min_achievable_loss;
+            min_loss = static_cast<float>(min_achievable_loss);
         } else {
             // n <= 1: no room for improvement (single sample or empty)
             potential = 0.0f;
