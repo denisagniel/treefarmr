@@ -82,3 +82,6 @@ aggregate_*.R
 run_clang_tidy.sh
 INSTALL_AND_TEST.sh
 VERIFY_FIXES.sh
+
+# Orchestration-tool run state (not project content)
+.omo/
