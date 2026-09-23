@@ -33,6 +33,10 @@ unsigned char Configuration::depth_budget = 0;
 
 unsigned int Configuration::minimum_captured_points = 0;
 
+int Configuration::subgroup_target_index = -1;
+unsigned int Configuration::subgroup_min_count_0 = 0;
+unsigned int Configuration::subgroup_min_count_1 = 0;
+
 std::vector<int> Configuration::memory_checkpoints = {}; 
 
 bool Configuration::output_accuracy_model_set = false; 
@@ -67,7 +71,15 @@ float Configuration::rashomon_bound_multiplier = 0.0; //
 float Configuration::rashomon_bound_adder = 0.0; // 
 bool Configuration::rashomon_ignore_trivial_extensions = true;
 
-LossFunction Configuration::loss_function = MISCLASSIFICATION;
+LossFunctionType Configuration::loss_function = MISCLASSIFICATION;
+
+bool Configuration::cart_lookahead = false;
+unsigned int Configuration::cart_lookahead_depth = 0;
+
+bool Configuration::k_cluster = false;
+
+float Configuration::huber_delta = 1.35f;  // Default Huber delta (standard value for robust regression)
+float Configuration::quantile_tau = 0.5f;  // Default quantile tau (median)
 
 // REMOVED: __attribute__((constructor)) functions cause installation hangs
 // static void __attribute__((constructor)) after_config_static_init() {
@@ -88,6 +100,18 @@ void Configuration::configure(std::istream & source) {
 };
 
 void Configuration::configure(json config) {
+    // Configuration is process-global and configure() otherwise only overwrites the
+    // fields a caller happens to supply, so a value set by one fit would persist into
+    // every later fit in the same process. For the subgroup floors that would be a
+    // correctness bug, not just a surprise: an outcome-tree fit issued after a
+    // propensity-tree fit would silently inherit the propensity tree's floor. Reset
+    // them to "disabled" first so each fit is self-contained. Scoped to these three
+    // fields deliberately -- every other field keeps its long-standing sticky
+    // behaviour.
+    Configuration::subgroup_target_index = -1;
+    Configuration::subgroup_min_count_0 = 0;
+    Configuration::subgroup_min_count_1 = 0;
+
     if (config.contains("uncertainty_tolerance")) { Configuration::uncertainty_tolerance = config["uncertainty_tolerance"]; }
     if (config.contains("regularization")) { Configuration::regularization = config["regularization"]; }
     if (config.contains("upperbound")) { Configuration::upperbound = config["upperbound"]; }
@@ -104,6 +128,10 @@ void Configuration::configure(json config) {
     if (config.contains("depth_budget")) { Configuration::depth_budget = config["depth_budget"]; }
 
     if (config.contains("minimum_captured_points")) { Configuration::minimum_captured_points = config["minimum_captured_points"]; }
+
+    if (config.contains("subgroup_target_index")) { Configuration::subgroup_target_index = config["subgroup_target_index"]; }
+    if (config.contains("subgroup_min_count_0")) { Configuration::subgroup_min_count_0 = config["subgroup_min_count_0"]; }
+    if (config.contains("subgroup_min_count_1")) { Configuration::subgroup_min_count_1 = config["subgroup_min_count_1"]; }
 
     if (config.contains("memory_checkpoints")) { Configuration::memory_checkpoints = config["memory_checkpoints"].get<std::vector<int>>(); }
     
@@ -150,7 +178,6 @@ void Configuration::configure(json config) {
 
     if (config.contains("rashomon")) { Configuration::rashomon = config["rashomon"]; }
     if (config.contains("rashomon_bound")) { Configuration::rashomon_bound = config["rashomon_bound"]; }
-    std::cout << config["rashomon_bound"] << std::endl;
     if (config.contains("rashomon_bound_multiplier")) { Configuration::rashomon_bound_multiplier = config["rashomon_bound_multiplier"]; }
     if (config.contains("rashomon_bound_adder")) { Configuration::rashomon_bound_adder = config["rashomon_bound_adder"]; }
     if (!config.contains("rashomon_bound") && !config.contains("rashomon_bound_multiplier") && !config.contains("rashomon_bound_adder")) {
@@ -169,11 +196,17 @@ void Configuration::configure(json config) {
                     Configuration::loss_function = MISCLASSIFICATION;
                 } else if (loss_func == "log_loss") {
                     Configuration::loss_function = LOG_LOSS;
+                } else if (loss_func == "squared_error" || loss_func == "regression") {
+                    Configuration::loss_function = SQUARED_ERROR;
                 } else {
                     throw std::invalid_argument("Unknown loss function: " + loss_func);
                 }
             }
 
+    if (config.contains("cart_lookahead")) { Configuration::cart_lookahead = config["cart_lookahead"]; }
+    if (config.contains("cart_lookahead_depth")) { Configuration::cart_lookahead_depth = config["cart_lookahead_depth"]; }
+
+    if (config.contains("k_cluster")) { Configuration::k_cluster = config["k_cluster"]; }
 
 }
 
@@ -195,6 +228,10 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["depth_budget"] = Configuration::depth_budget;
 
     obj["minimum_captured_points"] = Configuration::minimum_captured_points;
+
+    obj["subgroup_target_index"] = Configuration::subgroup_target_index;
+    obj["subgroup_min_count_0"] = Configuration::subgroup_min_count_0;
+    obj["subgroup_min_count_1"] = Configuration::subgroup_min_count_1;
 
     obj["memory_checkpoints"] = Configuration::memory_checkpoints;
 
@@ -228,7 +265,12 @@ std::string Configuration::to_string(unsigned int spacing) {
     obj["rashomon_bound_multiplier"] = Configuration::rashomon_bound_multiplier;
     obj["rashomon_bound_adder"] = Configuration::rashomon_bound_adder;
     obj["rashomon_ignore_trivial_extensions"] = Configuration::rashomon_ignore_trivial_extensions;
-    obj["loss_function"] = (Configuration::loss_function == MISCLASSIFICATION) ? "misclassification" : "log_loss";
+    obj["loss_function"] = (Configuration::loss_function == MISCLASSIFICATION) ? "misclassification" : (Configuration::loss_function == LOG_LOSS ? "log_loss" : "squared_error");
+    obj["cart_lookahead"] = Configuration::cart_lookahead;
+    obj["cart_lookahead_depth"] = Configuration::cart_lookahead_depth;
+    obj["k_cluster"] = Configuration::k_cluster;
+    obj["huber_delta"] = Configuration::huber_delta;
+    obj["quantile_tau"] = Configuration::quantile_tau;
 
     return obj.dump(spacing);
 }

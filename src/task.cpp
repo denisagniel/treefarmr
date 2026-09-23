@@ -7,6 +7,22 @@ Task::Task(void) {}
 Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id, State & state, bool rashomon_flag) {
     this -> _capture_set = capture_set;
     this -> _feature_set = feature_set;
+    this -> _worker_id = id;
+
+    if (!capture_set.valid() || !feature_set.valid()) {
+        this -> _support = 0.0f;
+        this -> _information = 0.0f;
+        this -> _base_objective = std::numeric_limits<float>::max();
+        this -> _lowerbound = std::numeric_limits<float>::max();
+        this -> _upperbound = std::numeric_limits<float>::max();
+        this -> _lowerscope = -std::numeric_limits<float>::max();
+        this -> _upperscope = std::numeric_limits<float>::max();
+        this -> _coverage = 0.0f;
+        this -> _rashomon_bound = std::numeric_limits<float>::max();
+        this -> _optimal_feature = -1;
+        return;
+    }
+
     this -> _support = (float)(capture_set.count()) / (float)(state.dataset.height());
     float const regularization = Configuration::regularization;
     bool terminal = (this -> _capture_set.count() <= 1) || (this -> _feature_set.empty());
@@ -19,16 +35,16 @@ Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned in
     this -> _base_objective = max_loss + regularization;
     // Calculate initial bounds
     // For misclassification loss: min_loss is 0-1, so min_loss + 2*regularization makes sense
-    // For log_loss: min_loss == max_loss (both are entropy), so we need a different approach
-    float const lowerbound = (Configuration::loss_function == LOG_LOSS) 
-        ? std::max(0.0f, this -> _base_objective - potential)  // Allow exploration: base_objective - potential = regularization (conservative lower bound)
-        : std::min(this -> _base_objective, min_loss + 2 * regularization);  // Original misclassification logic
+    // For log_loss / squared_error: min_loss == max_loss (entropy or SSE), use base_objective - potential
+    float const lowerbound = (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR)
+        ? std::max(0.0f, this -> _base_objective - potential)
+        : std::min(this -> _base_objective, min_loss + 2 * regularization);
     float const upperbound = this -> _base_objective;
     
     // Debug output for root node initialization
     if (Configuration::verbose && capture_set.count() == capture_set.size()) {
         std::cout << "DEBUG: Root node initialization" << std::endl;
-        std::cout << "  Loss function: " << (Configuration::loss_function == LOG_LOSS ? "LOG_LOSS" : "MISCLASSIFICATION") << std::endl;
+        std::cout << "  Loss function: " << (Configuration::loss_function == LOG_LOSS ? "LOG_LOSS" : (Configuration::loss_function == SQUARED_ERROR ? "SQUARED_ERROR" : "MISCLASSIFICATION")) << std::endl;
         std::cout << "  min_loss: " << min_loss << std::endl;
         std::cout << "  max_loss: " << max_loss << std::endl;
         std::cout << "  potential: " << potential << std::endl;
@@ -43,14 +59,11 @@ Task::Task(Bitmask const & capture_set, Bitmask const & feature_set, unsigned in
         this -> _lowerbound = lowerbound;
         this -> _upperbound = upperbound;
     } else {
-        if (Configuration::loss_function == LOG_LOSS) {
-            // For log-loss (entropy-based), use different pruning criteria
-            // For log_loss, min_loss == max_loss (both are entropy)
+        if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
+            // For log-loss (entropy) or squared_error (SSE): min_loss == max_loss
             // We only prune terminal nodes - let the algorithm evaluate actual splits
-            // The actual information gain from splitting is evaluated in prune_features()
-            // by comparing split bounds to base_objective
             if (Configuration::verbose && capture_set.count() == capture_set.size()) {
-                std::cout << "DEBUG: Root node pruning logic (LOG_LOSS)" << std::endl;
+                std::cout << "DEBUG: Root node pruning logic (LOG_LOSS/SQUARED_ERROR)" << std::endl;
                 std::cout << "  terminal: " << terminal << std::endl;
                 std::cout << "  potential: " << potential << std::endl;
                 std::cout << "  2 * regularization: " << (2 * regularization) << std::endl;
@@ -135,6 +148,7 @@ _rashomon_bound = bound; }
 
 Bitmask const & Task::capture_set(void) const { return this -> _capture_set; }
 Bitmask const & Task::feature_set(void) const { return this -> _feature_set; }
+unsigned int Task::worker_id(void) const { return this -> _worker_id; }
 Tile & Task::identifier(void) { return this -> _identifier; }
 std::vector<int> & Task::order(void) { return this -> _order; }
 
@@ -167,6 +181,27 @@ void Task::create_children(unsigned int id, State & state) {
                 if (std::min(buffer_count, buffer.size() - buffer_count) <= Configuration::minimum_captured_points) {
                     skip = true;
                     continue;
+                }
+                // Subgroup-aware minimum leaf size: reject a candidate split whose child
+                // is deficient in either arm of the subgroup indicator. Load-bearing for
+                // the propensity tree, where an all-treated leaf yields a fitted
+                // propensity of exactly 1 and hence an infinite ATT weight p/(1-p).
+                // Counts come from the same raw-row-count convention as the total-size
+                // check immediately above. Rejecting candidates only shrinks the feasible
+                // set, so the existing min_loss/max_loss/potential bounds stay valid, and
+                // the predicate depends only on (capture set, feature) -- both already
+                // part of the memoization key -- so cached subproblems remain shareable.
+                // See quality_reports/specs/2026-08-20_leaf-size-subgroup-enforcement.md
+                if (Configuration::subgroup_target_index >= 0 &&
+                    (Configuration::subgroup_min_count_0 > 0 || Configuration::subgroup_min_count_1 > 0)) {
+                    unsigned int subgroup_count_0 = 0, subgroup_count_1 = 0;
+                    state.dataset.subgroup_counts(buffer, (unsigned int)(Configuration::subgroup_target_index),
+                                                  subgroup_count_0, subgroup_count_1, id, state);
+                    if (subgroup_count_0 < Configuration::subgroup_min_count_0 ||
+                        subgroup_count_1 < Configuration::subgroup_min_count_1) {
+                        skip = true;
+                        continue;
+                    }
                 }
                 Task child(buffer, this -> _feature_set, id, state);
                 state.locals[id].neighbourhood[2 * j + k] = child;
@@ -368,6 +403,9 @@ void Task::send_explorer(Task const & child, float scope, int feature, unsigned 
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
     bool send = true;
+
+    // Lock graph for children, vertices, and edges accesses
+    std::lock_guard<std::recursive_mutex> lock(state.graph.graph_mutex);
     auto key = state.graph.children.find(std::make_pair(this -> identifier(), feature));
 
     if (key != state.graph.children.end()) {
@@ -387,11 +425,9 @@ void Task::send_explorer(Task const & child, float scope, int feature, unsigned 
         }
     }
     if (send) {
-        // Priority calculation: for log_loss, use support (prioritize higher support)
-        // For misclassification loss, use support - lowerbound (prioritize higher support with lower bounds)
-        // Note: For log_loss, lowerbound can be large (entropy * n_points + regularization), so we use support alone
-        float priority = (Configuration::loss_function == LOG_LOSS) 
-            ? this->_support 
+        // Priority calculation: for log_loss / squared_error, use support; for misclassification use support - lowerbound
+        float priority = (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR)
+            ? this->_support
             : (this->_support - this->_lowerbound);
         state.locals[id].outbound_message.exploration(
             this->_identifier,  // sender tile
@@ -415,9 +451,7 @@ bool Task::update(float lower, float upper, int optimal_feature) {
 
     this -> _optimal_feature = optimal_feature;
 
-    // Note: regularization is available via Configuration::regularization if needed
-    if (Configuration::loss_function == LOG_LOSS) {
-        // For log-loss, only check if bounds are equal (converged)
+    if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
         if (this -> _upperbound - this -> _lowerbound <= std::numeric_limits<float>::epsilon()) {
             this -> _lowerbound = this -> _upperbound;
         }

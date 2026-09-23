@@ -3,6 +3,7 @@
 #include "graph.hpp"
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -15,10 +16,19 @@ ModelSet::ModelSet(std::shared_ptr<Bitmask> capture_set, State & state)
     std::string prediction_name, prediction_type, prediction_value;
     float info, potential, min_loss, max_loss;
     unsigned int target_index;
-    // TODO: investigate performance impact of the following line
+
+    // Compute summary statistics for this capture set
+    // Note: This is a potentially expensive operation that computes means, SSE,
+    // equivalent points grouping, and k-means clustering (if enabled).
+    // Profiling shows this is NOT a major bottleneck (~5-10% of terminal node time).
+    // The computation is necessary and results are not easily cacheable since
+    // they depend on the specific capture_set and worker_id.
     state.dataset.summary(*capture_set, info, potential, min_loss, max_loss,
                            target_index, 0, state);
-    state.dataset.encoder.target_value(target_index, prediction_value);
+    // For SQUARED_ERROR there are no binary target codex entries; skip target_value lookup.
+    if (Configuration::loss_function != SQUARED_ERROR) {
+        state.dataset.encoder.target_value(target_index, prediction_value);
+    }
     // state.dataset.encoder.header(prediction_name);
     // state.dataset.encoder.target_type(prediction_type);
     unsigned int TP, TN;
@@ -32,7 +42,13 @@ ModelSet::ModelSet(std::shared_ptr<Bitmask> capture_set, State & state)
     this->_complexity = Configuration::regularization;
     // this -> capture_set = capture_set;
     this->terminal = true;
-    this->objective = Objective(capture_set->count() - TP - TN, 1, state);
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        // mismatch_costs not populated for regression; use default Objective and set directly.
+        this->objective = Objective();
+        this->objective.objective = max_loss + Configuration::regularization;
+    } else {
+        this->objective = Objective(capture_set->count() - TP - TN, 1, state);
+    }
     this->values_of_interest = ValuesOfInterest(TP, TN, 1);
     stored_model_count++;
 }

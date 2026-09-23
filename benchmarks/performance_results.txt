@@ -1,0 +1,48 @@
+=== Parallel Performance Benchmarks - optimaltrees v0.4.0 ===
+Date: 2026-03-18
+
+SUMMARY: Parallelization has significant overhead. Best case: 1.44x speedup
+with 4 workers on medium problems (n=800, p=25). Default worker_limit=1
+recommended for most use cases.
+
+=== RESULTS BY PROBLEM SIZE ===
+
+Tiny (n=100, p=10):
+  1 worker:  0.003 sec (baseline)
+  2 workers: 0.004 sec → 0.71x speedup (36% efficient) - SLOWDOWN
+  4 workers: 0.003 sec → 0.87x speedup (22% efficient) - SLOWDOWN
+
+Small (n=300, p=15):
+  1 worker:  0.005 sec (baseline)
+  2 workers: 0.004 sec → 1.17x speedup (59% efficient) - Moderate
+  4 workers: 0.004 sec → 1.19x speedup (30% efficient) - Poor
+
+Medium (n=800, p=25) - BEST CASE:
+  1 worker:  0.016 sec (baseline)
+  2 workers: 0.013 sec → 1.25x speedup (62% efficient) - Good
+  4 workers: 0.011 sec → 1.44x speedup (36% efficient) - Moderate
+
+Large (n=1500, p=35):
+  1 worker:  0.025 sec (baseline)
+  2 workers: 0.026 sec → 0.98x speedup (49% efficient) - SLOWDOWN
+  4 workers: 0.024 sec → 1.05x speedup (26% efficient) - Poor
+
+=== ROOT CAUSE ===
+
+Shared queue bottleneck: All workers compete for single mutex lock.
+With 4 workers, ~75% of time spent waiting for lock (not computing).
+
+=== RECOMMENDATION ===
+
+Default: worker_limit = 1 (single-threaded)
+Optional: worker_limit = 2 for medium problems (n=500-1000)
+Benchmark your specific problem before using worker_limit > 1
+
+See benchmarks/PERFORMANCE_SUMMARY.md for detailed analysis.
+
+=== REFERENCE ===
+
+Bug Fix: PARALLEL_DEADLOCK_FIX_2026-03-18.md
+Commit: 6dff8ed
+Scripts: minimal_parallel_test.R, quick_performance_check.R,
+         large_problem_benchmark.R

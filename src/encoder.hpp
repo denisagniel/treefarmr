@@ -67,6 +67,9 @@ public:
     // @return the number of samples in the dataset
     unsigned int samples(void) const;
 
+    // Regression (squared_error loss): continuous target values, one per sample. Empty when not regression.
+    std::vector< double > const & regression_targets(void) const;
+
     // Returns: the pre-encode feature index and the offset to the binary feature generated
     // @param encoded_column_index: the index of the binary feature
     // @param decoded_column_index: the index of the original feature
@@ -139,6 +142,11 @@ private:
 
     // Binary representation of rows
     std::vector< Bitmask > binary_rows;
+
+    // Regression mode: continuous target column, parsed at full double precision
+    // via safe_stod (2026-09-09 fix; encoder.cpp's safe_stof stays float and is
+    // still used for feature-threshold parsing elsewhere in this file).
+    std::vector< double > regression_targets_;
 
     // @param number: input number to reduce precision
     // @return an input equivalent to number rounded to k significant figures

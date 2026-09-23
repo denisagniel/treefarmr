@@ -43,9 +43,6 @@ using json = nlohmann::json;
 //     }
 // }
 
-// Atomic counter for crash-resistant logging
-static std::atomic<int> log_counter(0);
-
 // REMOVED: __attribute__((constructor)) functions can cause hangs during static init
 // static void __attribute__((constructor)) after_rcpp_treefarms_static_init() {
 //     fprintf(stderr, "[TREEFARMR_CHECKPOINT] AFTER rcpp_treefarms.cpp static initialization\n");
@@ -57,54 +54,6 @@ static std::atomic<int> log_counter(0);
 //         fclose(f);
 //     }
 // }
-
-// Signal handler to catch crashes and log them
-static void crash_handler(int sig) {
-    FILE* f = fopen("/tmp/crash_log.txt", "a");
-    if (f) {
-        fprintf(f, "CRASH: Signal %d received\n", sig);
-        fflush(f);
-        fclose(f);
-    }
-    // Re-raise signal to get core dump
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
-// Helper function to log with atomic counter (survives crashes)
-// Use multiple defensive mechanisms
-static void atomic_log(const std::string& message) {
-    try {
-        int counter = log_counter.fetch_add(1);
-        // Try multiple logging methods for maximum reliability
-        // Method 1: File I/O with fopen (more reliable than ofstream)
-        FILE* f = fopen("/tmp/crash_log.txt", "a");
-        if (f) {
-            fprintf(f, "%d: %s\n", counter, message.c_str());
-            fflush(f);
-            fclose(f);
-        }
-        // Method 2: stderr (might be captured but worth trying)
-        fprintf(stderr, "ATOMIC_LOG[%d]: %s\n", counter, message.c_str());
-        fflush(stderr);
-    } catch (...) {
-        // If logging itself crashes, at least try stderr
-        fprintf(stderr, "ATOMIC_LOG_FAILED\n");
-        fflush(stderr);
-    }
-}
-
-// Initialize signal handlers on first call
-static bool signal_handlers_initialized = false;
-static void init_signal_handlers() {
-    if (!signal_handlers_initialized) {
-        signal(SIGSEGV, crash_handler);
-        signal(SIGBUS, crash_handler);
-        signal(SIGABRT, crash_handler);
-        signal_handlers_initialized = true;
-        atomic_log("Signal handlers initialized");
-    }
-}
 
 
 // [[Rcpp::export]]
@@ -150,95 +99,65 @@ int treefarms_status_cpp() {
 
 // [[Rcpp::export]]
 Rcpp::CharacterVector treefarms_fit_with_config_cpp(std::string data_csv, std::string configuration) {
-    init_signal_handlers();
-    atomic_log("Entered treefarms_fit_with_config_cpp");
+    json config_json;
+    try {
+        config_json = json::parse(configuration);
+        if (config_json.contains("verbose")) {
+            Configuration::verbose = config_json["verbose"].get<bool>();
+        }
+        if (config_json.contains("loss_function") && config_json["loss_function"] == "log_loss") {
+            Configuration::worker_limit = 1;
+        }
+    } catch (...) {
+        // Fall back to stream-based configure later
+    }
+
     std::string result = "{}";
     try {
-        atomic_log("Inside try block");
-        
-        // CRITICAL FIX: Parse configuration JSON first to check for LOG_LOSS
-        // Set worker_limit BEFORE calling configure() to ensure State::initialize() uses correct value
-        json config_json;
-        try {
-            config_json = json::parse(configuration);
-            // Check if loss_function is log_loss and set worker_limit BEFORE configure
-            if (config_json.contains("loss_function") && 
-                config_json["loss_function"] == "log_loss") {
-                // Set worker_limit to 1 BEFORE configure() so State::initialize() uses it
-                Configuration::worker_limit = 1;
-                atomic_log("Set worker_limit=1 for log-loss BEFORE configure");
-            }
-        } catch (...) {
-            // If JSON parsing fails, fall back to stream-based configure
-            atomic_log("JSON parse failed, using stream-based configure");
-        }
-        
-        // Configure
-        atomic_log("About to configure");
         std::istringstream config_stream(configuration);
         GOSDT::configure(config_stream);
-        atomic_log("Configuration complete");
-        
+
         // Force single-threaded for log-loss
         // This is a safety check in case the JSON parsing above didn't work
         if (Configuration::loss_function == LOG_LOSS) {
             if (Configuration::worker_limit != 1) {
-                atomic_log("WARNING: worker_limit was not 1 for log-loss, correcting to 1");
                 Configuration::worker_limit = 1;
             }
-            atomic_log("Verified worker_limit=1 for log-loss");
         }
-        
+
         // CRITICAL: Verify worker_limit is valid
         assert(Configuration::worker_limit > 0 && "worker_limit must be > 0 after configuration");
-        
+
         // Fit model and get result
-        atomic_log("About to create GOSDT model");
         // CRITICAL: Keep model in scope until after we return
-        // The crash might be in the model destructor
         std::string fit_result;
         {
-            atomic_log("Creating data stream");
             std::istringstream data_stream(data_csv);
-            atomic_log("Creating GOSDT model object");
             GOSDT model;
-            atomic_log("About to call model.fit()");
             model.fit(data_stream, fit_result);
-            atomic_log("model.fit() returned, result length=" + std::to_string(fit_result.length()));
             // Model destructor will run here, but we've already serialized
         }
-        atomic_log("Model destructor completed");
-        
+
         // Verify result string is valid before return
-        atomic_log("Verifying result string");
-        if (fit_result.empty() || fit_result.length() == 0) {
+        if (fit_result.empty()) {
             fit_result = "{}";
-            atomic_log("Result was empty, set to {}");
         }
-        
+
         // For log-loss, return string directly (same as non-log-loss)
         // Testing showed that direct string passing works fine and avoids file I/O complexity
         if (Configuration::loss_function == LOG_LOSS) {
-            atomic_log("Log-loss detected, returning result directly as string (length=" + std::to_string(fit_result.length()) + ")");
-            atomic_log("About to create Rcpp::CharacterVector for log-loss");
             Rcpp::CharacterVector result_vec = Rcpp::CharacterVector::create(fit_result);
-            atomic_log("Rcpp::CharacterVector created for log-loss, about to return");
             return result_vec;
         }
-        
+
         // For non-log-loss, return directly
-        atomic_log("Non-log-loss path, returning result directly (length=" + std::to_string(fit_result.length()) + ")");
-        atomic_log("About to create Rcpp::CharacterVector");
         Rcpp::CharacterVector result_vec = Rcpp::CharacterVector::create(fit_result);
-        atomic_log("Rcpp::CharacterVector created, about to return");
         return result_vec;
-        
+
     } catch (std::exception& e) {
-        atomic_log("EXCEPTION: " + std::string(e.what()));
         Rcpp::Rcout << "ERROR: " << e.what() << std::endl;
         return Rcpp::CharacterVector::create("{}");
     } catch (...) {
-        atomic_log("EXCEPTION: Unknown exception");
         Rcpp::Rcout << "ERROR: Unknown exception" << std::endl;
         return Rcpp::CharacterVector::create("{}");
     }
@@ -267,6 +186,14 @@ Rcpp::List treefarms_fit_and_stats_cpp(std::string data_csv, std::string configu
     } catch (...) {
         Rcpp::stop("Unknown C++ exception occurred");
     }
+}
+
+// [[Rcpp::export]]
+bool treefarms_model_limit_exceeded_cpp() {
+    // Read-and-reset: prevents stale flag from a prior failed fit poisoning the next call
+    bool val = GOSDT::model_limit_exceeded;
+    GOSDT::model_limit_exceeded = false;
+    return val;
 }
 
 // [[Rcpp::export]]

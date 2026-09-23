@@ -7,24 +7,59 @@
 count_tree_leaves(tree_node)
 }
 \arguments{
-\item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
+\item{tree_node}{Tree structure (from model@tree_json or extracted tree)}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{X}{A data.frame or matrix of features. Can contain continuous or
+binary (0/1) features. Continuous features will be automatically discretized.}
 
-\item{loss_function}{Character string specifying the loss function to use.
-Options: "misclassification" (default) or "log_loss".}
+\item{y}{For classification: binary (0/1). For regression: numeric vector (use \code{loss_function = "squared_error"}).}
+
+\item{loss_function}{Character string specifying the loss function:
+\itemize{
+  \item \code{"misclassification"} (default) - 0/1 loss for classification
+  \item \code{"log_loss"} - Cross-entropy loss for probabilistic classification
+  \item \code{"squared_error"} - L2 loss for regression (alias: \code{"regression"})
+  \item \code{"absolute_error"} - L1 loss (not yet implemented in solver)
+  \item \code{"huber"} - Robust hybrid L1/L2 loss (not yet implemented in solver)
+  \item \code{"quantile"} - Quantile regression (not yet implemented in solver)
+  \item \code{"custom"} - User-defined loss function (not yet implemented in solver)
+}
+For regression losses, \code{y} may be continuous and prediction returns fitted values.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
 lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
 
-\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size.
-Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.}
+\item{rashomon_bound_multiplier}{Numeric value controlling Rashomon set size (multiplicative).
+Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.
+Rashomon bound = optimum * (1 + rashomon_bound_multiplier). Ignored if \code{rashomon_bound_adder} is non-zero.}
+
+\item{rashomon_bound_adder}{Numeric value for additive Rashomon bound. Default: 0.
+If non-zero, Rashomon bound = optimum + rashomon_bound_adder and \code{rashomon_bound_multiplier} is not used.}
+
+\item{rashomon_ignore_trivial_extensions}{Logical or NULL. If TRUE, prune trees with identical
+partitions but different split sequences, keeping one representative per partition. If FALSE, keep all
+trivial extensions (same partition, different split order). If NULL (default), inferred from
+\code{single_tree}: TRUE when \code{single_tree=TRUE}, FALSE when \code{single_tree=FALSE}.
+\strong{For cross-fitted Rashomon workflows:} Must be FALSE to enable fold intersection.}
 
 \item{target_trees}{Integer: target number of trees when auto-tuning (default: 1).}
 
 \item{max_trees}{Integer: maximum acceptable number of trees when auto-tuning (default: 5).}
 
 \item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
+
+\item{model_limit}{Integer or NULL. Maximum number of models extracted during
+Rashomon set enumeration. If NULL (default), resolved based on loss function:
+200000 for all loss functions (sufficient for max_depth=4 with binary features).}
+
+\item{max_depth}{Integer. Maximum tree depth (0 = unlimited). Limits the depth
+of trees in the Rashomon set, which is the most effective control for
+preventing combinatorial explosion with many features. Default: 0 (no limit).
+\strong{Auto-cap:} for single-tree fits (regression or classification)
+with many binary features (> 8) and \code{max_depth = 0}, the function
+auto-sets \code{max_depth = 2} (depth-2 trees) to prevent exponential
+search-space growth. Pass \code{max_depth = 0L} explicitly to disable
+and set \code{verbose = TRUE} to see the message.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 
@@ -39,6 +74,61 @@ Default: TRUE. When TRUE, sets `rashomon = FALSE` to get only the optimal tree.
 When FALSE, computes a full rashomon set. For convenience, use \code{\link{fit_tree}}
 for single trees or \code{\link{fit_rashomon}} for rashomon sets.}
 
+\item{discretize_method}{Method for discretizing continuous features:
+"quantiles" (default) or "median". "quantiles" places thresholds at
+empirical quantiles and respects \code{discretize_bins}. "median" always
+produces exactly 1 threshold (median split) regardless of \code{discretize_bins}.}
+
+\item{discretize_bins}{Number of bins for quantile discretization. Default:
+\code{"adaptive"} (= fixed 32 bins per coordinate, justified by fixed-sample
+topology-recovery margin condition; see \code{\link{compute_bin_count}}). Use
+\code{"log"} for the legacy \code{max(2, ceiling(log(n)/3))} schedule; \code{"cv"}
+for data-driven selection. Can also be a fixed integer >= 2. Only respected when
+\code{discretize_method = "quantiles"}. Example: n_bins=4 creates 4 bins with
+3 thresholds (quartiles).}
+
+\item{discretize_thresholds}{Optional named list of custom thresholds
+(e.g., list(age = c(30, 50))).}
+
+\item{cart_lookahead}{Logical. Enable OSRT one-step lookahead bounds (Theorem 3.2).
+Default: TRUE (recommended). When enabled, uses scope-based pruning from the OSRT
+paper to eliminate subtrees more aggressively, improving optimization speed without
+affecting optimality. Can be set to FALSE to disable for debugging.}
+
+\item{cart_lookahead_depth}{Integer. Reserved for future use. Currently ignored.}
+
+\item{k_cluster}{Logical. Enable k-Means lower bounds for regression (OSRT Theorems 3.4-3.5).
+Default: TRUE (recommended). When enabled for regression with \code{loss_function = "squared_error"},
+uses optimal 1D k-Means clustering to compute tighter lower bounds, improving
+optimization speed (typically 1.5-4x faster). Based on Song & Zhong (2020) algorithm.
+Has no effect on classification tasks. Can be set to FALSE to disable.}
+
+\item{huber_delta}{Numeric. Threshold parameter for Huber loss (default: 1.0).
+Controls transition between L2 (quadratic) and L1 (linear) behavior.
+- For errors |y - pred| <= delta: uses L2 loss
+- For errors |y - pred| > delta: uses L1 loss
+Only used when \code{loss_function = "huber"}.}
+
+\item{quantile_tau}{Numeric in (0,1). Quantile level for quantile regression (default: 0.5).
+- tau = 0.5: median regression
+- tau = 0.9: 90th percentile regression
+- tau = 0.1: 10th percentile regression
+Only used when \code{loss_function = "quantile"}.}
+
+\item{custom_loss}{A list specifying a custom loss function (only used when \code{loss_function = "custom"}).
+Must contain:
+\itemize{
+  \item \code{aggregate}: Function that takes a numeric vector \code{y} and returns
+    a named list of summary statistics
+  \item \code{loss}: Function that takes summary statistics and a prediction,
+    returns a list with \code{min_loss}, \code{max_loss}, and \code{potential}
+  \item \code{optimal}: Function that takes summary statistics and returns
+    the optimal prediction (single numeric value)
+  \item \code{is_regression}: Logical flag indicating if this is a regression
+    loss (TRUE) or classification loss (FALSE)
+}
+See \code{\link{example_custom_squared_error}} for examples.}
+
 \item{...}{Additional parameters passed to TreeFARMS configuration.}
 }
 \value{
@@ -52,10 +142,15 @@ A list containing:
   \item{n_trees}{Number of trees in the Rashomon set}
   \item{X_train}{Training features (only if store_training_data=TRUE)}
   \item{y_train}{Training labels (only if store_training_data=TRUE)}
+
+Integer number of leaf nodes
 }
 \description{
 Train TreeFARMS models with support for log-loss optimization and probability predictions.
 TreeFARMS finds optimal decision trees using either misclassification loss or log-loss (cross-entropy).
+
+Counts the number of leaf nodes in a decision tree. Useful for assessing
+tree complexity and diagnosing potential overfitting.
 }
 \details{
 TreeFARMS (Tree-based Fast and Accurate Rule Set Models) is an algorithm for
@@ -75,12 +170,15 @@ used in the loss function optimization, ensuring consistency between training an
 By default, probabilities are not computed immediately during training (lazy evaluation).
 This reduces memory usage, especially for large datasets. To compute probabilities for
 training data, use \code{compute_probabilities=TRUE} or access them via \code{predict()}
-or the helper functions \code{get_probabilities()}, \code{get_predictions()}, or
-\code{get_accuracy()}.
+or the model's S7 properties (\code{model@probabilities}, \code{model@predictions},
+\code{model@accuracy}).
 
 Training data (\code{X_train}, \code{y_train}) is not stored by default to save memory.
 Set \code{store_training_data=TRUE} if you need to access training data later (e.g., for
 computing accuracy or probabilities on training data).
+
+A leaf node is identified by the presence of a prediction field.
+Internal nodes have true/false children and a split rule.
 }
 \examples{
 \dontrun{
@@ -98,13 +196,13 @@ y <- as.numeric((X$feature_1 == 1 & X$feature_2 == 1) |
                 (X$feature_1 == 0 & X$feature_2 == 0))
 
 # Train with misclassification loss
-model_misclass <- treefarms(X, y, loss_function = "misclassification")
+model_misclass <- optimaltrees(X, y, loss_function = "misclassification")
 
 # Train with log-loss (memory-efficient: no probabilities computed immediately)
-model_logloss <- treefarms(X, y, loss_function = "log_loss")
+model_logloss <- optimaltrees(X, y, loss_function = "log_loss")
 
 # Train with log-loss and compute probabilities immediately
-model_logloss_full <- treefarms(X, y, loss_function = "log_loss", 
+model_logloss_full <- optimaltrees(X, y, loss_function = "log_loss",
                                 compute_probabilities = TRUE)
 
 # Compare probability predictions
@@ -126,8 +224,15 @@ X_new <- data.frame(
   feature_3 = c(0, 1, 1)
 )
 
-pred_misclass <- predict_treefarms(model_misclass, X_new)
-pred_logloss <- predict_treefarms(model_logloss, X_new)
+pred_misclass <- predict(model_misclass, X_new)
+pred_logloss <- predict(model_logloss, X_new)
+}
+Count the number of leaves in a tree
+
+\dontrun{
+model <- fit_tree(X, y)
+n_leaves <- count_tree_leaves(model)
+cat("Tree has", n_leaves, "leaves\n")
 }
 
 }

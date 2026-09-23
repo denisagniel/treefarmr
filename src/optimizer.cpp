@@ -7,10 +7,13 @@
 #include "optimizer/dispatch/dispatch.hpp"
 #include "optimizer/extraction/models.hpp"
 #include "optimizer/extraction/rash_models.hpp"
+#include "optimizer/extraction/extract_rashomon_models.hpp"
 #include "configuration.hpp"
 #include <cstdint>  // For uintptr_t
+#include <limits>
 
-Optimizer::Optimizer(void) {
+Optimizer::Optimizer(void) : active(true) {
+    // active initialized to true in initializer list (atomic cannot use member initializer)
     return;
 }
 
@@ -46,6 +49,10 @@ void Optimizer::load(std::istream & data_source) {
         Configuration::worker_limit = 1;
     }
     assert(Configuration::worker_limit > 0 && "worker_limit must be > 0 after correction");
+
+    // CRITICAL: This is the LAST place Configuration::worker_limit can change.
+    // After this line, worker_limit must be treated as const. Threads will be created
+    // later in gosdt.cpp, and any changes to Configuration after that point cause UB.
     
     // CRITICAL: Verify state object alignment before use
     void* sptr = &state;
@@ -186,9 +193,18 @@ bool Optimizer::iterate(unsigned int id) {
             case Message::exploitation_message: { this -> exploit += 1; break; }
         }
     }
+
+    // CRITICAL FIX: Check termination condition EVERY iteration, not just periodically
+    // Previous code only updated active every 10,000 iterations (tick_duration), causing
+    // workers to spin forever when queue emptied between ticks
+    bool should_continue = !complete() && !timeout() && state.queue.size() > 0;
+
     // Worker 0 is responsible for managing ticks and snapshots
     if (id == 0) {
         this -> ticks += 1;
+
+        // Update shared flag for other workers
+        this -> active = should_continue;
 
         // snapshots that would need to occur every iteration
         // if (Configuration::trace != "") { this -> diagnostic_trace(this -> ticks, state.locals[id].message); }
@@ -196,12 +212,10 @@ bool Optimizer::iterate(unsigned int id) {
 
         // snapshots that can skip unimportant iterations
         if (update || complete() || ((this -> ticks) % (this -> tick_duration)) == 0) { // Periodic check for completion for timeout
-            // Update the continuation flag for all threads
-            this -> active = !complete() && !timeout() && (Configuration::worker_limit > 1 || state.queue.size() > 0);
             this -> print();
             this -> profile();
         }
-        
+
         std::vector<int> memory_checkpoint = Configuration::memory_checkpoints;
         if (rashomon_flag && exported_idx < memory_checkpoint.size() && getCurrentRSS() > memory_checkpoint[exported_idx] * 1000000) {
             export_models(std::to_string(memory_checkpoint[exported_idx]));
@@ -209,7 +223,7 @@ bool Optimizer::iterate(unsigned int id) {
             std::cout << "Memory usage after extraction: " << getCurrentRSS() / 1000000 << std::endl;
         }
     }
-    return this -> active;
+    return should_continue;
 }
 
 void Optimizer::print(void) const {
@@ -274,6 +288,7 @@ void Optimizer::export_models(std::string suffix) {
 }
 
 float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, unsigned int id) {
+    if (!capture_set.valid()) { return std::numeric_limits<float>::max(); }
     Bitmask left(state.dataset.height());
     Bitmask right(state.dataset.height());
     float potential, min_loss, max_loss, base_info;
@@ -281,12 +296,8 @@ float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, 
     state.dataset.summary(capture_set, base_info, potential, min_loss, max_loss, target_index, id, state);
     float base_risk = max_loss + Configuration::regularization;
 
-    if (Configuration::loss_function == LOG_LOSS) {
-        // For log-loss (entropy-based), use different pruning criteria
-        // Skip checks that assume misclassification loss (0-1 range)
-        // For log_loss, min_loss == max_loss (both are entropy), so skip that check
-        // Only prune if feature set is empty (no features to split on)
-        // Note: potential is entropy * n_points, so be less aggressive with pruning
+    if (!feature_set.valid()) { return base_risk; }
+    if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
         if (feature_set.empty()) {
             return base_risk;
         }
@@ -310,10 +321,11 @@ float Optimizer::cart(Bitmask const & capture_set, Bitmask const & feature_set, 
             state.dataset.subset(j, false, left);
             state.dataset.subset(j, true, right);
 
+            if (!left.valid() || !right.valid()) { continue; }
             if (left.empty() || right.empty()) { continue; }
 
-            state.dataset.summary(capture_set, left_info, potential, min_loss, max_loss, target_index, id, state);
-            state.dataset.summary(capture_set, right_info, potential, min_loss, max_loss, target_index, id, state);
+            state.dataset.summary(left, left_info, potential, min_loss, max_loss, target_index, id, state);
+            state.dataset.summary(right, right_info, potential, min_loss, max_loss, target_index, id, state);
 
             float gain = left_info + right_info - base_info;
             if (gain > information_gain) {

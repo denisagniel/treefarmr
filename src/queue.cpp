@@ -9,10 +9,13 @@ Queue::Queue(void) {
 Queue::~Queue(void) {
     // Messages can be in both membership map AND queue
     // We need to delete each message only once
-    // Strategy: Collect all unique message pointers, then delete them
-    
+    // Strategy: Collect all unique message pointers, then delete directly
+
+    // CRITICAL: Use std::set for deduplication. If a message appears in both
+    // membership and queue (which can happen), set::insert ensures we only
+    // delete each pointer once.
     std::set<message_type*> messages_to_delete;
-    
+
     // Collect messages from membership map
     {
         std::lock_guard<std::mutex> lock(queue_mutex);
@@ -20,7 +23,7 @@ Queue::~Queue(void) {
             message_type* msg = it->first;
             messages_to_delete.insert(msg);
         }
-        
+
         // Collect messages from queue
         // Create a copy of the queue to iterate over (can't iterate over priority_queue directly)
         std::vector<message_type*> queue_messages;
@@ -29,25 +32,25 @@ Queue::~Queue(void) {
             queue_messages.push_back(msg);
             queue.pop();
         }
-        // Add queue messages to deletion set
+        // Add queue messages to delete set
         for (auto msg : queue_messages) {
             messages_to_delete.insert(msg);
         }
     }
-    
+
     // Clear membership map (no lock needed, destructor is single-threaded)
     membership.clear();
-    
-    // Delete each message exactly once
+
+    // In destructor: delete directly, don't return to pool
+    // Pool is about to be destroyed anyway, avoid unnecessary lock contention
     for (auto msg : messages_to_delete) {
-        if (msg != nullptr) {
-            delete msg;
-        }
+        delete msg;
     }
 }
 
 bool Queue::push(Message const & message) {
-    message_type * internal_message = new message_type();
+    // Acquire message from pool (reuse or allocate)
+    message_type * internal_message = message_pool.acquire();
     * internal_message = message;
 
     // Thread-safe insertion into membership map and queue
@@ -58,7 +61,8 @@ bool Queue::push(Message const & message) {
             this -> queue.push(internal_message);
             return true;
         } else {
-            delete internal_message;
+            // Collision: release message back to pool
+            message_pool.release(internal_message);
             return false;
         }
     }
@@ -77,14 +81,14 @@ unsigned int Queue::size(void) const {
 
 bool Queue::pop(Message & message) {
     message_type * internal_message = nullptr;
-    
+
     // Thread-safe pop from queue and erase from membership map
     {
         std::lock_guard<std::mutex> lock(queue_mutex);
         if (!this -> queue.empty()) {
             internal_message = this -> queue.top();
             this -> queue.pop();
-            
+
             // Erase from membership map to avoid dangling pointers
             auto it = this -> membership.find(internal_message);
             if (it != this -> membership.end()) {
@@ -92,10 +96,11 @@ bool Queue::pop(Message & message) {
             }
         }
     }
-    
+
     if (internal_message != nullptr) {
         message = * internal_message;
-        delete internal_message;
+        // Release message back to pool for reuse
+        message_pool.release(internal_message);
         return true;
     } else {
         return false;

@@ -129,8 +129,11 @@ public:
     bound_table bounds;
     models_table models;
 
-    // Mutex for thread-safety (defensive, since we're single-threaded)
-    mutable std::mutex graph_mutex;
+    // THREAD-SAFETY: This mutex MUST be held for all operations on graph members
+    // (translations, children, vertices, edges, bounds, models) when worker_limit > 1.
+    // Use std::lock_guard to ensure proper RAII-based locking.
+    // Using recursive_mutex to allow recursive function calls (e.g., rash_models).
+    mutable std::recursive_mutex graph_mutex;
 
     Graph(void);
     ~Graph(void);

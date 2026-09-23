@@ -8,7 +8,7 @@
 #' @keywords internal
 find_gosdt_executable <- function() {
   # Check package installation directory
-  pkg_dir <- system.file(package = "treefarmr")
+  pkg_dir <- system.file(package = "optimaltrees")
   if (nchar(pkg_dir) > 0) {
     # Try Unix/Linux/macOS executable
     exec_path <- file.path(pkg_dir, "bin", "gosdt")
@@ -85,7 +85,7 @@ treefarms_isolated <- function(X, y,
             "To build the executable, reinstall the package or run:\n",
             "  cd src && make -f Makevars all")
     # Fall back to direct call
-    return(treefarms(X = X, y = y, 
+    return(optimaltrees(X = X, y = y,
                      loss_function = loss_function,
                      regularization = regularization,
                      rashomon_bound_multiplier = rashomon_bound_multiplier,
@@ -222,27 +222,12 @@ treefarms_isolated <- function(X, y,
       cat("JSON output length:", nchar(json_output), "characters\n")
     }
     
-    # Parse JSON and process result (reuse existing logic from treefarms.R)
-    # We need to access the helper functions from treefarms.R
-    # Get the extract_tree_from_stdout function if available
-    extract_tree_from_stdout <- tryCatch({
-      get("extract_tree_from_stdout", envir = asNamespace("treefarmr"))
-    }, error = function(e) {
-      function(stdout_lines) { NULL }
-    })
-    
     # Parse the JSON result
     if (is.null(json_output) || json_output == "" || trimws(json_output) == "{}") {
-      if (verbose) {
-        cat("DEBUG: json_output is null or empty\n")
-      }
       result_data <- NULL
     } else {
       tryCatch({
         result_data <- jsonlite::fromJSON(json_output, simplifyVector = FALSE)
-        if (verbose) {
-          cat("DEBUG: result_data parsed successfully\n")
-        }
       }, error = function(e) {
         warning("Failed to parse JSON result. Error: ", e$message)
         result_data <- NULL
@@ -307,7 +292,7 @@ treefarms_isolated <- function(X, y,
     if (compute_probabilities && has_tree) {
       # Use existing get_probabilities_from_tree function
       get_probabilities_from_tree <- get("get_probabilities_from_tree", 
-                                        envir = asNamespace("treefarmr"))
+                                        envir = asNamespace("optimaltrees"))
       probabilities <- get_probabilities_from_tree(tree_to_use, X)
       predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
       accuracy <- mean(predictions == y)

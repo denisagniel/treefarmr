@@ -1,13 +1,64 @@
 #include "model.hpp"
 #include <iomanip>
+#include <cmath>
+#include <sstream>
 
 Model::Model(void) {}
 
-Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
+Model::Model(std::shared_ptr<Bitmask> capture_set, State & state, unsigned int worker_id) {
     std::string prediction_name, prediction_type, prediction_value;
     float info, potential, min_loss, max_loss;
     unsigned int target_index;
-    state.dataset.summary(* capture_set, info, potential, min_loss, max_loss, target_index, 0, state);
+    state.dataset.summary(* capture_set, info, potential, min_loss, max_loss, target_index, worker_id, state);
+
+    this -> _loss = max_loss;
+    this -> _complexity = Configuration::regularization;
+    this -> capture_set = capture_set;
+    this -> terminal = true;
+
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        unsigned int n = capture_set -> count();
+        if (n == 0) {
+            this -> prediction = "0";
+            this -> regression_prediction_value = 0.0;
+        } else {
+            double sum_y = 0.0;  // Use double precision for accumulation
+            unsigned int count = 0;
+            for (unsigned int i = 0; i < state.dataset.height(); ++i) {
+                if (capture_set -> get(i)) {
+                    double val = state.dataset.get_target_values()[i];
+                    if (!std::isfinite(val)) {
+                        throw std::runtime_error("Non-finite target value at index " + std::to_string(i));
+                    }
+                    sum_y += val;
+                    count++;
+                }
+            }
+            if (count == 0) {
+                throw std::runtime_error("Empty capture set - cannot compute prediction");
+            }
+            double pred = sum_y / count;
+            if (!std::isfinite(pred)) {
+                throw std::runtime_error("Non-finite prediction: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(count));
+            }
+            this -> regression_prediction_value = pred;
+            // Round-trip-safe double->string conversion, kept for Model::predict()/
+            // print_readable() (both read `prediction`, not the double above).
+            // std::to_string(float) formats with a fixed 6 decimal places (not
+            // significant figures), which silently truncated leaf values to ~6 sig
+            // figs for small-magnitude predictions (bug found 2026-09-09). 17
+            // significant digits is the documented minimum for exact double round-trip.
+            std::ostringstream pred_stream;
+            pred_stream << std::setprecision(17) << pred;
+            this -> prediction = pred_stream.str();
+        }
+        state.dataset.encoder.header(prediction_name);
+        this -> name = prediction_name;
+        this -> type = "Rational";
+        this -> binary_target = 0;
+        return;
+    }
+
     state.dataset.encoder.target_value(target_index, prediction_value);
     state.dataset.encoder.header(prediction_name);
     state.dataset.encoder.target_type(prediction_type);
@@ -16,55 +67,38 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
     this -> name = prediction_name;
     this -> type = prediction_type;
     this -> prediction = prediction_value;
-    this -> _loss = max_loss;
-    this -> _complexity = Configuration::regularization;
-    this -> capture_set = capture_set;
-    this -> terminal = true;
-    
-    // Calculate and store class distribution for probability predictions
-    // We need to calculate this using the Dataset's public interface
-    // CRITICAL: Ensure dataset depth is valid before resizing
+
     unsigned int dataset_depth = state.dataset.depth();
     assert(dataset_depth > 0 && "Dataset depth must be > 0");
     this -> class_distribution.resize(dataset_depth, 0.0);
-    
-    // Calculate class distribution for probability predictions
-    // CRITICAL: Use safe accessor method that performs bounds checking
-    // This prevents segfaults if state.locals is not properly initialized
+
     try {
-        // Use get_local() which performs bounds checking and throws if invalid
         if (state.locals.size() > 0) {
-            // Safe access: get_local() will throw if id is out of bounds
             LocalState& local0 = state.get_local(0);
-            // Now safe to call get_class_distribution
             state.dataset.get_class_distribution(*capture_set, this -> class_distribution, 0, state);
-            
-            // Verify class_distribution was populated correctly
             float sum = 0.0;
             for (float prob : this -> class_distribution) {
                 sum += prob;
                 if (prob < 0.0 || prob > 1.0) {
-                    // Invalid probability - use uniform fallback
                     throw std::runtime_error("Invalid probability value");
                 }
             }
-            // Allow small floating point errors
             if (sum < 0.99 || sum > 1.01) {
                 throw std::runtime_error("Probabilities do not sum to ~1.0");
             }
         } else {
-            // locals not initialized - use uniform distribution
             throw std::runtime_error("state.locals is empty");
         }
     } catch (const std::exception& e) {
-        // Fallback: use uniform distribution if anything fails
-        // This is safe and prevents segfaults
+        std::cerr << "Warning: Exception in Model constructor class distribution computation: " << e.what() << std::endl;
+        std::cerr << "  Falling back to uniform class distribution." << std::endl;
         float uniform_prob = 1.0 / dataset_depth;
         for (size_t i = 0; i < this -> class_distribution.size(); ++i) {
             this -> class_distribution[i] = uniform_prob;
         }
     } catch (...) {
-        // Catch-all fallback: use uniform distribution
+        std::cerr << "Warning: Unknown exception in Model constructor class distribution computation." << std::endl;
+        std::cerr << "  Falling back to uniform class distribution." << std::endl;
         float uniform_prob = 1.0 / dataset_depth;
         for (size_t i = 0; i < this -> class_distribution.size(); ++i) {
             this -> class_distribution[i] = uniform_prob;
@@ -72,10 +106,10 @@ Model::Model(std::shared_ptr<Bitmask> capture_set, State & state) {
     }
 }
 
-Model::Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state) {
-    unsigned int feature_index; 
+Model::Model(unsigned int binary_feature_index, std::shared_ptr<Model> negative, std::shared_ptr<Model> positive, State & state, unsigned int worker_id) {
+    unsigned int feature_index;
     std::string feature_name, feature_type, relation, reference;
-    state.dataset.encoder.decode(binary_feature_index, & feature_index);                  
+    state.dataset.encoder.decode(binary_feature_index, & feature_index);
     state.dataset.encoder.encoding(binary_feature_index, feature_type, relation, reference);
     state.dataset.encoder.header(feature_index, feature_name);
 
@@ -190,6 +224,12 @@ float Model::loss(void) const {
     } else {
         loss = this -> negative -> loss() + this -> positive -> loss();
     }
+
+    // Validate before caching
+    if (!std::isfinite(loss)) {
+        throw std::runtime_error("Non-finite loss computed in Model::loss()");
+    }
+
     cached_loss = loss;
     return loss;
 }
@@ -205,6 +245,12 @@ float Model::complexity(void) const {
     } else {
         complexity = this -> negative -> complexity() + this -> positive -> complexity();
     }
+
+    // Validate before caching
+    if (!std::isfinite(complexity)) {
+        throw std::runtime_error("Non-finite complexity computed in Model::complexity()");
+    }
+
     cached_complexity = complexity;
     return complexity;
 }
@@ -367,16 +413,29 @@ void Model::to_json(json & node, State & state) const {
 
 void Model::_to_json(json & node) const {
     if (this -> terminal) {
-        node["prediction"] = this -> binary_target;
-        node["loss"] = this -> _loss; // This value is correct regardless of translation
-        node["complexity"] = Configuration::regularization;
-        // Always serialize probabilities - they're the empirical class distribution
-        // This works for both misclassification and log-loss loss functions
-        json prob_array = json::array();
-        for (float prob : this -> class_distribution) {
-            prob_array.push_back(prob);
+        if (Configuration::loss_function == SQUARED_ERROR) {
+            // Read the double directly -- no string round-trip. The previous
+            // std::stod(this->prediction) here both re-lost precision (moot once
+            // `prediction` was made lossless, 2026-09-09 fix) and was an unguarded,
+            // locale-dependent parse (strtod honors LC_NUMERIC; std::stod does not
+            // check that the whole string was consumed, unlike safe_stof elsewhere
+            // in this codebase) whose failure silently produced a wrong prediction
+            // of 0.0 instead of an error.
+            node["prediction"] = this -> regression_prediction_value;
+        } else {
+            node["prediction"] = this -> binary_target;
         }
-        node["probabilities"] = prob_array;
+        node["loss"] = this -> _loss;
+        node["complexity"] = Configuration::regularization;
+        // Only serialize class_distribution for classification models
+        // For regression, class_distribution is not initialized
+        if (Configuration::loss_function != SQUARED_ERROR && !this -> class_distribution.empty()) {
+            json prob_array = json::array();
+            for (float prob : this -> class_distribution) {
+                prob_array.push_back(prob);
+            }
+            node["probabilities"] = prob_array;
+        }
     } else {
         node["feature"] = this -> binary_feature;
         node["false"] = json::object();
@@ -430,18 +489,27 @@ void Model::translate_json(json & node, translation_type const & main, translati
 
 void Model::decode_json(json & node, State & state) const {
     if (node.contains("prediction")) {
-        std::string prediction_name, prediction_value;
-        state.dataset.encoder.target_value(node["prediction"], prediction_value);
-        state.dataset.encoder.header(prediction_name);
-
-        if (Encoder::test_integral(prediction_value)) {
-            node["prediction"] = atoi(prediction_value.c_str());
-        } else if (Encoder::test_rational(prediction_value)) {
-            node["prediction"] = atof(prediction_value.c_str());
+        // For regression (SQUARED_ERROR), prediction is already a double value, not an index
+        // Skip encoder lookup and just add the name
+        if (Configuration::loss_function == SQUARED_ERROR) {
+            std::string prediction_name;
+            state.dataset.encoder.header(prediction_name);
+            node["name"] = prediction_name;
         } else {
-            node["prediction"] = prediction_value;
+            // For classification: decode prediction index to actual value
+            std::string prediction_name, prediction_value;
+            state.dataset.encoder.target_value(node["prediction"], prediction_value);
+            state.dataset.encoder.header(prediction_name);
+
+            if (Encoder::test_integral(prediction_value)) {
+                node["prediction"] = atoi(prediction_value.c_str());
+            } else if (Encoder::test_rational(prediction_value)) {
+                node["prediction"] = atof(prediction_value.c_str());
+            } else {
+                node["prediction"] = prediction_value;
+            }
+            node["name"] = prediction_name;
         }
-        node["name"] = prediction_name;
     } else if (node.contains("feature")) {
         // index decoding from binary feature to original feature space
         unsigned int binary_feature_index = node["feature"];

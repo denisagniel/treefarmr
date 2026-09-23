@@ -200,11 +200,12 @@ imbalanced_dataset <- function(n = 100, p = 3, imbalance_ratio = 0.1, seed = 42)
   list(X = X, y = y)
 }
 
-# Create test datasets at package load time
+# Create test datasets with reduced sizes to minimize memory footprint
+# Note: Datasets are created at load time but kept smaller to reduce memory usage
 simple_dataset <- simple_dataset(100, 3, 42)
 pattern_dataset <- pattern_dataset(100, 42)
 entropy_dataset <- entropy_dataset(100, 42)
-big_dataset <- big_dataset(1000, 10, 42)
+big_dataset <- big_dataset(200, 10, 42)  # Reduced from 1000 to 200
 unbalanced_dataset <- unbalanced_dataset(100, 3, 0.1, 42)
 identical_features_dataset <- identical_features_dataset(100, 3, 42)
 random_y_dataset <- random_y_dataset(100, 3, 42)
@@ -214,5 +215,5 @@ single_row_dataset <- single_row_dataset()
 all_zeros_dataset <- all_zeros_dataset(50, 3)
 all_ones_dataset <- all_ones_dataset(50, 3)
 single_class_dataset <- single_class_dataset(50, 3, 0)
-many_features_dataset <- many_features_dataset(100, 50, 42)
+many_features_dataset <- many_features_dataset(100, 20, 42)  # Reduced from 50 to 20 features
 imbalanced_dataset <- imbalanced_dataset(100, 3, 0.1, 42)

@@ -62,6 +62,9 @@ public:
     // @return a bitmask representing the features that are not yet pruned
     Bitmask const & feature_set(void) const;
 
+    // @return the worker ID for this task (for thread-local storage access)
+    unsigned int worker_id(void) const;
+
     Tile & identifier(void);
     Tile & parent(void);
     std::vector<int> & order(void);
@@ -94,6 +97,7 @@ private:
     Tile _identifier;
     Bitmask _capture_set;
     Bitmask _feature_set;
+    unsigned int _worker_id;
 
     std::vector<int> _order;
 

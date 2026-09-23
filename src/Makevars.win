@@ -25,6 +25,16 @@ PKG_CPPFLAGS += -I../inst/include
 SOURCES = $(wildcard *.cpp)
 SOURCES := $(filter-out main.cpp, $(SOURCES))
 
+# Add ckmeans library object files (for k-means lower bounds)
+# R's build system doesn't automatically recurse into subdirectories,
+# so we need to explicitly add object files from lib/ckmeans/
+OBJECTS = $(SOURCES:.cpp=.o) \
+          lib/ckmeans/Ckmeans.1d.dp.o \
+          lib/ckmeans/dynamic_prog.o \
+          lib/ckmeans/fill_log_linear.o \
+          lib/ckmeans/fill_quadratic.o \
+          lib/ckmeans/fill_SMAWK.o
+
 # Build standalone executable for process isolation (Windows)
 # Create inst/bin directory if it doesn't exist
 all: $(SHLIB)

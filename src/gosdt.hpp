@@ -56,6 +56,7 @@ class GOSDT {
         static unsigned int size;
         static unsigned int iterations;
         static unsigned int status;
+        static bool model_limit_exceeded;
 
         // @param config_source: string stream containing a JSON object of configuration parameters
         // @note: See the Configuration class for details about each parameter

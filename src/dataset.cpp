@@ -1,5 +1,8 @@
 #include "dataset.hpp"
 #include "state.hpp"
+#include "kmeans.hpp"  // For k-means lower bounds
+#include <map>         // For grouping equivalent points
+#include <cmath>       // For std::isfinite
 
 Dataset::Dataset(void) {}
 Dataset::~Dataset(void) {}
@@ -34,6 +37,7 @@ void Dataset::load(std::istream & data_source) {
 void Dataset::clear(void) {
     this -> features.clear();
     this -> targets.clear();
+    this -> target_values.clear();
     this -> rows.clear();
     this -> feature_rows.clear();
     this -> target_rows.clear();
@@ -49,10 +53,9 @@ void Dataset::clear(void) {
 void Dataset::construct_bitmasks(std::istream & data_source) {
     this -> encoder = Encoder(data_source);
     std::vector< Bitmask > rows = this -> encoder.read_binary_rows();
-    unsigned int number_of_samples = this -> encoder.samples(); // Number of samples in the dataset
-    unsigned int number_of_rows = 0; // Number of samples after compressions
-    unsigned int number_of_binary_features = this -> encoder.binary_features(); // Number of source features
-    unsigned int number_of_binary_targets = this -> encoder.binary_targets(); // Number of target features
+    unsigned int number_of_samples = this -> encoder.samples();
+    unsigned int number_of_binary_features = this -> encoder.binary_features();
+    unsigned int number_of_binary_targets = this -> encoder.binary_targets();
     this -> _size = number_of_samples;
 
     this -> rows = this -> encoder.read_binary_rows();
@@ -61,6 +64,10 @@ void Dataset::construct_bitmasks(std::istream & data_source) {
     this -> feature_rows.resize(number_of_samples, number_of_binary_features);
     this -> targets.resize(number_of_binary_targets, number_of_samples);
     this -> target_rows.resize(number_of_samples, number_of_binary_targets);
+
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        this -> target_values = this -> encoder.regression_targets();
+    }
 
     for (unsigned int i = 0; i < number_of_samples; ++i) {
         for (unsigned int j = 0; j < number_of_binary_features; ++j) {
@@ -76,6 +83,9 @@ void Dataset::construct_bitmasks(std::istream & data_source) {
 };
 
 void Dataset::construct_cost_matrix(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     this -> costs.resize(depth(), std::vector< float >(depth(), 0.0));
     if (Configuration::costs != "") { // Customized cost matrix
         std::ifstream input_stream(Configuration::costs);
@@ -84,7 +94,11 @@ void Dataset::construct_cost_matrix(void) {
         for (unsigned int i = 0; i < depth(); ++i) {
             for (unsigned int j = 0; j < depth(); ++j) {
                 if (i == j) { this -> costs[i][j] = 0.0; continue; }
-                this -> costs[i][j] = 1.0 / (float)(depth() * this -> targets[j].count());
+                unsigned int target_count = this -> targets[j].count();
+                if (target_count == 0) {
+                    throw std::runtime_error("Target class " + std::to_string(j) + " has no samples");
+                }
+                this -> costs[i][j] = 1.0 / (float)(depth() * target_count);
             }
         }
     } else { // Default cost matrix
@@ -158,6 +172,9 @@ void Dataset::parse_cost_matrix(std::istream & input_stream) {
 };
 
 void Dataset::aggregate_cost_matrix(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     this -> match_costs.resize(depth(), 0.0);
     this -> mismatch_costs.resize(depth(), std::numeric_limits<float>::max());
     this -> max_costs.resize(depth(), -std::numeric_limits<float>::max());
@@ -177,6 +194,9 @@ void Dataset::aggregate_cost_matrix(void) {
 }
 
 void Dataset::construct_majority(void) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        return;
+    }
     std::vector< Bitmask > keys(height(), width());
     for (unsigned int i = 0; i < height(); ++i) {
         for (unsigned int j = 0; j < width(); ++j) {
@@ -277,6 +297,146 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
     if (id >= state.locals.size()) {
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
     }
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        unsigned int n = capture_set.count();
+        info = 0.0f;
+        potential = 0.0f;
+        target_index = 0;
+        if (n == 0) {
+            min_loss = 0.0f;
+            max_loss = 0.0f;
+            return;
+        }
+        double sum_y = 0.0;
+        for (unsigned int i = 0; i < height(); ++i) {
+            if (capture_set.get(i)) {
+                sum_y += this -> target_values[i];
+            }
+        }
+        if (n == 0) {
+            throw std::runtime_error("Cannot compute mean of empty sample");
+        }
+        double mean_y = sum_y / (double)n;
+        if (!std::isfinite(mean_y)) {
+            throw std::runtime_error("Non-finite mean: sum=" + std::to_string(sum_y) + ", n=" + std::to_string(n));
+        }
+        double sse = 0.0;
+        for (unsigned int i = 0; i < height(); ++i) {
+            if (capture_set.get(i)) {
+                double d = this -> target_values[i] - mean_y;
+                sse += d * d;
+            }
+        }
+        // Narrow once here: Dataset::summary's min_loss/max_loss/potential are
+        // float& (an intentional, unwidened boundary -- see 2026-09-09 precision
+        // fix plan; Task/Optimizer/Rashomon bounds downstream all stay float and
+        // must not be perturbed by this fix). Everything above and below this
+        // point up to those three assignments accumulates in double.
+        min_loss = static_cast<float>(sse);
+        max_loss = static_cast<float>(sse);
+
+        // Compute lower bounds for regression (n > 1 required for meaningful bounds)
+        if (n > 1) {
+            // ALWAYS compute equivalent points bound (OSRT approach when k_cluster=false)
+            // Group samples by feature vector - samples with identical features
+            // must receive the same prediction, so within-group variance is unavoidable
+            std::map<Bitmask, std::vector<double>> equiv_groups;
+
+            for (unsigned int i = 0; i < height(); ++i) {
+                if (capture_set.get(i)) {
+                    // feature_rows[i] is a Bitmask containing all binary feature values for sample i
+                    equiv_groups[this -> feature_rows[i]].push_back(this -> target_values[i]);
+                }
+            }
+
+            // Compute equivalent points lower bound (sum of within-group variances)
+            // This is the MINIMUM achievable loss because samples with same features
+            // must get the same prediction, so variance within each group is unavoidable
+            std::vector<double> weights, values;
+            double equiv_points_loss = 0.0;  // Sum of within-group SSE
+
+            // C++11 compatible iteration (no structured bindings)
+            for (auto it = equiv_groups.begin(); it != equiv_groups.end(); ++it) {
+                const std::vector<double> & targets = it->second;
+                double w = (double)targets.size();
+                double sum = 0.0;
+                double sum_sq = 0.0;
+
+                // Compute sum for mean
+                for (size_t j = 0; j < targets.size(); ++j) {
+                    sum += targets[j];
+                }
+                double mean = sum / w;
+
+                // Two-pass algorithm for numerically stable variance computation
+                // Avoids catastrophic cancellation from sum_sq - w*mean^2
+                double within_group_sse = 0.0;
+                for (size_t j = 0; j < targets.size(); ++j) {
+                    double diff = targets[j] - mean;
+                    within_group_sse += diff * diff;
+                }
+                equiv_points_loss += within_group_sse;
+
+                // Store for optional k-means
+                weights.push_back(w);
+                values.push_back(mean);
+            }
+
+            // Use equiv_points_loss as base lower bound
+            double min_achievable_loss = equiv_points_loss;
+
+            // If k-means enabled, try to get an even tighter bound
+            if (Configuration::k_cluster) {
+                // Call k-Means solver with regularization=0 to get minimum achievable SSE
+                // k-Means can further reduce loss by optimally clustering the equivalent points
+                ldouble kmeans_sse = compute_kmeans_lower_bound(
+                    values,
+                    weights,
+                    0.0  // regularization = 0 to get pure SSE lower bound
+                );
+
+                // k-Means bound includes both:
+                // - Between-cluster SSE (from k-means on aggregated points)
+                // - Within-cluster SSE (from equiv_points_loss)
+                min_achievable_loss = (double)(kmeans_sse + equiv_points_loss);
+            }
+
+            // Safeguard: bound should never exceed current SSE
+            if (min_achievable_loss > sse || min_achievable_loss < 0.0) {
+                // Bound is invalid - fall back to equiv points only
+                min_achievable_loss = equiv_points_loss;
+            }
+
+            // Ensure bound is non-negative and doesn't exceed current loss
+            min_achievable_loss = std::max(0.0, std::min(min_achievable_loss, sse));
+
+            // potential = maximum possible reduction in loss. Narrow once here,
+            // same boundary as min_loss/max_loss above.
+            potential = static_cast<float>(sse - min_achievable_loss);
+
+            // Update min_loss to reflect lower bound
+            min_loss = static_cast<float>(min_achievable_loss);
+        } else {
+            // n <= 1: no room for improvement (single sample or empty)
+            potential = 0.0f;
+        }
+
+        // Normalize to MEAN squared error over the full sample. Xu et al. (2026)
+        // analyze mean empirical risk + lambda*(#leaves); each leaf's summed SSE
+        // divided by global n = size() so leaf contributions sum to MSE across
+        // leaves, putting `regularization` on the theory scale (~log(n)/n).
+        // All internal lower-bound logic above stays in summed units (self-
+        // consistent), so only the three exported loss-scale outputs are rescaled.
+        // See quality_reports/plans/2026-06-30_loss-normalization-fix.md
+        {
+            const float inv_n = 1.0f / static_cast<float>(size());
+            min_loss *= inv_n;
+            max_loss *= inv_n;
+            potential *= inv_n;
+        }
+
+        return;
+    }
     Bitmask & buffer = state.locals[id].columns[0];
     // Use heap allocation instead of alloca for thread safety
     std::vector<unsigned int> distribution(depth(), 0); // The frequencies of each class
@@ -305,7 +465,13 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 // Using clamped prob ensures log(prob) is always finite
                 log_loss -= prob * log(prob);
             }
-            min_cost = log_loss * total_points; // Scale by number of points
+            // MEAN cross-entropy over the full sample: leaf entropy weighted by
+            // the leaf's sample fraction (total_points / n). Summed across leaves
+            // this yields mean cross-entropy, matching Xu et al. (2026)'s mean-loss
+            // objective so `regularization` sits on the theory scale (~log(n)/n).
+            // (Misclassification shares the tail below and is already mean-scaled
+            // via costs = 1/height(), so only log-loss quantities are rescaled here.)
+            min_cost = log_loss * total_points / static_cast<float>(size());
             cost_minimizer = 0; // For log-loss, we don't have a single prediction
             
             // Debug output for root node
@@ -353,8 +519,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
                 // Entropy: -sum(p_i * log(p_i))
                 entropy -= prob * log(prob);
             }
-            max_cost_reduction = entropy * total_points;
-            equivalent_point_loss = entropy * total_points;
+            // Mean-scale to match min_cost above (entropy weighted by leaf
+            // fraction total_points/n). Keeps potential/equivalent-point-loss in
+            // the same mean units as the loss so branch-and-bound stays consistent.
+            max_cost_reduction = entropy * total_points / static_cast<float>(size());
+            equivalent_point_loss = entropy * total_points / static_cast<float>(size());
         }
     } else {
         // Original misclassification loss calculation
@@ -374,6 +543,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
         }
     }
 
+    // Validate support before computing log(support)
+    if (support <= 0.0f) {
+        throw std::runtime_error("Cannot compute information with support <= 0");
+    }
+
     for (int j = depth(); --j >= 0;) { // Class index
         float prob = distribution[j];
         if (prob > 0) { information += support * prob * (log(prob) - log(support)); }
@@ -387,6 +561,11 @@ void Dataset::summary(Bitmask const & capture_set, float & info, float & potenti
 }
 
 void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned int target_index, unsigned int & TP, unsigned int & TN, State & state) {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        TP = 0;
+        TN = 0;
+        return;
+    }
     // Bounds check to prevent segfault
     if (id >= state.locals.size()) {
         throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
@@ -406,12 +585,36 @@ void Dataset::get_TP_TN(Bitmask const & capture_set, unsigned int id, unsigned i
     }
 }
 
+void Dataset::subgroup_counts(Bitmask const & capture_set, unsigned int target_index, unsigned int & count_0, unsigned int & count_1, unsigned int id, State & state) const {
+    if (id >= state.locals.size()) {
+        throw std::runtime_error("Worker ID out of bounds: " + std::to_string(id) + " >= " + std::to_string(state.locals.size()));
+    }
+    if (target_index >= this -> targets.size()) {
+        throw std::runtime_error("subgroup_target_index out of bounds: " + std::to_string(target_index) + " >= " + std::to_string(this -> targets.size()));
+    }
+    unsigned int const total = capture_set.count();
+    Bitmask & buffer = state.locals[id].columns[1];
+    buffer = capture_set;
+    this -> targets.at(target_index).bit_and(buffer);
+    count_1 = buffer.count();
+    count_0 = total - count_1;
+}
+
 void Dataset::get_total_P_N(unsigned int & P, unsigned int & N) {
+    if (Configuration::loss_function == SQUARED_ERROR || targets.size() < 2) {
+        P = 0;
+        N = 0;
+        return;
+    }
     P = targets.at(1).count();
     N = targets.at(0).count();
 }
 
 void Dataset::get_class_distribution(Bitmask const & capture_set, std::vector<float> & distribution, unsigned int id, State & state) const {
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        distribution.clear();
+        return;
+    }
     // CRITICAL: Bounds check to prevent segfault
     if (id >= state.locals.size()) {
         std::string error_msg = "Worker ID out of bounds: " + std::to_string(id) 

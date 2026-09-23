@@ -21,77 +21,44 @@ void State::initialize(std::istream & data_source, unsigned int workers) {
     if (!data_source.good() && !data_source.eof()) {
         throw std::runtime_error("Input stream is not in valid state in State::initialize()");
     }
-    
-    // CRITICAL: Check alignment of dataset object
-    void* dptr = &dataset;
-    size_t dataset_alignment = alignof(Dataset);
-    if (reinterpret_cast<uintptr_t>(dptr) % dataset_alignment != 0) {
-        throw std::runtime_error("Dataset object alignment error in State::initialize()");
-    }
-    
+
     dataset.load(data_source);
     
     // CRITICAL: Verify dataset was loaded successfully
     if (dataset.height() == 0) {
         throw std::runtime_error("Dataset height must be > 0 after load()");
     }
-    if (dataset.depth() == 0) {
+    if (dataset.depth() == 0 && Configuration::loss_function != SQUARED_ERROR) {
         throw std::runtime_error("Dataset depth must be > 0 after load()");
     }
     assert(dataset.height() > 0 && "Dataset height must be > 0");
     assert(dataset.width() >= 0 && "Dataset width must be >= 0");
-    assert(dataset.depth() > 0 && "Dataset depth must be > 0");
     
     // Clear graph containers
     graph.clear();
     // Reset queue in place instead of assignment (mutex is non-copyable)
     queue.~Queue();
     new (&queue) Queue();
-    
-    // CRITICAL: Check alignment of locals vector before resize
-    void* lptr = locals.data();
-    if (locals.capacity() > 0 && lptr != nullptr) {
-        size_t local_alignment = alignof(LocalState);
-        if (reinterpret_cast<uintptr_t>(lptr) % local_alignment != 0) {
-            throw std::runtime_error("locals vector alignment error before resize");
-        }
-    }
-    
+
     // CRITICAL: Resize locals vector to match worker count
     locals.resize(workers);
     if (locals.size() != workers) {
         throw std::runtime_error("Failed to resize locals vector to worker count");
     }
     assert(locals.size() == workers && "locals size must match worker count");
-    
-    // CRITICAL: Verify alignment after resize
-    lptr = locals.data();
-    if (lptr != nullptr) {
-        size_t local_alignment = alignof(LocalState);
-        if (reinterpret_cast<uintptr_t>(lptr) % local_alignment != 0) {
-            throw std::runtime_error("locals vector alignment error after resize");
-        }
-    }
-    
+
     for (unsigned int i = 0; i < workers; ++i) {
         // CRITICAL: Verify dataset dimensions before initializing local state
         unsigned int h = dataset.height();
         unsigned int w = dataset.width();
         unsigned int d = dataset.depth();
         
-        if (h == 0 || d == 0) {
-            throw std::runtime_error("Invalid dataset dimensions: h=" + std::to_string(h) + 
+        if (h == 0 || (d == 0 && Configuration::loss_function != SQUARED_ERROR)) {
+            throw std::runtime_error("Invalid dataset dimensions: h=" + std::to_string(h) +
                                    " w=" + std::to_string(w) + " d=" + std::to_string(d));
         }
-        assert(h > 0 && w >= 0 && d > 0 && "Dataset dimensions must be valid");
-        
-        // CRITICAL: Check alignment of local state element before initialization
-        void* leptr = &locals[i];
-        size_t local_elem_alignment = alignof(LocalState);
-        if (reinterpret_cast<uintptr_t>(leptr) % local_elem_alignment != 0) {
-            throw std::runtime_error("LocalState element alignment error at index " + std::to_string(i));
-        }
-        
+        assert(h > 0 && w >= 0 && "Dataset dimensions must be valid");
+
         locals[i].initialize(h, w, d);
     }
 }
@@ -124,7 +91,7 @@ void State::reset_except_dataset(void) {
     unsigned int workers = (locals.size() > 0) ? locals.size() : 1;
     
     // Verify dataset is valid before initializing locals
-    if (dataset.height() > 0 && dataset.depth() > 0) {
+    if (dataset.height() > 0 && (dataset.depth() > 0 || Configuration::loss_function == SQUARED_ERROR)) {
         locals.resize(workers);
         for (unsigned int i = 0; i < workers; ++i) {
             locals[i].initialize(dataset.height(), dataset.width(), dataset.depth());

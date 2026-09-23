@@ -4,6 +4,213 @@
 #' S3 methods for making predictions with TreeFARMS models.
 #' Provides a unified interface for all model types.
 
+# Constants -------------------------------------------------------------------
+
+# Issue #32: Classification threshold for binary predictions
+# For binary classification, predict class 1 if P(class=1) >= threshold
+.CLASSIFICATION_THRESHOLD <- 0.5
+
+# Helper functions (internal) ------------------------------------------------
+
+#' Apply discretization and validate newdata
+#'
+#' @description
+#' Issue #34: This helper function centralizes discretization and validation logic
+#' that was previously duplicated across three predict methods. It handles both
+#' continuous and binary features, applies stored discretization metadata when
+#' available, and validates the result.
+#'
+#' @details
+#' This function is called by all three predict methods (treefarms_model,
+#' optimaltrees_model, cf_rashomon) to ensure consistent preprocessing.
+#'
+#' Three cases are handled:
+#' 1. Model has discretization metadata + all_binary=TRUE: Pass through binary features
+#' 2. Model has discretization metadata + all_binary=FALSE: Apply stored discretization
+#' 3. No discretization metadata: Assume features are already binary (legacy behavior)
+#'
+#' After discretization, validates:
+#' - No missing values (stop if any NA)
+#' - All values are binary 0 or 1 (stop if not)
+#'
+#' @param newdata Data frame of features
+#' @param object Model object with discretization metadata
+#' @return Discretized and validated data frame (guaranteed binary)
+#' @keywords internal
+apply_model_discretization <- function(newdata, object) {
+  # Helper to get properties for both S3 and S7
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  get_prop <- function(name) {
+    if (is_s7) {
+      switch(name,
+        discretization = object@discretization_metadata,
+        X_train = object@X_train,
+        X_original_names = NULL,  # S7 doesn't have this
+        object[[name]]
+      )
+    } else {
+      object[[name]]
+    }
+  }
+
+  # Apply discretization if model was trained on continuous features
+  discret <- get_prop("discretization")
+  if (!is.null(discret)) {
+    if (isTRUE(discret$all_binary)) {
+      # Data was already binary during training, no transformation needed
+      # Try to get expected names from: original_names, binary_names, or X_train
+      expected_original <- discret$original_names
+      if (is.null(expected_original)) {
+        expected_original <- discret$binary_names
+      }
+      if (is.null(expected_original)) {
+        expected_original <- colnames(get_prop("X_train"))
+      }
+      if (is.null(expected_original)) {
+        stop(
+          "Cannot determine expected feature names.\n\n",
+          "Model has all_binary=TRUE but discretization metadata is missing both 'original_names' and 'binary_names',\n",
+          "and X_train is NULL (likely store_training_data=FALSE).\n\n",
+          "This indicates a bug in model creation or refit logic.",
+          call. = FALSE
+        )
+      }
+      if (!all(expected_original %in% colnames(newdata))) {
+        stop("newdata must have the same features as training data (all_binary branch)")
+      }
+      newdata <- newdata[, expected_original, drop = FALSE]
+    } else {
+      # Apply stored discretization to continuous features
+      expected_original <- names(discret$features)
+      if (!all(expected_original %in% colnames(newdata))) {
+        stop("newdata must have the same features as training data: ",
+             paste(expected_original, collapse = ", "))
+      }
+      newdata <- apply_discretization(newdata, discret)
+    }
+  } else {
+    # No discretization metadata - assume binary features
+    X_train <- get_prop("X_train")
+    expected_names <- if (!is.null(X_train)) {
+      colnames(X_train)
+    } else {
+      X_orig <- get_prop("X_original_names")
+      if (!is.null(X_orig)) X_orig else
+        stop("Cannot determine expected feature names. Model object is missing discretization, X_train, and X_original_names.")
+    }
+    if (!all(expected_names %in% colnames(newdata))) {
+      stop("newdata must have the same features as training data (no discretization branch)")
+    }
+    newdata <- newdata[, expected_names, drop = FALSE]
+  }
+
+  # Check for missing values
+  if (any(is.na(newdata))) {
+    stop("newdata contains missing values")
+  }
+
+  # Issue #35: Check for non-binary values (vectorized)
+  # Use integer literals 0L, 1L for type-safe comparison (not just 0.0, 1.0)
+  m <- as.matrix(newdata)
+  if (any(!m %in% c(0L, 1L) & !is.na(m))) {
+    stop("newdata must contain only binary values (0 and 1)")
+  }
+
+  newdata
+}
+
+#' Extract tree structure from model object
+#'
+#' @description
+#' Issue #34: This helper centralizes tree extraction logic that was duplicated
+#' across three predict methods. It handles different storage formats with
+#' fallback logic.
+#'
+#' @details
+#' TreeFARMS models store the tree structure in one of two places:
+#' - object$model$tree_json (primary, JSON format)
+#' - object$model$result_data (fallback, internal format)
+#'
+#' Returns NULL if neither exists (will cause error in predict_from_tree).
+#'
+#' @param object Model object
+#' @return Tree structure (tree_json or result_data), or NULL if not found
+#' @keywords internal
+get_tree_structure <- function(object) {
+  # Handle S7 objects
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  if (is_s7) {
+    trees <- object@trees
+    if (length(trees) > 0) {
+      # Return first tree (for single tree models)
+      return(trees[[1]])
+    } else {
+      return(NULL)
+    }
+  }
+
+  # Handle S3 objects
+  if (!is.null(object$model$tree_json)) {
+    object$model$tree_json
+  } else if (!is.null(object$model$result_data)) {
+    object$model$result_data
+  } else {
+    NULL
+  }
+}
+
+#' Make predictions from tree structure
+#'
+#' @description
+#' Issue #34: This helper centralizes prediction logic that was duplicated across
+#' three predict methods. It handles both regression and classification tasks.
+#'
+#' @details
+#' Called by all three predict methods after discretization and tree extraction.
+#' Assumes newdata is already validated and binary.
+#'
+#' Two prediction modes:
+#' 1. Regression (loss_function = "squared_error"): Returns fitted values (leaf means)
+#' 2. Classification (other loss functions): Returns probabilities or class predictions
+#'
+#' For classification, type="class" applies threshold (.CLASSIFICATION_THRESHOLD = 0.5)
+#' to convert P(class=1) to binary predictions. type="prob" returns the full
+#' probability matrix [P(class=0), P(class=1)].
+#'
+#' @param tree_to_use Tree structure (from get_tree_structure)
+#' @param newdata Validated and discretized data frame (guaranteed binary)
+#' @param loss_function Loss function used during training
+#' @param type Prediction type ("class" or "prob")
+#' @return Predictions: numeric vector (class or regression) or matrix (prob)
+#' @keywords internal
+predict_from_tree <- function(tree_to_use, newdata, loss_function, type = "class") {
+  if (is.null(tree_to_use)) {
+    stop(
+      "Cannot make predictions: tree structure not found in model object.\n",
+      "This indicates a problem during model fitting or an invalid model object.\n",
+      "Expected: object$model$tree_json or object$model$result_data to exist."
+    )
+  }
+
+  # Regression: return fitted values (leaf means)
+  if (identical(loss_function, "squared_error")) {
+    return(get_fitted_from_tree(tree_to_use, newdata))
+  }
+
+  # Classification: extract probabilities
+  probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
+
+  if (type == "class") {
+    # Use defined threshold for class prediction
+    predictions <- ifelse(probabilities[, 2] >= .CLASSIFICATION_THRESHOLD, 1, 0)
+    return(predictions)
+  } else {
+    return(probabilities)
+  }
+}
+
+# S3 Predict Methods ----------------------------------------------------------
+
 #' Predict method for treefarms_model objects
 #'
 #' @param object A treefarms_model object
@@ -15,82 +222,71 @@
 #' @export
 predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), ...) {
   type <- match.arg(type)
-  
+
   # Validate input
   if (!inherits(object, "treefarms_model")) {
     stop("object must be a treefarms_model")
   }
-  
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {
     stop("newdata must be a data.frame or matrix")
   }
-  
+
   # Convert matrix to data.frame if needed
   if (is.matrix(newdata)) {
     newdata <- as.data.frame(newdata)
   }
-  
-  # Validate feature names
-  if (!all(colnames(object$X_train) %in% colnames(newdata))) {
-    stop("newdata must have the same features as training data")
+
+  # Issue #23: Use extracted discretization helper
+  newdata <- apply_model_discretization(newdata, object)
+
+  # Issue #25: Use extracted tree structure helper
+  tree_to_use <- get_tree_structure(object)
+
+  # Issue #26: Use extracted prediction helper
+  predict_from_tree(tree_to_use, newdata, object$loss_function, type)
+}
+
+#' Predict method for optimaltrees_model objects
+#'
+#' @param object A optimaltrees_model object
+#' @param newdata A data.frame or matrix of new features
+#' @param type Character: "class" or "prob"
+#' @param ... Additional arguments
+#'
+#' @return Predictions based on type
+#' @export
+predict.optimaltrees_model <- function(object, newdata, type = c("class", "prob", "response"), ...) {
+  type <- match.arg(type)
+
+  # Validate input (handle both S3 and S7 objects)
+  is_s7 <- S7::S7_inherits(object, OptimalTreesModel)
+  if (!is_s7 && !inherits(object, "optimaltrees_model")) {
+    stop("object must be an OptimalTreesModel (S7) or optimaltrees_model (S3)")
   }
-  
-  # Ensure same column order
-  newdata <- newdata[, colnames(object$X_train), drop = FALSE]
-  
-  # Check for missing values
-  if (any(is.na(newdata))) {
-    stop("newdata contains missing values")
+  if (!is.data.frame(newdata) && !is.matrix(newdata)) {
+    stop("newdata must be a data.frame or matrix")
   }
-  
-  # Check for non-binary values
-  for (col in names(newdata)) {
-    if (!all(newdata[[col]] %in% c(0, 1))) {
-      stop("newdata must contain only binary values")
-    }
+
+  # Convert matrix to data.frame if needed
+  if (is.matrix(newdata)) {
+    newdata <- as.data.frame(newdata)
   }
-  
-  # Get tree structure from model object
-  # Use tree_json if available, otherwise use result_data
-  tree_to_use <- if (!is.null(object$model$tree_json)) {
-    object$model$tree_json
-  } else if (!is.null(object$model$result_data)) {
-    object$model$result_data
-  } else {
-    NULL
+
+  # Issue #23: Use extracted discretization helper
+  newdata <- apply_model_discretization(newdata, object)
+
+  # Issue #25: Use extracted tree structure helper
+  tree_to_use <- get_tree_structure(object)
+
+  # Issue #26: Use extracted prediction helper
+  loss_fn <- if (is_s7) object@loss_function else object$loss_function
+
+  # For regression, "response" is the same as "class" (fitted values)
+  if (type == "response" && loss_fn == "squared_error") {
+    type <- "class"
   }
-  
-  # Extract probabilities from tree structure
-  if (!is.null(tree_to_use)) {
-    probabilities <- get_probabilities_from_tree(tree_to_use, newdata)
-    
-    if (type == "class") {
-      # Derive predictions from probabilities (argmax)
-      # For binary classification, predict class 1 if P(class=1) >= 0.5, else class 0
-      predictions <- ifelse(probabilities[, 2] >= 0.5, 1, 0)
-      return(predictions)
-    } else {
-      # Return probabilities
-      return(probabilities)
-    }
-  } else {
-    # Fallback: if no tree available, try to use stored predictions/probabilities
-    # This handles edge cases where tree structure might not be available
-    n_samples <- nrow(newdata)
-    if (type == "class") {
-      if (!is.null(object$predictions) && length(object$predictions) >= n_samples) {
-        return(object$predictions[1:n_samples])
-      } else {
-        return(rep(0, n_samples))
-      }
-    } else {
-      if (!is.null(object$probabilities) && nrow(object$probabilities) >= n_samples) {
-        return(object$probabilities[1:n_samples, , drop = FALSE])
-      } else {
-        return(matrix(c(0.5, 0.5), nrow = n_samples, ncol = 2, byrow = TRUE))
-      }
-    }
-  }
+
+  predict_from_tree(tree_to_use, newdata, loss_fn, type)
 }
 
 #' Predict method for cf_rashomon objects
@@ -98,82 +294,167 @@ predict.treefarms_model <- function(object, newdata, type = c("class", "prob"), 
 #' @param object A cf_rashomon object
 #' @param newdata A data.frame or matrix of new features
 #' @param type Character: "class" or "prob"
-#' @param ensemble Logical: whether to ensemble across all intersecting trees
+#' @param ensemble Logical: whether to ensemble across all intersecting trees (ignored if \code{fold_indices} is provided)
+#' @param fold_indices Optional integer vector of length \code{nrow(newdata)} giving the fold id for each row.
+#'   When provided, predictions use the fold-specific refit \eqn{\tilde{\eta}^{(-k)}} (valid DML). When \code{NULL}, uses fold 1 model (backward compatible).
 #' @param ... Additional arguments
 #'
-#' @return Predictions based on type
+#' @return Predictions based on type. If \code{fold_indices} is provided, each row gets \eqn{\tilde{\eta}^{(-k(i))}(X_i)}.
 #' @export
-predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"), 
-                               ensemble = TRUE, ...) {
+predict.cf_rashomon <- function(object, newdata, type = c("class", "prob"),
+                               ensemble = TRUE, fold_indices = NULL, ...) {
   type <- match.arg(type)
-  
+
+  # Validate input type first
+
+  if (!inherits(object, "cf_rashomon") && !S7::S7_inherits(object, CFRashomon)) {
+    stop("object must be a cf_rashomon")
+  }
+
+  # Convert S7 CFRashomon to list so $ accessor works throughout
+  if (S7::S7_inherits(object, CFRashomon)) {
+    object <- list(
+      n_intersecting = object@n_intersecting,
+      intersecting_trees = object@intersecting_trees,
+      tree_risks = object@tree_risks,
+      K = object@K,
+      fold_indices = object@fold_indices,
+      rashomon_sizes = object@rashomon_sizes,
+      rashomon_bound_multiplier = object@rashomon_bound_multiplier,
+      loss_function = object@loss_function,
+      fold_refits = object@fold_refits,
+      disc_metadata = object@disc_metadata
+    )
+    class(object) <- "cf_rashomon"
+  }
+
   if (object$n_intersecting == 0) {
     stop("No intersecting trees available for prediction")
   }
-  
-  # Validate input
-  if (!inherits(object, "cf_rashomon")) {
-    stop("object must be a cf_rashomon")
-  }
-  
+
   if (!is.data.frame(newdata) && !is.matrix(newdata)) {
     stop("newdata must be a data.frame or matrix")
   }
-  
+
   # Convert matrix to data.frame if needed
   if (is.matrix(newdata)) {
     newdata <- as.data.frame(newdata)
   }
-  
-  # Validate feature names
-  if (!all(colnames(object$X_train) %in% colnames(newdata))) {
-    stop("newdata must have the same features as training data")
-  }
-  
-  # Ensure same column order
-  newdata <- newdata[, colnames(object$X_train), drop = FALSE]
-  
-  # Check for missing values
-  if (any(is.na(newdata))) {
-    stop("newdata contains missing values")
-  }
-  
-  # Check for non-binary values
-  for (col in names(newdata)) {
-    if (!all(newdata[[col]] %in% c(0, 1))) {
-      stop("newdata must contain only binary values")
+
+  # Apply discretization to newdata so it uses the same feature space as training.
+  # disc_metadata is set by cross_fitted_rashomon() when continuous covariates are
+  # present; it stores the global thresholds used for all folds. For pure-binary
+  # data, disc_metadata$all_binary == TRUE and apply_discretization() is a no-op.
+  if (!is.null(object[["disc_metadata"]])) {
+    newdata <- apply_discretization(as.data.frame(newdata), object$disc_metadata)
+  } else {
+    # Legacy path: S3 objects built outside cross_fitted_rashomon (e.g. tests)
+    has_discret_info <- !is.null(object[["discretization"]]) ||
+                        !is.null(object[["X_train"]]) ||
+                        !is.null(object[["X_original_names"]])
+    if (has_discret_info) {
+      newdata <- apply_model_discretization(newdata, object)
     }
   }
+
+  n_rows <- nrow(newdata)
   
-  if (ensemble && object$n_intersecting > 1) {
-    # Ensemble predictions across all intersecting trees
-    predictions_list <- list()
-    
-    for (i in seq_len(object$n_intersecting)) {
-      # Use the first fold model as a template (they should all be similar)
-      model <- object$fold_models[[1]]
-      
-      # Get predictions from this model (simplified approach)
-      pred <- predict(model, newdata, type = type, ...)
-      predictions_list[[i]] <- pred
+  # Regression: return fitted values (vector)
+  if (identical(object$loss_function, "squared_error")) {
+    if (!is.null(fold_indices)) {
+      if (length(fold_indices) != n_rows) {
+        stop("fold_indices must have length nrow(newdata)")
+      }
+      if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
+        stop("object has no fold_refits; refit is required for fold-specific prediction")
+      }
+      fitted <- rep(NA_real_, n_rows)
+      for (k in 1:object$K) {
+        idx_k <- which(fold_indices == k)
+        if (length(idx_k) == 0) next
+        refit_tree <- object$fold_refits[[k]][[1L]]
+        fitted[idx_k] <- get_fitted_from_tree(refit_tree, newdata[idx_k, , drop = FALSE])
+      }
+      na_rows <- which(is.na(fitted))
+      if (length(na_rows) > 0) {
+        # Silently reassigning out-of-range folds to fold 1 breaks cross-fit validity
+        # for DML (observation predicted by a tree trained on its own data). Fail loudly.
+        stop(sprintf(
+          "predict.cf_rashomon: %d row(s) have fold_indices outside 1:%d. Every row must ",
+          length(na_rows), object$K),
+          "map to a valid fold for cross-fitted prediction.", call. = FALSE)
+      }
+      return(fitted)
     }
-    
+    if (!is.null(object$fold_refits) && length(object$fold_refits) > 0) {
+      refit_tree <- object$fold_refits[[1L]][[1L]]
+      return(get_fitted_from_tree(refit_tree, newdata))
+    }
+    stop("predict.cf_rashomon: object has no fold_refits; cannot predict.", call. = FALSE)
+  }
+  
+  # DML: fold-specific predictions using fold_refits (classification)
+  if (!is.null(fold_indices)) {
+    if (length(fold_indices) != n_rows) {
+      stop("fold_indices must have length nrow(newdata)")
+    }
+    if (is.null(object$fold_refits) || length(object$fold_refits) == 0) {
+      stop("object has no fold_refits; refit is required for fold-specific prediction")
+    }
+    probs <- matrix(NA_real_, nrow = n_rows, ncol = 2)
+    for (k in 1:object$K) {
+      idx_k <- which(fold_indices == k)
+      if (length(idx_k) == 0) next
+      refit_tree <- object$fold_refits[[k]][[1L]]
+      probs[idx_k, ] <- get_probabilities_from_tree(refit_tree, newdata[idx_k, , drop = FALSE])
+    }
+    na_rows <- which(is.na(probs[, 1L]))
+    if (length(na_rows) > 0) {
+      # Silently reassigning out-of-range folds to fold 1 breaks cross-fit validity
+      # for DML (observation predicted by a tree trained on its own data). Fail loudly.
+      stop(sprintf(
+        "predict.cf_rashomon: %d row(s) have fold_indices outside 1:%d. Every row must ",
+        length(na_rows), object$K),
+        "map to a valid fold for cross-fitted prediction.", call. = FALSE)
+    }
     if (type == "class") {
-      # Majority vote for class predictions
+      return(ifelse(probs[, 2L] >= .CLASSIFICATION_THRESHOLD, 1, 0))
+    }
+    return(probs)
+  }
+  
+  # Backward compatible: no fold_indices
+  if (ensemble && object$n_intersecting > 1) {
+    predictions_list <- list()
+    for (i in seq_len(object$n_intersecting)) {
+      # Use i-th intersecting tree (not same model repeatedly)
+      tree_json <- object$intersecting_trees[[i]]
+      probs <- get_probabilities_from_tree(tree_json, newdata)
+      if (type == "class") {
+        predictions_list[[i]] <- ifelse(probs[, 2] >= .CLASSIFICATION_THRESHOLD, 1, 0)
+      } else {
+        predictions_list[[i]] <- probs[, 2]
+      }
+    }
+    # Aggregate predictions
+    if (type == "class") {
       pred_matrix <- do.call(cbind, predictions_list)
       final_predictions <- apply(pred_matrix, 1, function(x) {
         as.numeric(names(sort(table(x), decreasing = TRUE))[1])
       })
       return(final_predictions)
     } else {
-      # Average probabilities
       pred_matrix <- do.call(cbind, predictions_list)
-      final_predictions <- rowMeans(pred_matrix)
-      return(final_predictions)
+      return(rowMeans(pred_matrix))
     }
   } else {
-    # Use first intersecting tree
-    model <- object$fold_models[[1]]
-    return(predict(model, newdata, type = type, ...))
+    # Single intersecting tree (or ensemble=FALSE): use intersecting_trees[[1]]
+    tree_json <- object$intersecting_trees[[1]]
+    probs <- get_probabilities_from_tree(tree_json, newdata)
+    if (type == "class") {
+      return(ifelse(probs[, 2] >= .CLASSIFICATION_THRESHOLD, 1, 0))
+    } else {
+      return(probs[, 2])
+    }
   }
 }

@@ -11,13 +11,17 @@ cross_fitted_rashomon(
   loss_function = "misclassification",
   regularization = 0.1,
   rashomon_bound_multiplier = 0.05,
+  rashomon_bound_adder = 0,
+  rashomon_ignore_trivial_extensions = FALSE,
+  max_leaves = NULL,
   single_tree = FALSE,
   auto_tune_intersecting = FALSE,
-  tune_param = "regularization",
-  max_tune_iterations = 20,
-  tune_search_range = NULL,
   seed = NULL,
   verbose = TRUE,
+  parallel = TRUE,
+  fold_indices = NULL,
+  discretize_method = "quantiles",
+  discretize_bins = "adaptive",
   ...
 )
 }
@@ -28,31 +32,52 @@ cross_fitted_rashomon(
 
 \item{K}{Number of folds for cross-fitting. Default: 5}
 
-\item{loss_function}{Loss function: "misclassification" or "log_loss". Default: "misclassification"}
+\item{loss_function}{Loss function: "misclassification", "log_loss", or "squared_error" (regression). Default: "misclassification"}
 
 \item{regularization}{Model complexity penalty. Default: 0.1}
 
-\item{rashomon_bound_multiplier}{Rashomon set size control. Default: 0.05}
+\item{rashomon_bound_multiplier}{Rashomon set size control (multiplicative). Default: 0.05}
+
+\item{rashomon_bound_adder}{Additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.}
+
+\item{rashomon_ignore_trivial_extensions}{Logical. If FALSE (default), keep all trees including trivial
+extensions (same partition, different split sequences). This is REQUIRED for cross-fitted intersection
+to work correctly. When folds learn the same partition via different split orders, setting TRUE would
+prune each fold's Rashomon set to 1 representative, causing intersection to fail even when folds agree
+on the optimal partition. \strong{Do not override this default unless you understand the implications.}}
+
+\item{max_leaves}{Optional integer. If set, only trees with \eqn{\#\text{leaves} \le} \code{max_leaves} are used (R-side sieve; theory-consistent complexity).}
 
 \item{single_tree}{Logical. If TRUE, fit exactly one tree per fold (disable rashomon set).
 Default: FALSE. When TRUE, each fold fits a single tree. When FALSE, each fold computes
 a full rashomon set. For single tree per fold, use \code{\link{fit_tree}} via the underlying
 \code{\link{treefarms}} call.}
 
-\item{auto_tune_intersecting}{Logical. If TRUE, auto-tune parameters until at least one
-intersecting tree is found. Default: FALSE.}
+\item{auto_tune_intersecting}{Logical. If TRUE, search (over the multiplier
+  \code{c}, base rate \code{select_epsilon_n(n)} = log(n)/n) for the smallest
+  tolerance that yields a non-empty cross-fold intersection. Default: FALSE.
 
-\item{tune_param}{Character. Which parameter to tune when auto_tune_intersecting=TRUE.
-Options: "regularization", "rashomon_bound_multiplier", or "both". Default: "regularization".}
+  \strong{Not valid for inference.} Data-adaptive selection of the Rashomon
+  tolerance is a \emph{post-selection} device: the tolerance becomes a function
+  of the data, so it is not covered by the fixed-\eqn{\varepsilon_n} validity
+  theory, and on hard instances the search can inflate \eqn{\varepsilon_n} well
+  beyond \eqn{o(n^{-1/2})}, voiding the CLT. Use it only for exploration. For
+  inference, pass a fixed \code{rashomon_bound_multiplier =
+  select_epsilon_n(n)} and, if the intersection is empty at that tolerance,
+  fall back to fold-specific trees rather than enlarging \eqn{\varepsilon_n}.
+  A \code{warning} is emitted at runtime when this is TRUE.
 
-\item{max_tune_iterations}{Integer. Maximum number of auto-tuning iterations. Default: 20.}
-
-\item{tune_search_range}{Numeric vector of length 2. Search range for the parameter being tuned.
-If NULL, uses default ranges based on loss_function. Default: NULL.}
+  \strong{Mechanics (exploratory):} bidirectional exponential search from
+  \code{c = 1} (down if it succeeds, up if it fails) plus binary refinement,
+  \code{c} in [0.01, 100]; if none intersects, returns fold-specific trees.}
 
 \item{seed}{Random seed for reproducibility. Default: NULL}
 
 \item{verbose}{Print progress information. Default: TRUE}
+
+\item{parallel}{Logical. Whether to parallelize across CV folds using \code{furrr}. Default: \code{TRUE}. If \code{TRUE}, uses the current \code{future} plan (set with \code{future::plan()}). If no plan is set, falls back to sequential execution.}
+
+\item{fold_indices}{Optional integer vector of length \code{nrow(X)} with values in 1..K giving the fold id for each row. When provided, these folds are used instead of creating folds internally (e.g. for DML: pass the same fold assignment used for the score). When NULL, folds are created via \code{create_stratified_folds_from_y(y, K)}.}
 
 \item{...}{Additional parameters passed to TreeFARMS}
 }
@@ -81,6 +106,13 @@ Cross-fitting algorithm:
 
 A tree appearing in all K Rashomon sets is nearly-optimal regardless of
 which training subset was used, indicating strong stability and generalizability.
+
+\strong{Theory-consistent defaults (DML):} For alignment with the manuscript,
+use small \eqn{\varepsilon} (e.g. \code{rashomon_bound_multiplier = 0.05} or
+\code{rashomon_bound_adder}), \eqn{\lambda \propto (\log n)/n} (see
+\code{\link{cv_regularization}}), and pass \code{fold_indices} to
+\code{predict()} for fold-specific nuisances. See
+\file{docs/Implementation-requirements-Rashomon-DML.md}.
 }
 \examples{
 \dontrun{

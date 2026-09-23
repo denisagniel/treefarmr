@@ -23,13 +23,8 @@ void LocalState::initialize(unsigned int _samples, unsigned int _features, unsig
     }
 }
 
-LocalState & LocalState::operator=(LocalState const & source) {
-    this -> neighbourhood = source.neighbourhood;
-    this -> rows = source.rows;
-    this -> columns = source.columns;
-    return * this;
-}
-
+// REMOVED: Broken assignment operator that dropped inbound_message, outbound_message, etc.
+// Copy operations are now deleted in local_state.hpp (not needed, vector resize uses default ctor).
 
 LocalState::~LocalState(void) {
     this -> neighbourhood.clear();

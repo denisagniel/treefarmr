@@ -28,8 +28,9 @@
 // Atomic counter for crash-resistant logging in GOSDT
 static std::atomic<int> gosdt_log_counter(1000);  // Start at 1000 to distinguish from rcpp logs
 
-// Helper function to log with atomic counter (survives crashes)
+// Helper function to log with atomic counter when verbose (survives crashes)
 static void gosdt_atomic_log(const std::string& message) {
+    if (!Configuration::verbose) return;
     int counter = gosdt_log_counter.fetch_add(1);
     std::ofstream log_file("/tmp/crash_log.txt", std::ios::app);
     if (log_file.is_open()) {
@@ -43,6 +44,7 @@ float GOSDT::time = 0.0;
 unsigned int GOSDT::size = 0;
 unsigned int GOSDT::iterations = 0;
 unsigned int GOSDT::status = 0;
+bool GOSDT::model_limit_exceeded = false;
 
 // REMOVED: __attribute__((constructor)) functions cause installation hangs
 // static void __attribute__((constructor)) after_gosdt_static_init() {
@@ -240,13 +242,12 @@ void GOSDT::fit(std::istream & data_source, std::string & result) {
                 gosdt_atomic_log("JSON parsing complete");
                 // For log-loss, return JSON string directly (same as non-log-loss)
                 // Testing showed that direct string passing works fine and avoids file I/O complexity
-                if (Configuration::loss_function == LOG_LOSS) {
-                    gosdt_atomic_log("Log-loss detected, using string dump");
+                if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
+                    gosdt_atomic_log("Log-loss/regression: using string dump");
                     serialized_result = node.dump(0);
                     gosdt_atomic_log("String dump completed, length=" + std::to_string(serialized_result.length()));
                 } else {
                     gosdt_atomic_log("Non-log-loss path, using string dump");
-                    // For non-log-loss, use string as before
                     serialized_result = node.dump(0);
                     gosdt_atomic_log("String dump completed, length=" + std::to_string(serialized_result.length()));
                 }
@@ -261,8 +262,8 @@ void GOSDT::fit(std::istream & data_source, std::string & result) {
                 gosdt_atomic_log("Rashomon mode (rashomon=true)");
                 // Rashomon mode: use full serialization
                 // For log-loss, return JSON string directly (same as non-log-loss)
-                if (Configuration::loss_function == LOG_LOSS) {
-                    gosdt_atomic_log("Rashomon + log-loss, using string");
+                if (Configuration::loss_function == LOG_LOSS || Configuration::loss_function == SQUARED_ERROR) {
+                    gosdt_atomic_log("Rashomon + log-loss/regression, using string");
                     ModelSet::serialize(results, models, serialized_result, 0, *serialization_state);
                     gosdt_atomic_log("ModelSet::serialize returned, length=" + std::to_string(serialized_result.length()));
                 } else {
@@ -325,9 +326,12 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
 
     if(Configuration::verbose) { std::cout << "Initializing Optimization Framework" << std::endl; }
     
+    // Reset model_limit_exceeded flag before each fit
+    GOSDT::model_limit_exceeded = false;
+
     gosdt_atomic_log("Creating Optimizer object");
     Optimizer optimizer;
-    
+
     // CRITICAL: Check alignment of optimizer object
     void* optr = &optimizer;
     size_t alignment = alignof(Optimizer);
@@ -403,7 +407,7 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
             // So we extract models first, then extract the Rashomon set
             fit_gosdt(optimizer, models);
         } else {
-            std::cout << "Finding Optimal Objective..." << std::endl;
+            if (Configuration::verbose) { std::cout << "Finding Optimal Objective..." << std::endl; }
 
             fit_gosdt(optimizer, models);
 
@@ -416,16 +420,38 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
                 std::cout << "Found Optimal Objective: " << optimal_objective << std::endl;
             }
             
+            // NOTE: as of the mean-loss normalization (2026-06-30), optimal_objective
+            // is on the MEAN-loss scale (loss() now sums per-leaf MEAN contributions).
+            // The multiplicative bound below is a ratio and is scale-invariant.
+            // The additive bound interprets rashomon_bound_adder on the MEAN scale
+            // (previously summed); callers using the adder must scale accordingly.
+            // The doubletree pipeline uses the multiplier (epsilon_n) path, not the adder.
             if (Configuration::rashomon_bound_multiplier != 0) {
                 rashomon_bound = optimal_objective * (1 + Configuration::rashomon_bound_multiplier);
             } else {
                 rashomon_bound = optimal_objective + Configuration::rashomon_bound_adder;
             }
         }
-        // Extract Rashomon set - this sets rashomon_flag, so we can't call optimizer.models() after this
+        // Extract Rashomon set into ModelSets (compact DAG for file output)
         fit_rashomon(optimizer, rashomon_bound, results);
         process_rashomon_result(results, optimizer.get_state());
-        // Note: models were already extracted in fit_gosdt() above, so we use those for serialization
+
+        // NEW: Extract Rashomon set into Model objects for R serialization
+        // The results variable now contains the Rashomon ModelSets
+        // We pass both rashomon_bound and results to enumerate them into Models
+        if (Configuration::verbose) {
+            std::cout << "Rashomon ModelSets extracted: " << results.second.size() << " unique trees" << std::endl;
+        }
+        optimizer.extract_rashomon_models(models, rashomon_bound);
+
+        if (Configuration::verbose) {
+            std::cout << "Returning " << models.size() << " trees to R" << std::endl;
+        }
+
+        // Reset optimizer after Model extraction (moved from fit_rashomon())
+        if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
+            optimizer.reset_except_dataset();
+        }
     } else {
         fit_gosdt(optimizer, models);
 
@@ -438,6 +464,9 @@ void GOSDT::fit(std::istream & data_source, results_t & results, std::unordered_
             std::cout << "Found Optimal Objective: " << optimal_objective << std::endl;
         }
     }
+
+    // Capture model_limit_exceeded from optimizer
+    GOSDT::model_limit_exceeded = optimizer.get_model_limit_exceeded();
 }
 
 void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & models) {
@@ -453,6 +482,11 @@ void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & model
     auto start = std::chrono::high_resolution_clock::now();
 
     optimizer.initialize();
+
+    // CRITICAL: Freeze configuration - no changes allowed after this point
+    // All Configuration members are now READ-ONLY for the lifetime of worker threads
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+
     for (unsigned int i = 0; i < Configuration::worker_limit; ++i) {
         workers.emplace_back(work, i, std::ref(optimizer), std::ref(iterations[i]));
         #if  !defined(__APPLE__) && !defined(_WIN32)
@@ -535,9 +569,8 @@ void GOSDT::fit_gosdt(Optimizer & optimizer, std::unordered_set< Model > & model
         }
 
     }
-    // For log-loss: Don't reset - delay cleanup
-    // Cleanup will happen on package unload
-    if (Configuration::loss_function != LOG_LOSS) {
+    // For log-loss / regression: Don't reset - delay cleanup
+    if (Configuration::loss_function != LOG_LOSS && Configuration::loss_function != SQUARED_ERROR) {
         optimizer.reset_except_dataset();
     }
 }
@@ -611,10 +644,8 @@ void GOSDT::fit_rashomon(Optimizer & optimizer, float rashomon_bound, results_t 
         std::cout << "Memory usage after extraction: " << getCurrentRSS() / 1000000 << std::endl;
     }
 
-    // For log-loss: Don't reset - delay cleanup
-    if (Configuration::loss_function != LOG_LOSS) {
-        optimizer.reset_except_dataset();
-    }
+    // DON'T reset here - we need the graph for Model extraction
+    // The reset will happen in GOSDT::fit() after extract_rashomon_models()
 }
 
 void GOSDT::process_rashomon_result(results_t &results, State & state) {

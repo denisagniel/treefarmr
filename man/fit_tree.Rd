@@ -9,6 +9,7 @@ fit_tree(
   y,
   loss_function = "misclassification",
   regularization = 0.1,
+  rashomon_ignore_trivial_extensions = TRUE,
   worker_limit = 1L,
   verbose = FALSE,
   store_training_data = NULL,
@@ -19,20 +20,39 @@ fit_tree(
 \arguments{
 \item{X}{A data.frame or matrix of features. Must contain only binary (0/1) features.}
 
-\item{y}{A vector of binary class labels (0/1).}
+\item{y}{A vector of outcomes. Binary (0/1) for classification, or continuous for
+regression (when `loss_function = "squared_error"`).}
 
 \item{loss_function}{Character string specifying the loss function to use.
-Options: "misclassification" (default) or "log_loss".}
+Options: "misclassification" (default), "log_loss", or "squared_error".
+Use "squared_error" for regression with continuous outcomes.}
 
 \item{regularization}{Numeric value controlling model complexity. Higher values
-lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.}
+lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
+The fitted objective is the \strong{mean} empirical loss plus
+\code{regularization * (number of leaves)}, i.e.
+\eqn{\frac{1}{n}\sum_i L(y_i, f(x_i)) + \lambda\,|\mathrm{leaves}(f)|}.
+All three loss functions (misclassification, log_loss, squared_error) are
+mean-normalized, so \code{regularization} has the same meaning across them
+and corresponds directly to \eqn{\lambda} in Xu et al. (2026), with the
+theory-motivated rate \eqn{\lambda \propto (\log n)/n}.}
 
-\item{worker_limit}{Integer: number of parallel workers to use (default: 1).}
+\item{rashomon_ignore_trivial_extensions}{Logical. If TRUE (default), prune trees with identical
+partitions but different split sequences, keeping one representative. This is appropriate when fitting
+a single tree, as users typically want one interpretable model, not multiple equivalent representations.}
+
+\item{worker_limit}{Integer: number of parallel workers to use (default: 1).
+\strong{Performance note:} Parallelization has significant overhead due to shared
+queue contention. Typical speedups: 1.2-1.4x with 4 workers on medium-sized problems
+(n=500-1000). Small problems often see slowdowns. Users should benchmark their
+specific problem before using worker_limit > 1. See benchmarks/performance_results.txt
+for detailed measurements.}
 
 \item{verbose}{Logical. Whether to print training progress. Default: FALSE.}
 
-\item{store_training_data}{Logical. Whether to store training data in the model object.
-Default: FALSE. Set to TRUE only if you need to access training data later.}
+\item{store_training_data}{Logical or NULL. Whether to store training data in the
+model object. Default: NULL, which defers to \code{optimaltrees()}'s default (FALSE).
+Set to TRUE only if you need to access training data later.}
 
 \item{compute_probabilities}{Logical. Whether to compute probabilities for all training samples immediately.
 Default: FALSE. Probabilities will be computed on-demand when accessed.}
@@ -57,7 +77,7 @@ for TreeFARMS models. The function guarantees that exactly one tree is
 returned (no rashomon set computation).
 }
 \details{
-This function is a convenience wrapper around `treefarms()` with `single_tree = TRUE`.
+This function is a convenience wrapper around `optimaltrees()` with `single_tree = TRUE`.
 It guarantees that exactly one tree is returned, making it ideal for:
 - Standard prediction tasks
 - When you need a single, interpretable model

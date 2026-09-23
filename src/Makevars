@@ -9,21 +9,26 @@ PKG_CPPFLAGS = -I../inst/include -Wall -Wextra
 # This prevents installation hangs by ensuring Rcpp never generates static initializers
 # for Rcpp::Rcout and Rcpp::Rcerr
 PKG_CPPFLAGS += -URCPP_USE_GLOBAL_ROSTREAM
-# Enable sanitizers for debugging (comment out for production)
-# AddressSanitizer: detects memory errors (use-after-free, buffer overflow, etc.)
-# UndefinedBehaviorSanitizer: detects undefined behavior
-# LeakSanitizer: included with AddressSanitizer
-# 
-# To enable ASan for debugging, uncomment the following lines:
-# PKG_CXXFLAGS = -Wall -Wextra -fsanitize=address -fno-omit-frame-pointer -g -O0
-# PKG_LIBS = -lpthread -lgmp -fsanitize=address
-#
-# Or use the test script: tests/run_with_asan.sh (recommended - sets flags via environment)
-PKG_CXXFLAGS = -Wall -Wextra
+
+# Performance optimization flags (Phase 1 optimization)
+# -O3: Aggressive optimization including vectorization, loop unrolling
+# -march=native: Use CPU-specific instructions (AVX2, AVX-512, etc.) - ONLY for local builds
+# -DNDEBUG: Remove assert() overhead in production builds (disables all assert() checks)
+#           Trade-off: 2-5% faster, but precondition violations are silent
+#           For debugging: set DEBUG=1 to enable assertions with -O0 -g
+ifeq ($(DEBUG),1)
+    # Debug build: no optimization, assertions enabled, debug symbols
+    PKG_CXXFLAGS = -O0 -g -Wall -Wextra
+else ifeq ($(LOCAL_BUILD),1)
+    # Local optimized build: maximum performance for specific CPU
+    # Set LOCAL_BUILD=1 when installing: LOCAL_BUILD=1 R CMD INSTALL .
+    PKG_CXXFLAGS = -O3 -march=native -DNDEBUG -Wall -Wextra
+else
+    # CRAN-compatible: portable optimization without CPU-specific instructions
+    PKG_CXXFLAGS = -O3 -DNDEBUG -Wall -Wextra
+endif
 
 # Link against required libraries
-# Enable sanitizer linking (comment out for production)
-# PKG_LIBS = -lpthread -lgmp -fsanitize=address,undefined
 PKG_LIBS = -lpthread -lgmp
 
 # CRITICAL FIX: Explicitly exclude RcppParallel/TBB libraries
@@ -46,6 +51,16 @@ endif
 # Remove main.cpp from compilation (it's for CLI, not library)
 SOURCES = $(wildcard *.cpp)
 SOURCES := $(filter-out main.cpp, $(SOURCES))
+
+# Add ckmeans library object files (for k-means lower bounds)
+# R's build system doesn't automatically recurse into subdirectories,
+# so we need to explicitly add object files from lib/ckmeans/
+OBJECTS = $(SOURCES:.cpp=.o) \
+          lib/ckmeans/Ckmeans.1d.dp.o \
+          lib/ckmeans/dynamic_prog.o \
+          lib/ckmeans/fill_log_linear.o \
+          lib/ckmeans/fill_quadratic.o \
+          lib/ckmeans/fill_SMAWK.o
 
 # Build shared library
 all: $(SHLIB)

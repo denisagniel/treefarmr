@@ -9,6 +9,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <atomic>
 
 // Conditionally include Rcpp for R output capture
 #ifdef USING_RCPP
@@ -89,6 +90,11 @@ public:
     // @modifies results: stores all models in Rashomon set in results
     void rash_models(results_t & results);
 
+    // @modifies results: extracts individual Model objects from Rashomon set for R serialization
+    // @param rashomon_bound: objective threshold for Rashomon set membership
+    // @note: complements rash_models() which extracts compact ModelSet structures for file output
+    void extract_rashomon_models(std::unordered_set< Model > & results, float rashomon_bound);
+
     // Generates snapshot data for trace visualization
     void diagnostic_trace(int iteration, key_type const & focal_point);
     // Generates snapshot data for trace-tree visualization
@@ -105,13 +111,14 @@ public:
     // Getter for state - needed by GOSDT for serialization
     State& get_state() { return state; }
     const State& get_state() const { return state; }
+    bool get_model_limit_exceeded() const { return model_limit_exceeded; }
 private:
 
     // Timing State
     std::chrono::high_resolution_clock::time_point start_time; // starting time of optimization
     unsigned long ticks = 0; // Number of ticks passed
     unsigned long tick_duration = 10000; // Number of iterations per tick
-    bool active = true; // Flag indicating whether the optimization is still active
+    std::atomic<bool> active; // Flag indicating whether the optimization is still active (thread-safe)
     bool rashomon_flag = false; // Flag for Rashomon
 
     // Analytics State

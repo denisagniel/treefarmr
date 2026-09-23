@@ -1,10 +1,21 @@
-# TreeFARMR
+# optimaltrees (TreeFARMR)
 
 [![R-CMD-check](https://github.com/denisagniel/treefarmr/workflows/R-CMD-check/badge.svg)](https://github.com/denisagniel/treefarmr/actions)
 [![Coverage](https://codecov.io/gh/denisagniel/treefarmr/branch/main/graph/badge.svg)](https://codecov.io/gh/denisagniel/treefarmr)
 [![CRAN](https://www.r-pkg.org/badges/version/treefarmr)](https://cran.r-project.org/package=treefarmr)
 
-R implementation of TreeFARMS (Tree-based Fast and Accurate Rule Set Models) with support for log-loss optimization and probability predictions. This package provides direct Rcpp bindings to the integrated C++ implementation, eliminating external dependencies for easier distribution and better performance.
+R implementation of optimal decision trees with flexible loss functions, including classification (misclassification, log-loss) and regression (squared-error, absolute-error, Huber, quantile). Provides direct Rcpp bindings to the integrated C++ implementation for high performance and easy distribution.
+
+**Current version:** 0.4.0
+**Repository:** [github.com/denisagniel/treefarmr](https://github.com/denisagniel/treefarmr)
+
+## Recent Updates (March 2026)
+
+- **S7 Class System:** Migrated to S7 for type-safe, validated model objects
+- **Thread Safety:** Comprehensive fixes for parallel execution (March 13, 2026)
+- **Predict Integration:** Full S7 integration with S3 generics via `methods_register()`
+- **Rashomon Sets:** Cross-fitted Rashomon sets with structure intersection
+- **Performance:** Optimized C++ core with numerical stability improvements
 
 ## Installation
 
@@ -31,11 +42,16 @@ sudo apt-get install libgmp-dev
 install.packages(c("Rcpp", "jsonlite", "devtools"))
 ```
 
-### Install TreeFARMR Package
+### Install optimaltrees Package
 
 ```r
 # Install from GitHub
 devtools::install_github("denisagniel/treefarmr")
+
+# Or clone and install locally (for development)
+git clone git@github.com:denisagniel/treefarmr.git
+cd treefarmr
+R CMD INSTALL .
 ```
 
 ## Quick Start
@@ -68,6 +84,11 @@ model_misclass <- treefarms(X, y, loss_function = "misclassification", regulariz
 # Train with log-loss
 model_logloss <- treefarms(X, y, loss_function = "log_loss", regularization = 0.1)
 
+# Regression (squared-error loss): continuous outcome, prediction = fitted values
+y_cont <- 2 + 3*X$feature_1 - X$feature_2 + rnorm(n, 0, 0.5)
+model_reg <- treefarms(X, y_cont, loss_function = "squared_error", regularization = 0.1, single_tree = TRUE)
+fitted <- predict(model_reg$model, X)  # vector of fitted values
+
 # View model summary
 print(model_logloss)
 
@@ -89,6 +110,104 @@ print("Binary predictions:")
 print(pred_class)
 print("Probability predictions:")
 print(pred_prob)
+```
+
+## Working with Continuous Features
+
+TreeFARMS automatically discretizes continuous features using threshold-based splits. No preprocessing required:
+
+```r
+library(treefarmr)
+
+# Continuous features - no preprocessing needed
+set.seed(42)
+X <- data.frame(
+  age = runif(200, 18, 80),
+  income = rnorm(200, 50000, 15000),
+  score = rbeta(200, 2, 5)
+)
+
+y <- as.numeric(X$age > 40 & X$income > 45000)
+
+# Fit tree (automatic discretization at median)
+model <- treefarms(X, y, loss_function = "log_loss")
+
+# Predictions work on continuous data
+X_new <- data.frame(
+  age = c(25, 55, 70),
+  income = c(35000, 60000, 80000),
+  score = c(0.3, 0.6, 0.8)
+)
+
+predictions <- predict(model, X_new, type = "prob")
+print(predictions)
+
+# Inspect discretization thresholds
+print(model$discretization$features$age$thresholds)
+print(model$discretization$features$income$thresholds)
+```
+
+### Custom Thresholds
+
+You can specify custom thresholds for specific features:
+
+```r
+# Use custom thresholds for age and income
+model <- treefarms(
+  X, y,
+  discretize_thresholds = list(
+    age = c(30, 50, 65),      # 3 thresholds for age
+    income = 50000            # 1 threshold for income
+  )
+)
+
+# score will use default median discretization
+```
+
+### Discretization Methods
+
+Two discretization methods are available:
+
+- **Median (default)**: Creates one threshold at the median value
+  ```r
+  model <- treefarms(X, y, discretize_method = "median")
+  # Each continuous feature gets 1 binary indicator
+  ```
+
+- **Quantiles**: Creates multiple thresholds using quantiles
+  ```r
+  model <- treefarms(X, y,
+                    discretize_method = "quantiles",
+                    discretize_bins = 4)
+  # n_bins=4 creates 4 bins with 3 thresholds (quartiles)
+  # Each continuous feature gets 3 binary indicators
+  ```
+
+- **Adaptive bins** (recommended for theory): Bins grow with sample size
+  ```r
+  model <- treefarms(X, y,
+                    discretize_method = "quantiles",
+                    discretize_bins = "adaptive")
+  # Bins = max(2, ceiling(log(n)/3))
+  # Required for theoretical convergence rate guarantees
+  # Allows tree complexity to grow with n
+  ```
+
+### Mixed Binary and Continuous Features
+
+TreeFARMS handles mixed feature types automatically:
+
+```r
+X_mixed <- data.frame(
+  is_member = sample(0:1, 200, replace = TRUE),  # Binary
+  age = runif(200, 18, 80),                       # Continuous
+  purchased = sample(0:1, 200, replace = TRUE),  # Binary
+  income = rnorm(200, 50000, 15000)              # Continuous
+)
+
+# Binary features pass through unchanged
+# Continuous features are automatically discretized
+model <- treefarms(X_mixed, y, loss_function = "log_loss")
 ```
 
 ## Key Features
@@ -210,14 +329,6 @@ Make predictions using a trained model.
 - **Target**: Must be binary (0/1) only
 - **No missing values**: All data must be complete
 - **Consistent feature names**: New data must have same feature names as training data
-
-## Probability Characteristics
-
-TreeFARMR probabilities are:
-- **Bounded away from 0 and 1**: Typically range [0.2, 0.8]
-- **Well-calibrated**: Correlate highly with true underlying probabilities
-- **Consistent**: Same calculation used in training and prediction
-- **Meaningful**: Reflect actual uncertainty in the data
 
 ## Testing
 

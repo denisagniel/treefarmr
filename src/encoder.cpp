@@ -1,4 +1,65 @@
 #include "encoder.hpp"
+#include <stdexcept>
+#include <cmath>
+#include <limits>
+
+// Helper functions for safe string-to-number conversion
+namespace {
+    int safe_stoi(const std::string& str) {
+        try {
+            size_t pos;
+            int value = std::stoi(str, &pos);
+            if (pos != str.length()) {
+                throw std::runtime_error("Invalid integer value (extra characters): " + str);
+            }
+            return value;
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("Invalid integer value: " + str);
+        } catch (const std::out_of_range&) {
+            throw std::runtime_error("Integer value out of range: " + str);
+        }
+    }
+
+    float safe_stof(const std::string& str) {
+        try {
+            size_t pos;
+            float value = std::stof(str, &pos);
+            if (pos != str.length()) {
+                throw std::runtime_error("Invalid float value (extra characters): " + str);
+            }
+            if (!std::isfinite(value)) {
+                throw std::runtime_error("Non-finite float value: " + str);
+            }
+            return value;
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("Invalid float value: " + str);
+        } catch (const std::out_of_range&) {
+            throw std::runtime_error("Float value out of range: " + str);
+        }
+    }
+
+    // Double-precision counterpart to safe_stof, added 2026-09-09. Used only for
+    // regression_targets_ parsing below -- safe_stof stays the parser for feature
+    // thresholds/values elsewhere in this file (Oracle-reviewed: not a same-diff
+    // change, do not repoint those call sites).
+    double safe_stod(const std::string& str) {
+        try {
+            size_t pos;
+            double value = std::stod(str, &pos);
+            if (pos != str.length()) {
+                throw std::runtime_error("Invalid double value (extra characters): " + str);
+            }
+            if (!std::isfinite(value)) {
+                throw std::runtime_error("Non-finite double value: " + str);
+            }
+            return value;
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("Invalid double value: " + str);
+        } catch (const std::out_of_range&) {
+            throw std::runtime_error("Double value out of range: " + str);
+        }
+    }
+}
 
 Encoder::Encoder(void) {}
 
@@ -13,6 +74,15 @@ Encoder::Encoder(std::istream & input) {
     // reindex(tokens); // Determine an efficient ordering of encoding rules
 
     encode(tokens, this -> binary_rows); // Encode the tokenized data using the encoding rules
+
+    if (Configuration::loss_function == SQUARED_ERROR && this -> number_of_columns > 0) {
+        const unsigned int n = this -> number_of_rows;
+        const unsigned int m = this -> number_of_columns;
+        this -> regression_targets_.resize(n);
+        for (unsigned int i = 0; i < n; ++i) {
+            this -> regression_targets_[i] = safe_stod(tokens[i][m - 1]);
+        }
+    }
 }
 
 // Tests whether a string should be considered an integer
@@ -171,8 +241,11 @@ void Encoder::parse(std::vector< std::vector< std::string > > const & rows) {
     }
 
     // Override Type Inference for Target Column
-    // This ensures use of equality encoding instead of threshold encoding
-    inferred_types[m - 1] = "Categorical";
+    if (Configuration::loss_function == SQUARED_ERROR) {
+        inferred_types[m - 1] = "Rational";
+    } else {
+        inferred_types[m - 1] = "Categorical";
+    }
 }
 
 void Encoder::limit_precision(std::vector< std::set< std::string > > & values) const {
@@ -185,11 +258,11 @@ void Encoder::limit_precision(std::vector< std::set< std::string > > & values) c
         std::string const & inferred_type = inferred_types[j];
         if (inferred_type == "Integral") {
             for (auto iterator = precise_values[j].begin(); iterator != precise_values[j].end(); ++iterator) {
-                values[j].insert(std::to_string(limit_precision((int)atoi((* iterator).c_str()))));
+                values[j].insert(std::to_string(limit_precision(safe_stoi(* iterator))));
             }
         } else if (inferred_type == "Rational") {
             for (auto iterator = precise_values[j].begin(); iterator != precise_values[j].end(); ++iterator) {
-                values[j].insert(std::to_string(limit_precision((float)atof((* iterator).c_str()))));
+                values[j].insert(std::to_string(limit_precision(safe_stof(* iterator))));
             }
         } else {
             for (auto iterator = precise_values[j].begin(); iterator != precise_values[j].end(); ++iterator) {
@@ -231,7 +304,12 @@ void Encoder::build(void) {
         unsigned int initial_size = codex.size();
         if (inferred_type == "Redundant") {
             continue; // Empty Encoding List
-        } else if (inferred_type == "Binary") {
+        }
+        if (j == m - 1 && Configuration::loss_function == SQUARED_ERROR) {
+            this -> number_of_binary_targets = 0;
+            continue;
+        }
+        if (inferred_type == "Binary") {
             auto it = value_set.begin();
             if (j < m - 1) { ++it; }
             for (; it != value_set.end(); ++it) {
@@ -249,7 +327,7 @@ void Encoder::build(void) {
             unsigned int start, finish;
             start = codex.size();
             for (auto it = value_set.begin(); it != value_set.end(); ++it) {
-                int value = atoi((* it).c_str());
+                int value = safe_stoi(* it);
                 std::vector< std::string > rule { inferred_type, ">=", std::to_string(value) };
                 codex.push_back(std::make_pair(j, rule));
             }
@@ -261,7 +339,7 @@ void Encoder::build(void) {
             // Create an ordered set to sort the thresholds
             std::set< float > parsed_value_set;
             for (auto it = value_set.begin(); it != value_set.end(); ++it) {
-                float value = atof((* it).c_str());
+                float value = safe_stof(* it);
                 parsed_value_set.insert(value);
             }
             float base_value = * parsed_value_set.begin();
@@ -278,7 +356,11 @@ void Encoder::build(void) {
         }
         unsigned int final_size = codex.size();
         if (j == m - 1) {
-            this -> number_of_binary_targets = final_size - initial_size;
+            if (Configuration::loss_function == SQUARED_ERROR) {
+                this -> number_of_binary_targets = 0;
+            } else {
+                this -> number_of_binary_targets = final_size - initial_size;
+            }
         }
     }
     this -> codex = codex;
@@ -322,9 +404,9 @@ void Encoder::reindex(std::vector< std::vector< std::string > > const & rows) {
         for (unsigned int i = 0; i < n; ++i) {
             bool value;
             if (inferred_type == "Integral") {
-                value = (atoi(rows[i][rule.first].c_str()) >= atoi(reference.c_str()));
+                value = (safe_stoi(rows[i][rule.first]) >= safe_stoi(reference));
             } else if (inferred_type == "Rational") {
-                value = (atof(rows[i][rule.first].c_str()) >= atof(reference.c_str()));
+                value = (safe_stof(rows[i][rule.first]) >= safe_stof(reference));
             } else {
                 value = (rows[i][rule.first] == reference);
             }
@@ -343,9 +425,9 @@ void Encoder::reindex(std::vector< std::vector< std::string > > const & rows) {
                 bool target_value;
 
                 if (inferred_type == "Integral") {
-                    target_value = (atoi(rows[i][target.first].c_str()) >= atoi(target_reference.c_str()));
+                    target_value = (safe_stoi(rows[i][target.first]) >= safe_stoi(target_reference));
                 } else if (inferred_type == "Rational") {
-                    target_value = (atof(rows[i][target.first].c_str()) >= atof(target_reference.c_str()));
+                    target_value = (safe_stof(rows[i][target.first]) >= safe_stof(target_reference));
                 } else {
                     target_value = (rows[i][target.first] == reference);
                 }
@@ -399,9 +481,9 @@ void Encoder::encode(std::vector< std::vector< std::string > > const & rows, std
             std::string reference = rule.second[2];
             bool value;
             if (inferred_type == "Integral") {
-                value = (atoi(rows[i][j].c_str()) >= atoi(reference.c_str()));
+                value = (safe_stoi(rows[i][j]) >= safe_stoi(reference));
             } else if (inferred_type == "Rational") {
-                value = (atof(rows[i][j].c_str()) >= atof(reference.c_str()));
+                value = (safe_stof(rows[i][j]) >= safe_stof(reference));
             } else {
                 value = (rows[i][j] == reference);
             }
@@ -449,9 +531,9 @@ void Encoder::find_encoding(unsigned int decoded_column_index, std::string const
         std::string const & inferred_type = rule.second.at(0);
         float local_distance;
         if (inferred_type == "Integral") {
-            local_distance = std::abs(atoi(reference.c_str()) - atoi(rule.second.at(2).c_str()));
+            local_distance = std::abs(safe_stoi(reference) - safe_stoi(rule.second.at(2)));
         } else if (inferred_type == "Rational") {
-            local_distance = std::abs(atof(reference.c_str()) - atof(rule.second.at(2).c_str()));
+            local_distance = std::abs(safe_stof(reference) - safe_stof(rule.second.at(2)));
         } else {
             local_distance = (reference == rule.second.at(2)) ? 0.0 : 1.0;
         }
@@ -495,4 +577,8 @@ unsigned int Encoder::binary_features(void) const {
 
 unsigned int Encoder::binary_targets(void) const {
     return this -> number_of_binary_targets;
+}
+
+std::vector< double > const & Encoder::regression_targets(void) const {
+    return this -> regression_targets_;
 }

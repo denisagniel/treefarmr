@@ -1,0 +1,721 @@
+% common_definitions.sty
+% A collection of commonly used definitions for mathematical papers
+% Usage: \usepackage{common_definitions} or \input{common_definitions}
+%
+% NOTE (2026-09-01): forked from doubletree/inst/paper/common-defs.tex when
+% the two-stage tree-fitting material (topology recovery + off-grid
+% threshold refinement) was split out of doubletree's theory.tex into its
+% own paper, hosted here (this package has no causal-inference content and
+% no dependency on doubletree). This is an independent COPY, not a shared
+% file across the two git repos -- the two copies may drift, and that is
+% expected. A handful of macros below (\ehat, \mhat, \what, \thetahat,
+% \pihat, \Vhat and similar causal-nuisance shorthands, if present) are
+% unused by this paper and safe to ignore or prune.
+
+\ProvidesPackage{common_definitions}[2025/06/10 Common mathematical definitions]
+
+% =============================================================================
+% MATHEMATICAL OPERATORS AND FUNCTIONS
+% =============================================================================
+
+% Basic operators (avoid kernel names: \span, \dim, \ker, \det)
+\DeclareMathOperator{\Tr}{Tr}           % Trace
+\DeclareMathOperator{\rank}{rank}       % Rank
+\DeclareMathOperator{\spn}{span}        % Span (use \spn to avoid kernel \span)
+\DeclareMathOperator{\im}{im}           % Image
+\DeclareMathOperator{\coker}{coker}     % Cokernel
+\DeclareMathOperator{\supp}{supp}       % Support
+\DeclareMathOperator{\diag}{diag}       % Diagonal
+% \dim, \ker, \det: use LaTeX/amsmath built-ins
+
+% Analysis operators (avoid kernel \div)
+\DeclareMathOperator{\grad}{grad}       % Gradient
+\DeclareMathOperator{\divop}{div}       % Divergence (use \divop to avoid kernel \div)
+\DeclareMathOperator{\curl}{curl}       % Curl
+\DeclareMathOperator{\sign}{sign}       % Sign function
+\DeclareMathOperator{\sinc}{sinc}       % Sinc function
+
+% Probability and statistics
+\DeclareMathOperator{\Var}{Var}         % Variance
+\DeclareMathOperator{\Cov}{Cov}         % Covariance
+\DeclareMathOperator{\Corr}{Corr}       % Correlation
+\DeclareMathOperator{\Bias}{Bias}       % Bias
+\DeclareMathOperator{\MSE}{MSE}         % Mean squared error
+\DeclareMathOperator*{\argmin}{arg\,min} % Argmin
+\DeclareMathOperator*{\argmax}{arg\,max} % Argmax
+
+% Optimization
+\DeclareMathOperator{\prox}{prox}       % Proximal operator
+\DeclareMathOperator{\proj}{proj}       % Projection
+
+% =============================================================================
+% SHORTHAND NOTATION CONVENTIONS
+% =============================================================================
+
+% Bold lowercase letters
+\newcommand{\ba}{\mathbf{a}}            \newcommand{\bb}{\mathbf{b}}
+\newcommand{\bc}{\mathbf{c}}            \newcommand{\bd}{\mathbf{d}}
+\newcommand{\be}{\mathbf{e}}            \newcommand{\bff}{\mathbf{f}}           % Bold f (use \bff to avoid kernel \bf)
+\newcommand{\bg}{\mathbf{g}}            \newcommand{\bh}{\mathbf{h}}
+\newcommand{\bi}{\mathbf{i}}            \newcommand{\bj}{\mathbf{j}}
+\newcommand{\bk}{\mathbf{k}}            \newcommand{\bl}{\mathbf{l}}
+\newcommand{\bm}{\mathbf{m}}            \newcommand{\bn}{\mathbf{n}}
+\newcommand{\bo}{\mathbf{o}}            \newcommand{\bp}{\mathbf{p}}
+\newcommand{\bq}{\mathbf{q}}            \newcommand{\br}{\mathbf{r}}
+\newcommand{\bs}{\mathbf{s}}            \newcommand{\bt}{\mathbf{t}}
+\newcommand{\bu}{\mathbf{u}}            \newcommand{\bv}{\mathbf{v}}
+\newcommand{\bw}{\mathbf{w}}            \newcommand{\bx}{\mathbf{x}}
+\newcommand{\by}{\mathbf{y}}            \newcommand{\bz}{\mathbf{z}}
+
+% Bold uppercase letters
+\newcommand{\bA}{\mathbf{A}}            \newcommand{\bB}{\mathbf{B}}
+\newcommand{\bC}{\mathbf{C}}            \newcommand{\bD}{\mathbf{D}}
+\newcommand{\bE}{\mathbf{E}}            \newcommand{\bF}{\mathbf{F}}
+\newcommand{\bG}{\mathbf{G}}            \newcommand{\bH}{\mathbf{H}}
+\newcommand{\bI}{\mathbf{I}}            \newcommand{\bJ}{\mathbf{J}}
+\newcommand{\bK}{\mathbf{K}}            \newcommand{\bL}{\mathbf{L}}
+\newcommand{\bM}{\mathbf{M}}            \newcommand{\bN}{\mathbf{N}}
+\newcommand{\bO}{\mathbf{O}}            \newcommand{\bP}{\mathbf{P}}
+\newcommand{\bQ}{\mathbf{Q}}            \newcommand{\bR}{\mathbf{R}}
+\newcommand{\bS}{\mathbf{S}}            \newcommand{\bT}{\mathbf{T}}
+\newcommand{\bU}{\mathbf{U}}            \newcommand{\bV}{\mathbf{V}}
+\newcommand{\bW}{\mathbf{W}}            \newcommand{\bX}{\mathbf{X}}
+\newcommand{\bY}{\mathbf{Y}}            \newcommand{\bZ}{\mathbf{Z}}
+
+% Bold Greek letters
+\newcommand{\balpha}{\boldsymbol{\alpha}}       \newcommand{\bbeta}{\boldsymbol{\beta}}
+\newcommand{\bgamma}{\boldsymbol{\gamma}}       \newcommand{\bdelta}{\boldsymbol{\delta}}
+\newcommand{\bepsilon}{\boldsymbol{\epsilon}}   \newcommand{\bzeta}{\boldsymbol{\zeta}}
+\newcommand{\bfeta}{\boldsymbol{\eta}}          \newcommand{\btheta}{\boldsymbol{\theta}}
+\newcommand{\biota}{\boldsymbol{\iota}}         \newcommand{\bkappa}{\boldsymbol{\kappa}}
+\newcommand{\blambda}{\boldsymbol{\lambda}}     \newcommand{\bmu}{\boldsymbol{\mu}}
+\newcommand{\bnu}{\boldsymbol{\nu}}             \newcommand{\bxi}{\boldsymbol{\xi}}
+\newcommand{\bomicron}{\boldsymbol{\omicron}}   \newcommand{\bpi}{\boldsymbol{\pi}}
+\newcommand{\brho}{\boldsymbol{\rho}}           \newcommand{\bsigma}{\boldsymbol{\sigma}}
+\newcommand{\btau}{\boldsymbol{\tau}}           \newcommand{\bupsilon}{\boldsymbol{\upsilon}}
+\newcommand{\bphi}{\boldsymbol{\phi}}           \newcommand{\bchi}{\boldsymbol{\chi}}
+\newcommand{\bpsi}{\boldsymbol{\psi}}           \newcommand{\bomega}{\boldsymbol{\omega}}
+
+% Bold uppercase Greek letters
+\newcommand{\bGamma}{\boldsymbol{\Gamma}}       \newcommand{\bDelta}{\boldsymbol{\Delta}}
+\newcommand{\bTheta}{\boldsymbol{\Theta}}       \newcommand{\bLambda}{\boldsymbol{\Lambda}}
+\newcommand{\bXi}{\boldsymbol{\Xi}}             \newcommand{\bPi}{\boldsymbol{\Pi}}
+\newcommand{\bSigma}{\boldsymbol{\Sigma}}       \newcommand{\bUpsilon}{\boldsymbol{\Upsilon}}
+\newcommand{\bPhi}{\boldsymbol{\Phi}}           \newcommand{\bPsi}{\boldsymbol{\Psi}}
+\newcommand{\bOmega}{\boldsymbol{\Omega}}
+
+% Blackboard bold (mathbb) letters - all uppercase
+% Use \bboardH, \bboardL, \bboardO, \bboardP, \bboardS to avoid babel/kernel conflicts
+\newcommand{\A}{\mathbb{A}}             \newcommand{\B}{\mathbb{B}}
+\newcommand{\C}{\mathbb{C}}             \newcommand{\D}{\mathbb{D}}
+\newcommand{\E}{\mathbb{E}}             \newcommand{\F}{\mathbb{F}}
+\newcommand{\G}{\mathbb{G}}             \newcommand{\bboardH}{\mathbb{H}}
+\newcommand{\I}{\mathbb{I}}             \newcommand{\J}{\mathbb{J}}
+\newcommand{\K}{\mathbb{K}}             \newcommand{\bboardL}{\mathbb{L}}
+\newcommand{\M}{\mathbb{M}}             \newcommand{\N}{\mathbb{N}}
+\newcommand{\bboardO}{\mathbb{O}}       \newcommand{\bboardP}{\mathbb{P}}
+\newcommand{\Q}{\mathbb{Q}}             \newcommand{\R}{\mathbb{R}}
+\newcommand{\bboardS}{\mathbb{S}}       \newcommand{\T}{\mathbb{T}}
+\newcommand{\U}{\mathbb{U}}             \newcommand{\V}{\mathbb{V}}
+\newcommand{\W}{\mathbb{W}}             \newcommand{\X}{\mathbb{X}}
+\newcommand{\Y}{\mathbb{Y}}             \newcommand{\Z}{\mathbb{Z}}
+
+% Calligraphic (mathcal) letters - all uppercase
+\newcommand{\cA}{\mathcal{A}}           \newcommand{\cB}{\mathcal{B}}
+\newcommand{\cC}{\mathcal{C}}           \newcommand{\cD}{\mathcal{D}}
+\newcommand{\cE}{\mathcal{E}}           \newcommand{\cF}{\mathcal{F}}
+\newcommand{\cG}{\mathcal{G}}           \newcommand{\cH}{\mathcal{H}}
+\newcommand{\cI}{\mathcal{I}}           \newcommand{\cJ}{\mathcal{J}}
+\newcommand{\cK}{\mathcal{K}}           \newcommand{\cL}{\mathcal{L}}
+\newcommand{\cM}{\mathcal{M}}           \newcommand{\cN}{\mathcal{N}}
+\newcommand{\cO}{\mathcal{O}}           \newcommand{\cP}{\mathcal{P}}
+\newcommand{\cQ}{\mathcal{Q}}           \newcommand{\cR}{\mathcal{R}}
+\newcommand{\cS}{\mathcal{S}}           \newcommand{\cT}{\mathcal{T}}
+\newcommand{\cU}{\mathcal{U}}           \newcommand{\cV}{\mathcal{V}}
+\newcommand{\cW}{\mathcal{W}}           \newcommand{\cX}{\mathcal{X}}
+\newcommand{\cY}{\mathcal{Y}}           \newcommand{\cZ}{\mathcal{Z}}
+
+% =============================================================================
+% MATHEMATICAL SETS AND SPACES
+% =============================================================================
+
+% Number sets (using the shorthand notation above)
+% \N = Natural numbers, \Z = Integers, \Q = Rationals, \R = Reals, \C = Complex, \F = Finite field
+
+% Common spaces (using shorthand notation)
+\newcommand{\Rn}{\R^n}                  % R^n
+\newcommand{\Rm}{\R^m}                  % R^m
+\newcommand{\Rd}{\R^d}                  % R^d
+\newcommand{\Cn}{\C^n}                  % C^n
+
+% Function spaces
+\newcommand{\Lp}[1]{L^{#1}}             % L^p space
+\newcommand{\Lone}{L^1}                 % L^1
+\newcommand{\Ltwo}{L^2}                 % L^2
+\newcommand{\Linf}{L^\infty}            % L^infinity
+\newcommand{\Ck}[1]{C^{#1}}             % C^k space
+\newcommand{\Cinf}{C^\infty}            % C^infinity
+
+% =============================================================================
+% PROBABILITY NOTATION
+% =============================================================================
+
+% \E = expectation (blackboard E above). \Prob = probability (blackboard P, use \bboardP)
+\newcommand{\Prob}{\bboardP}             % Probability (avoids conflict with packages defining \P)
+% \Var, \Cov: already declared as math operators above; do not redefine
+
+% Distributions (using calligraphic shorthand)
+\newcommand{\Normal}{\cN}               % Normal distribution
+\newcommand{\Unif}{\mathrm{Unif}}       % Uniform distribution
+\newcommand{\Bern}{\mathrm{Bern}}       % Bernoulli distribution
+\newcommand{\Binom}{\mathrm{Binom}}     % Binomial distribution
+\newcommand{\Pois}{\mathrm{Pois}}       % Poisson distribution
+
+% =============================================================================
+% NORMS AND METRICS
+% =============================================================================
+
+\newcommand{\norm}[1]{\left\|#1\right\|}           % General norm
+\newcommand{\abs}[1]{\left|#1\right|}              % Absolute value
+\newcommand{\inner}[2]{\left\langle#1,#2\right\rangle} % Inner product
+\newcommand{\pnorm}[2]{\|#1\|_{#2}}                % p-norm
+\newcommand{\onenorm}[1]{\|#1\|_1}                 % 1-norm
+\newcommand{\twonorm}[1]{\|#1\|_2}                 % 2-norm
+\newcommand{\infnorm}[1]{\|#1\|_\infty}           % infinity norm
+\newcommand{\fronorm}[1]{\|#1\|_F}                 % Frobenius norm
+
+% =============================================================================
+% BRACKETS AND DELIMITERS
+% =============================================================================
+
+\newcommand{\paren}[1]{\left(#1\right)}            % Parentheses
+\newcommand{\bracket}[1]{\left[#1\right]}          % Square brackets
+\newcommand{\setbrace}[1]{\left\{#1\right\}}        % Curly braces (use \setbrace to avoid kernel \brace)
+\newcommand{\floor}[1]{\left\lfloor#1\right\rfloor} % Floor function
+\newcommand{\ceil}[1]{\left\lceil#1\right\rceil}   % Ceiling function
+\newcommand{\card}[1]{\left|#1\right|}             % Cardinality of a set
+
+% =============================================================================
+% CALCULUS AND ANALYSIS
+% =============================================================================
+
+\newcommand{\dx}{\,dx}                  % Differential dx
+\newcommand{\dy}{\,dy}                  % Differential dy
+\newcommand{\dt}{\,dt}                  % Differential dt
+\newcommand{\du}{\,du}                  % Differential du
+\newcommand{\dv}{\,dv}                  % Differential dv
+
+% Partial derivatives
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}       % Partial derivative
+\newcommand{\pdd}[2]{\frac{\partial^2 #1}{\partial #2^2}} % Second partial derivative
+\newcommand{\pdmixed}[3]{\frac{\partial^2 #1}{\partial #2 \partial #3}} % Mixed partial
+
+% Total derivatives
+\newcommand{\dd}[2]{\frac{d #1}{d #2}}                     % Total derivative
+\newcommand{\ddd}[2]{\frac{d^2 #1}{d #2^2}}               % Second derivative
+
+% =============================================================================
+% LINEAR ALGEBRA
+% =============================================================================
+
+\newcommand{\transpose}[1]{#1^T}        % Transpose
+\newcommand{\hermitian}[1]{#1^*}        % Hermitian conjugate
+\newcommand{\inv}[1]{#1^{-1}}           % Inverse
+\newcommand{\pinv}[1]{#1^{\dagger}}     % Pseudoinverse
+
+% Matrix notation
+\newcommand{\mat}[1]{\mathbf{#1}}       % Bold matrix notation
+\newcommand{\vect}[1]{\mathbf{#1}}      % Bold vector (use \vect to avoid kernel \vec accent)
+\newcommand{\vzero}{\mathbf{0}}         % Zero vector
+\newcommand{\vone}{\mathbf{1}}          % Ones vector
+\newcommand{\eye}{\mathbf{I}}           % Identity matrix
+
+% =============================================================================
+% ASYMPTOTIC NOTATION
+% =============================================================================
+
+\newcommand{\bigO}{\cO}                 % Big O (using calligraphic shorthand)
+\newcommand{\smallO}{\mathrm{o}}        % Small o
+\newcommand{\bigOmega}{\Omega}          % Big Omega
+\newcommand{\smallOmega}{\omega}        % Small omega
+\newcommand{\bigTheta}{\Theta}          % Big Theta
+
+% =============================================================================
+% COMMON SYMBOLS AND ABBREVIATIONS
+% =============================================================================
+
+\newcommand{\diam}{\mathrm{diam}}       % Diameter of a set
+\newcommand{\iid}{\text{i.i.d.}}        % Independent and identically distributed
+\newcommand{\as}{\text{a.s.}}           % Almost surely
+\newcommand{\aeq}{\text{a.e.}}           % Almost everywhere (use \aeq to avoid ligature \ae)
+\newcommand{\wrt}{\text{w.r.t.}}        % With respect to
+\newcommand{\st}{\text{s.t.}}           % Such that
+% \iff: use amssymb's \iff or \Leftrightarrow; do not redefine
+\newcommand{\defn}{\coloneqq}           % Definition symbol
+\newcommand{\indep}{\perp\!\!\!\perp}   % Independence symbol
+
+% =============================================================================
+% THEOREM ENVIRONMENTS (uncomment if needed)
+% =============================================================================
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{assumption}[theorem]{Assumption}
+
+% =============================================================================
+% CUSTOM COMMANDS (add your own here)
+% =============================================================================
+
+% Example: Convergence in distribution
+% \newcommand{\convd}{\xrightarrow{d}}
+
+% Example: Convergence in probability  
+% \newcommand{\convp}{\xrightarrow{p}}
+
+% Example: Convergence almost surely
+% \newcommand{\convas}{\xrightarrow{a.s.}}
+
+% =============================================================================
+% COMPREHENSIVE DECORATED LETTERS SECTION
+% =============================================================================
+
+% --------------------------------
+% HAT NOTATION
+% --------------------------------
+
+% Hat notation for lowercase letters
+\newcommand{\ahat}{\hat{a}}             \newcommand{\bhat}{\hat{b}}
+\newcommand{\chat}{\hat{c}}             \newcommand{\dhat}{\hat{d}}
+\newcommand{\ehat}{\hat{e}}             \newcommand{\fhat}{\hat{f}}
+\newcommand{\ghat}{\hat{g}}             \newcommand{\hhat}{\hat{h}}
+\newcommand{\ihat}{\hat{i}}             \newcommand{\jhat}{\hat{j}}
+\newcommand{\khat}{\hat{k}}             \newcommand{\lhat}{\hat{l}}
+\newcommand{\mhat}{\hat{m}}             \newcommand{\nhat}{\hat{n}}
+\newcommand{\ohat}{\hat{o}}             \newcommand{\phat}{\hat{p}}
+\newcommand{\qhat}{\hat{q}}             \newcommand{\rhat}{\hat{r}}
+\newcommand{\shat}{\hat{s}}             \newcommand{\that}{\hat{t}}
+\newcommand{\uhat}{\hat{u}}             \newcommand{\vhat}{\hat{v}}
+\newcommand{\what}{\hat{w}}             \newcommand{\xhat}{\hat{x}}
+\newcommand{\yhat}{\hat{y}}             \newcommand{\zhat}{\hat{z}}
+
+% Hat notation for uppercase letters
+\newcommand{\Ahat}{\hat{A}}             \newcommand{\Bhat}{\hat{B}}
+\newcommand{\Chat}{\hat{C}}             \newcommand{\Dhat}{\hat{D}}
+\newcommand{\Ehat}{\hat{E}}             \newcommand{\Fhat}{\hat{F}}
+\newcommand{\Ghat}{\hat{G}}             \newcommand{\Hhat}{\hat{H}}
+\newcommand{\Ihat}{\hat{I}}             \newcommand{\Jhat}{\hat{J}}
+\newcommand{\Khat}{\hat{K}}             \newcommand{\Lhat}{\hat{L}}
+\newcommand{\Mhat}{\hat{M}}             \newcommand{\Nhat}{\hat{N}}
+\newcommand{\Ohat}{\hat{O}}             \newcommand{\Phat}{\hat{P}}
+\newcommand{\Qhat}{\hat{Q}}             \newcommand{\Rhat}{\hat{R}}
+\newcommand{\Shat}{\hat{S}}             \newcommand{\That}{\hat{T}}
+\newcommand{\Uhat}{\hat{U}}             \newcommand{\Vhat}{\hat{V}}
+\newcommand{\What}{\hat{W}}             \newcommand{\Xhat}{\hat{X}}
+\newcommand{\Yhat}{\hat{Y}}             \newcommand{\Zhat}{\hat{Z}}
+
+% Hat notation for Greek letters
+\newcommand{\alphahat}{\hat{\alpha}}    \newcommand{\betahat}{\hat{\beta}}
+\newcommand{\gammahat}{\hat{\gamma}}    \newcommand{\deltahat}{\hat{\delta}}
+\newcommand{\epsilonhat}{\hat{\epsilon}} \newcommand{\varepsilonhat}{\hat{\varepsilon}}
+\newcommand{\zetahat}{\hat{\zeta}}      \newcommand{\etahat}{\hat{\eta}}
+\newcommand{\thetahat}{\hat{\theta}}    \newcommand{\varthetahat}{\hat{\vartheta}}
+\newcommand{\iotahat}{\hat{\iota}}      \newcommand{\kappahat}{\hat{\kappa}}
+\newcommand{\lambdahat}{\hat{\lambda}}  \newcommand{\muhat}{\hat{\mu}}
+\newcommand{\nuhat}{\hat{\nu}}          \newcommand{\xihat}{\hat{\xi}}
+\newcommand{\omicronhat}{\hat{\omicron}} \newcommand{\pihat}{\hat{\pi}}
+\newcommand{\varpihat}{\hat{\varpi}}    \newcommand{\rhohat}{\hat{\rho}}
+\newcommand{\varrhohat}{\hat{\varrho}}  \newcommand{\sigmahat}{\hat{\sigma}}
+\newcommand{\varsigmahat}{\hat{\varsigma}} \newcommand{\tauhat}{\hat{\tau}}
+\newcommand{\upsilonhat}{\hat{\upsilon}} \newcommand{\phihat}{\hat{\phi}}
+\newcommand{\varphihat}{\hat{\varphi}}  \newcommand{\chihat}{\hat{\chi}}
+\newcommand{\psihat}{\hat{\psi}}        \newcommand{\omegahat}{\hat{\omega}}
+
+% Hat notation for uppercase Greek letters
+\newcommand{\Gammahat}{\hat{\Gamma}}    \newcommand{\Deltahat}{\hat{\Delta}}
+\newcommand{\Thetahat}{\hat{\Theta}}    \newcommand{\Lambdahat}{\hat{\Lambda}}
+\newcommand{\Xihat}{\hat{\Xi}}          \newcommand{\Pihat}{\hat{\Pi}}
+\newcommand{\Sigmahat}{\hat{\Sigma}}    \newcommand{\Upsilonhat}{\hat{\Upsilon}}
+\newcommand{\Phihat}{\hat{\Phi}}        \newcommand{\Psihat}{\hat{\Psi}}
+\newcommand{\Omegahat}{\hat{\Omega}}
+
+% Hat notation for bold lowercase letters
+\newcommand{\bahat}{\hat{\ba}}          \newcommand{\bbhat}{\hat{\bb}}
+\newcommand{\bchat}{\hat{\bc}}          \newcommand{\bdhat}{\hat{\bd}}
+\newcommand{\behat}{\hat{\be}}          \newcommand{\bfhat}{\hat{\bff}}
+\newcommand{\bghat}{\hat{\bg}}          \newcommand{\bhhat}{\hat{\bh}}
+\newcommand{\bihat}{\hat{\bi}}          \newcommand{\bjhat}{\hat{\bj}}
+\newcommand{\bkhat}{\hat{\bk}}          \newcommand{\blhat}{\hat{\bl}}
+\newcommand{\bmhat}{\hat{\bm}}          \newcommand{\bnhat}{\hat{\bn}}
+\newcommand{\bohat}{\hat{\bo}}          \newcommand{\bphat}{\hat{\bp}}
+\newcommand{\bqhat}{\hat{\bq}}          \newcommand{\brhat}{\hat{\br}}
+\newcommand{\bshat}{\hat{\bs}}          \newcommand{\bthat}{\hat{\bt}}
+\newcommand{\buhat}{\hat{\bu}}          \newcommand{\bvhat}{\hat{\bv}}
+\newcommand{\bwhat}{\hat{\bw}}          \newcommand{\bxhat}{\hat{\bx}}
+\newcommand{\byhat}{\hat{\by}}          \newcommand{\bzhat}{\hat{\bz}}
+
+% Hat notation for bold uppercase letters
+\newcommand{\bAhat}{\hat{\bA}}          \newcommand{\bBhat}{\hat{\bB}}
+\newcommand{\bChat}{\hat{\bC}}          \newcommand{\bDhat}{\hat{\bD}}
+\newcommand{\bEhat}{\hat{\bE}}          \newcommand{\bFhat}{\hat{\bF}}
+\newcommand{\bGhat}{\hat{\bG}}          \newcommand{\bHhat}{\hat{\bH}}
+\newcommand{\bIhat}{\hat{\bI}}          \newcommand{\bJhat}{\hat{\bJ}}
+\newcommand{\bKhat}{\hat{\bK}}          \newcommand{\bLhat}{\hat{\bL}}
+\newcommand{\bMhat}{\hat{\bM}}          \newcommand{\bNhat}{\hat{\bN}}
+\newcommand{\bOhat}{\hat{\bO}}          \newcommand{\bPhat}{\hat{\bP}}
+\newcommand{\bQhat}{\hat{\bQ}}          \newcommand{\bRhat}{\hat{\bR}}
+\newcommand{\bShat}{\hat{\bS}}          \newcommand{\bThat}{\hat{\bT}}
+\newcommand{\bUhat}{\hat{\bU}}          \newcommand{\bVhat}{\hat{\bV}}
+\newcommand{\bWhat}{\hat{\bW}}          \newcommand{\bXhat}{\hat{\bX}}
+\newcommand{\bYhat}{\hat{\bY}}          \newcommand{\bZhat}{\hat{\bZ}}
+
+% Hat notation for bold Greek letters
+\newcommand{\balphahat}{\hat{\balpha}}  \newcommand{\bbetahat}{\hat{\bbeta}}
+\newcommand{\bgammahat}{\hat{\bgamma}}  \newcommand{\bdeltahat}{\hat{\bdelta}}
+\newcommand{\bepsilonhat}{\hat{\bepsilon}} \newcommand{\bzetahat}{\hat{\bzeta}}
+\newcommand{\bfetahat}{\hat{\bfeta}}    \newcommand{\bthetahat}{\hat{\btheta}}
+\newcommand{\biotahat}{\hat{\biota}}    \newcommand{\bkappahat}{\hat{\bkappa}}
+\newcommand{\blambdahat}{\hat{\blambda}} \newcommand{\bmuhat}{\hat{\bmu}}
+\newcommand{\bnuhat}{\hat{\bnu}}        \newcommand{\bxihat}{\hat{\bxi}}
+\newcommand{\bpihat}{\hat{\bpi}}        \newcommand{\brhohat}{\hat{\brho}}
+\newcommand{\bsigmahat}{\hat{\bsigma}}  \newcommand{\btauhat}{\hat{\btau}}
+\newcommand{\bupsilonhat}{\hat{\bupsilon}} \newcommand{\bphihat}{\hat{\bphi}}
+\newcommand{\bchihat}{\hat{\bchi}}      \newcommand{\bpsihat}{\hat{\bpsi}}
+\newcommand{\bomegahat}{\hat{\bomega}}
+
+% Hat notation for bold uppercase Greek letters
+\newcommand{\bGammahat}{\hat{\bGamma}}  \newcommand{\bDeltahat}{\hat{\bDelta}}
+\newcommand{\bThetahat}{\hat{\bTheta}}  \newcommand{\bLambdahat}{\hat{\bLambda}}
+\newcommand{\bXihat}{\hat{\bXi}}        \newcommand{\bPihat}{\hat{\bPi}}
+\newcommand{\bSigmahat}{\hat{\bSigma}}  \newcommand{\bUpsilonhat}{\hat{\bUpsilon}}
+\newcommand{\bPhihat}{\hat{\bPhi}}      \newcommand{\bPsihat}{\hat{\bPsi}}
+\newcommand{\bOmegahat}{\hat{\bOmega}}
+
+% --------------------------------
+% TILDE NOTATION
+% --------------------------------
+
+% Tilde notation for lowercase letters
+\newcommand{\atilde}{\tilde{a}}         \newcommand{\btilde}{\tilde{b}}
+\newcommand{\ctilde}{\tilde{c}}         \newcommand{\dtilde}{\tilde{d}}
+\newcommand{\etilde}{\tilde{e}}         \newcommand{\ftilde}{\tilde{f}}
+\newcommand{\gtilde}{\tilde{g}}         \newcommand{\htilde}{\tilde{h}}
+\newcommand{\itilde}{\tilde{i}}         \newcommand{\jtilde}{\tilde{j}}
+\newcommand{\ktilde}{\tilde{k}}         \newcommand{\ltilde}{\tilde{l}}
+\newcommand{\mtilde}{\tilde{m}}         \newcommand{\ntilde}{\tilde{n}}
+\newcommand{\otilde}{\tilde{o}}         \newcommand{\ptilde}{\tilde{p}}
+\newcommand{\qtilde}{\tilde{q}}         \newcommand{\rtilde}{\tilde{r}}
+\newcommand{\stilde}{\tilde{s}}         \newcommand{\ttilde}{\tilde{t}}
+\newcommand{\utilde}{\tilde{u}}         \newcommand{\vtilde}{\tilde{v}}
+\newcommand{\wtilde}{\tilde{w}}         \newcommand{\xtilde}{\tilde{x}}
+\newcommand{\ytilde}{\tilde{y}}         \newcommand{\ztilde}{\tilde{z}}
+
+% Tilde notation for uppercase letters
+\newcommand{\Atilde}{\tilde{A}}         \newcommand{\Btilde}{\tilde{B}}
+\newcommand{\Ctilde}{\tilde{C}}         \newcommand{\Dtilde}{\tilde{D}}
+\newcommand{\Etilde}{\tilde{E}}         \newcommand{\Ftilde}{\tilde{F}}
+\newcommand{\Gtilde}{\tilde{G}}         \newcommand{\Htilde}{\tilde{H}}
+\newcommand{\Itilde}{\tilde{I}}         \newcommand{\Jtilde}{\tilde{J}}
+\newcommand{\Ktilde}{\tilde{K}}         \newcommand{\Ltilde}{\tilde{L}}
+\newcommand{\Mtilde}{\tilde{M}}         \newcommand{\Ntilde}{\tilde{N}}
+\newcommand{\Otilde}{\tilde{O}}         \newcommand{\Ptilde}{\tilde{P}}
+\newcommand{\Qtilde}{\tilde{Q}}         \newcommand{\Rtilde}{\tilde{R}}
+\newcommand{\Stilde}{\tilde{S}}         \newcommand{\Ttilde}{\tilde{T}}
+\newcommand{\Utilde}{\tilde{U}}         \newcommand{\Vtilde}{\tilde{V}}
+\newcommand{\Wtilde}{\tilde{W}}         \newcommand{\Xtilde}{\tilde{X}}
+\newcommand{\Ytilde}{\tilde{Y}}         \newcommand{\Ztilde}{\tilde{Z}}
+
+% Tilde notation for Greek letters
+\newcommand{\alphatilde}{\tilde{\alpha}} \newcommand{\betatilde}{\tilde{\beta}}
+\newcommand{\gammatilde}{\tilde{\gamma}} \newcommand{\deltatilde}{\tilde{\delta}}
+\newcommand{\epsilontilde}{\tilde{\epsilon}} \newcommand{\varepsilontilde}{\tilde{\varepsilon}}
+\newcommand{\zetatilde}{\tilde{\zeta}}  \newcommand{\etatilde}{\tilde{\eta}}
+\newcommand{\thetatilde}{\tilde{\theta}} \newcommand{\varthetatilde}{\tilde{\vartheta}}
+\newcommand{\iotatilde}{\tilde{\iota}}  \newcommand{\kappatilde}{\tilde{\kappa}}
+\newcommand{\lambdatilde}{\tilde{\lambda}} \newcommand{\mutilde}{\tilde{\mu}}
+\newcommand{\nutilde}{\tilde{\nu}}      \newcommand{\xitilde}{\tilde{\xi}}
+\newcommand{\omicrontilde}{\tilde{\omicron}} \newcommand{\pitilde}{\tilde{\pi}}
+\newcommand{\varpitilde}{\tilde{\varpi}} \newcommand{\rhotilde}{\tilde{\rho}}
+\newcommand{\varrhotilde}{\tilde{\varrho}} \newcommand{\sigmatilde}{\tilde{\sigma}}
+\newcommand{\varsigmatilde}{\tilde{\varsigma}} \newcommand{\tautilde}{\tilde{\tau}}
+\newcommand{\upsilontilde}{\tilde{\upsilon}} \newcommand{\phitilde}{\tilde{\phi}}
+\newcommand{\varphitilde}{\tilde{\varphi}} \newcommand{\chitilde}{\tilde{\chi}}
+\newcommand{\psitilde}{\tilde{\psi}}    \newcommand{\omegatilde}{\tilde{\omega}}
+
+% Tilde notation for uppercase Greek letters
+\newcommand{\Gammatilde}{\tilde{\Gamma}} \newcommand{\Deltatilde}{\tilde{\Delta}}
+\newcommand{\Thetatilde}{\tilde{\Theta}} \newcommand{\Lambdatilde}{\tilde{\Lambda}}
+\newcommand{\Xitilde}{\tilde{\Xi}}      \newcommand{\Pitilde}{\tilde{\Pi}}
+\newcommand{\Sigmatilde}{\tilde{\Sigma}} \newcommand{\Upsilontilde}{\tilde{\Upsilon}}
+\newcommand{\Phitilde}{\tilde{\Phi}}    \newcommand{\Psitilde}{\tilde{\Psi}}
+\newcommand{\Omegatilde}{\tilde{\Omega}}
+
+% Tilde notation for bold lowercase letters
+\newcommand{\batilde}{\tilde{\ba}}      \newcommand{\bbtilde}{\tilde{\bb}}
+\newcommand{\bctilde}{\tilde{\bc}}      \newcommand{\bdtilde}{\tilde{\bd}}
+\newcommand{\betilde}{\tilde{\be}}      \newcommand{\bftilde}{\tilde{\bff}}
+\newcommand{\bgtilde}{\tilde{\bg}}      \newcommand{\bhtilde}{\tilde{\bh}}
+\newcommand{\bitilde}{\tilde{\bi}}      \newcommand{\bjtilde}{\tilde{\bj}}
+\newcommand{\bktilde}{\tilde{\bk}}      \newcommand{\bltilde}{\tilde{\bl}}
+\newcommand{\bmtilde}{\tilde{\bm}}      \newcommand{\bntilde}{\tilde{\bn}}
+\newcommand{\botilde}{\tilde{\bo}}      \newcommand{\bptilde}{\tilde{\bp}}
+\newcommand{\bqtilde}{\tilde{\bq}}      \newcommand{\brtilde}{\tilde{\br}}
+\newcommand{\bstilde}{\tilde{\bs}}      \newcommand{\bttilde}{\tilde{\bt}}
+\newcommand{\butilde}{\tilde{\bu}}      \newcommand{\bvtilde}{\tilde{\bv}}
+\newcommand{\bwtilde}{\tilde{\bw}}      \newcommand{\bxtilde}{\tilde{\bx}}
+\newcommand{\bytilde}{\tilde{\by}}      \newcommand{\bztilde}{\tilde{\bz}}
+
+% Tilde notation for bold uppercase letters
+\newcommand{\bAtilde}{\tilde{\bA}}      \newcommand{\bBtilde}{\tilde{\bB}}
+\newcommand{\bCtilde}{\tilde{\bC}}      \newcommand{\bDtilde}{\tilde{\bD}}
+\newcommand{\bEtilde}{\tilde{\bE}}      \newcommand{\bFtilde}{\tilde{\bF}}
+\newcommand{\bGtilde}{\tilde{\bG}}      \newcommand{\bHtilde}{\tilde{\bH}}
+\newcommand{\bItilde}{\tilde{\bI}}      \newcommand{\bJtilde}{\tilde{\bJ}}
+\newcommand{\bKtilde}{\tilde{\bK}}      \newcommand{\bLtilde}{\tilde{\bL}}
+\newcommand{\bMtilde}{\tilde{\bM}}      \newcommand{\bNtilde}{\tilde{\bN}}
+\newcommand{\bOtilde}{\tilde{\bO}}      \newcommand{\bPtilde}{\tilde{\bP}}
+\newcommand{\bQtilde}{\tilde{\bQ}}      \newcommand{\bRtilde}{\tilde{\bR}}
+\newcommand{\bStilde}{\tilde{\bS}}      \newcommand{\bTtilde}{\tilde{\bT}}
+\newcommand{\bUtilde}{\tilde{\bU}}      \newcommand{\bVtilde}{\tilde{\bV}}
+\newcommand{\bWtilde}{\tilde{\bW}}      \newcommand{\bXtilde}{\tilde{\bX}}
+\newcommand{\bYtilde}{\tilde{\bY}}      \newcommand{\bZtilde}{\tilde{\bZ}}
+
+% Tilde notation for bold Greek letters
+\newcommand{\balphatilde}{\tilde{\balpha}} \newcommand{\bbetatilde}{\tilde{\bbeta}}
+\newcommand{\bgammatilde}{\tilde{\bgamma}} \newcommand{\bdeltatilde}{\tilde{\bdelta}}
+\newcommand{\bepsilontilde}{\tilde{\bepsilon}} \newcommand{\bzetatilde}{\tilde{\bzeta}}
+\newcommand{\bfetatilde}{\tilde{\bfeta}} \newcommand{\bthetatilde}{\tilde{\btheta}}
+\newcommand{\biotatilde}{\tilde{\biota}} \newcommand{\bkappatilde}{\tilde{\bkappa}}
+\newcommand{\blambdatilde}{\tilde{\blambda}} \newcommand{\bmutilde}{\tilde{\bmu}}
+\newcommand{\bnutilde}{\tilde{\bnu}}    \newcommand{\bxitilde}{\tilde{\bxi}}
+\newcommand{\bpitilde}{\tilde{\bpi}}    \newcommand{\brhotilde}{\tilde{\brho}}
+\newcommand{\bsigmatilde}{\tilde{\bsigma}} \newcommand{\btautilde}{\tilde{\btau}}
+\newcommand{\bupsilontilde}{\tilde{\bupsilon}} \newcommand{\bphitilde}{\tilde{\bphi}}
+\newcommand{\bchitilde}{\tilde{\bchi}}  \newcommand{\bpsitilde}{\tilde{\bpsi}}
+\newcommand{\bomegatilde}{\tilde{\bomega}}
+
+% Tilde notation for bold uppercase Greek letters
+\newcommand{\bGammatilde}{\tilde{\bGamma}} \newcommand{\bDeltatilde}{\tilde{\bDelta}}
+\newcommand{\bThetatilde}{\tilde{\bTheta}} \newcommand{\bLambdatilde}{\tilde{\bLambda}}
+\newcommand{\bXitilde}{\tilde{\bXi}}    \newcommand{\bPitilde}{\tilde{\bPi}}
+\newcommand{\bSigmatilde}{\tilde{\bSigma}} \newcommand{\bUpsilontilde}{\tilde{\bUpsilon}}
+\newcommand{\bPhitilde}{\tilde{\bPhi}}
+
+% Bar notation for lowercase letters
+\newcommand{\abar}{\bar{a}}             \newcommand{\bbar}{\bar{b}}
+\newcommand{\cbar}{\bar{c}}             \newcommand{\dbar}{\bar{d}}
+\newcommand{\ebar}{\bar{e}}             \newcommand{\fbar}{\bar{f}}
+\newcommand{\gbar}{\bar{g}}             \newcommand{\barh}{\bar{h}}  % Use \barh to avoid kernel \hbar (Planck)
+\newcommand{\ibar}{\bar{i}}             \newcommand{\jbar}{\bar{j}}
+\newcommand{\kbar}{\bar{k}}             \newcommand{\lbar}{\bar{l}}
+\newcommand{\mbar}{\bar{m}}             \newcommand{\nbar}{\bar{n}}
+\newcommand{\obar}{\bar{o}}             \newcommand{\pbar}{\bar{p}}
+\newcommand{\qbar}{\bar{q}}             \newcommand{\rbar}{\bar{r}}
+\newcommand{\sbar}{\bar{s}}             \newcommand{\tbar}{\bar{t}}
+\newcommand{\ubar}{\bar{u}}             \newcommand{\vbar}{\bar{v}}
+\newcommand{\wbar}{\bar{w}}             \newcommand{\xbar}{\bar{x}}
+\newcommand{\ybar}{\bar{y}}             \newcommand{\zbar}{\bar{z}}
+
+% Bar notation for uppercase letters
+\newcommand{\Abar}{\bar{A}}             \newcommand{\Bbar}{\bar{B}}
+\newcommand{\Cbar}{\bar{C}}             \newcommand{\Dbar}{\bar{D}}
+\newcommand{\Ebar}{\bar{E}}             \newcommand{\Fbar}{\bar{F}}
+\newcommand{\Gbar}{\bar{G}}             \newcommand{\Hbar}{\bar{H}}
+\newcommand{\Ibar}{\bar{I}}             \newcommand{\Jbar}{\bar{J}}
+\newcommand{\Kbar}{\bar{K}}             \newcommand{\Lbar}{\bar{L}}
+\newcommand{\Mbar}{\bar{M}}             \newcommand{\Nbar}{\bar{N}}
+\newcommand{\Obar}{\bar{O}}             \newcommand{\Pbar}{\bar{P}}
+\newcommand{\Qbar}{\bar{Q}}             \newcommand{\Rbar}{\bar{R}}
+\newcommand{\Sbar}{\bar{S}}             \newcommand{\Tbar}{\bar{T}}
+\newcommand{\Ubar}{\bar{U}}             \newcommand{\Vbar}{\bar{V}}
+\newcommand{\Wbar}{\bar{W}}             \newcommand{\Xbar}{\bar{X}}
+\newcommand{\Ybar}{\bar{Y}}             \newcommand{\Zbar}{\bar{Z}}
+
+% Bar notation for Greek letters
+\newcommand{\alphabar}{\bar{\alpha}}    \newcommand{\betabar}{\bar{\beta}}
+\newcommand{\gammabar}{\bar{\gamma}}    \newcommand{\deltabar}{\bar{\delta}}
+\newcommand{\epsilonbar}{\bar{\epsilon}} \newcommand{\varepsilonbar}{\bar{\varepsilon}}
+\newcommand{\zetabar}{\bar{\zeta}}      \newcommand{\etabar}{\bar{\eta}}
+\newcommand{\thetabar}{\bar{\theta}}    \newcommand{\varthetabar}{\bar{\vartheta}}
+\newcommand{\iotabar}{\bar{\iota}}      \newcommand{\kappabar}{\bar{\kappa}}
+\newcommand{\lambdabar}{\bar{\lambda}}  \newcommand{\mubar}{\bar{\mu}}
+\newcommand{\nubar}{\bar{\nu}}          \newcommand{\xibar}{\bar{\xi}}
+\newcommand{\omicronbar}{\bar{\omicron}} \newcommand{\pibar}{\bar{\pi}}
+\newcommand{\varpibar}{\bar{\varpi}}    \newcommand{\rhobar}{\bar{\rho}}
+\newcommand{\varrhobar}{\bar{\varrho}}  \newcommand{\sigmabar}{\bar{\sigma}}
+\newcommand{\varsigmabar}{\bar{\varsigma}} \newcommand{\taubar}{\bar{\tau}}
+\newcommand{\upsilonbar}{\bar{\upsilon}} \newcommand{\phibar}{\bar{\phi}}
+\newcommand{\varphibar}{\bar{\varphi}}  \newcommand{\chibar}{\bar{\chi}}
+\newcommand{\psibar}{\bar{\psi}}        \newcommand{\omegabar}{\bar{\omega}}
+
+% Bar notation for uppercase Greek letters
+\newcommand{\Gammabar}{\bar{\Gamma}}    \newcommand{\Deltabar}{\bar{\Delta}}
+\newcommand{\Thetabar}{\bar{\Theta}}    \newcommand{\Lambdabar}{\bar{\Lambda}}
+\newcommand{\Xibar}{\bar{\Xi}}          \newcommand{\Pibar}{\bar{\Pi}}
+\newcommand{\Sigmabar}{\bar{\Sigma}}    \newcommand{\Upsilonbar}{\bar{\Upsilon}}
+\newcommand{\Phibar}{\bar{\Phi}}        \newcommand{\Psibar}{\bar{\Psi}}
+\newcommand{\Omegabar}{\bar{\Omega}}
+
+% Bar notation for bold lowercase letters
+\newcommand{\babar}{\bar{\ba}}          \newcommand{\bbbar}{\bar{\bb}}
+\newcommand{\bcbar}{\bar{\bc}}          \newcommand{\bdbar}{\bar{\bd}}
+\newcommand{\bebar}{\bar{\be}}          \newcommand{\bfbar}{\bar{\bff}}
+\newcommand{\bgbar}{\bar{\bg}}          \newcommand{\bhbar}{\bar{\bh}}
+\newcommand{\bibar}{\bar{\bi}}          \newcommand{\bjbar}{\bar{\bj}}
+\newcommand{\bkbar}{\bar{\bk}}          \newcommand{\blbar}{\bar{\bl}}
+\newcommand{\bmbar}{\bar{\bm}}          \newcommand{\bnbar}{\bar{\bn}}
+\newcommand{\bobar}{\bar{\bo}}          \newcommand{\bpbar}{\bar{\bp}}
+\newcommand{\bqbar}{\bar{\bq}}          \newcommand{\brbar}{\bar{\br}}
+\newcommand{\bsbar}{\bar{\bs}}          \newcommand{\btbar}{\bar{\bt}}
+\newcommand{\bubar}{\bar{\bu}}          \newcommand{\bvbar}{\bar{\bv}}
+\newcommand{\bwbar}{\bar{\bw}}          \newcommand{\bxbar}{\bar{\bx}}
+\newcommand{\bybar}{\bar{\by}}          \newcommand{\bzbar}{\bar{\bz}}
+
+% Bar notation for bold uppercase letters
+\newcommand{\bAbar}{\bar{\bA}}          \newcommand{\bBbar}{\bar{\bB}}
+\newcommand{\bCbar}{\bar{\bC}}          \newcommand{\bDbar}{\bar{\bD}}
+\newcommand{\bEbar}{\bar{\bE}}          \newcommand{\bFbar}{\bar{\bF}}
+\newcommand{\bGbar}{\bar{\bG}}          \newcommand{\bHbar}{\bar{\bH}}
+\newcommand{\bIbar}{\bar{\bI}}          \newcommand{\bJbar}{\bar{\bJ}}
+\newcommand{\bKbar}{\bar{\bK}}          \newcommand{\bLbar}{\bar{\bL}}
+\newcommand{\bMbar}{\bar{\bM}}          \newcommand{\bNbar}{\bar{\bN}}
+\newcommand{\bObar}{\bar{\bO}}          \newcommand{\bPbar}{\bar{\bP}}
+\newcommand{\bQbar}{\bar{\bQ}}          \newcommand{\bRbar}{\bar{\bR}}
+\newcommand{\bSbar}{\bar{\bS}}          \newcommand{\bTbar}{\bar{\bT}}
+\newcommand{\bUbar}{\bar{\bU}}          \newcommand{\bVbar}{\bar{\bV}}
+\newcommand{\bWbar}{\bar{\bW}}          \newcommand{\bXbar}{\bar{\bX}}
+\newcommand{\bYbar}{\bar{\bY}}          \newcommand{\bZbar}{\bar{\bZ}}
+
+% Bar notation for bold Greek letters
+\newcommand{\balphabar}{\bar{\balpha}}  \newcommand{\bbetabar}{\bar{\bbeta}}
+\newcommand{\bgammabar}{\bar{\bgamma}}  \newcommand{\bdeltabar}{\bar{\bdelta}}
+\newcommand{\bepsilonbar}{\bar{\bepsilon}} \newcommand{\bzetabar}{\bar{\bzeta}}
+\newcommand{\bfetabar}{\bar{\bfeta}}    \newcommand{\bthetabar}{\bar{\btheta}}
+\newcommand{\biotabar}{\bar{\biota}}    \newcommand{\bkappabar}{\bar{\bkappa}}
+\newcommand{\blambdabar}{\bar{\blambda}} \newcommand{\bmubar}{\bar{\bmu}}
+\newcommand{\bnubar}{\bar{\bnu}}        \newcommand{\bxibar}{\bar{\bxi}}
+\newcommand{\bpibar}{\bar{\bpi}}        \newcommand{\brhobar}{\bar{\brho}}
+\newcommand{\bsigmabar}{\bar{\bsigma}}  \newcommand{\btaubar}{\bar{\btau}}
+\newcommand{\bupsilonbar}{\bar{\bupsilon}} \newcommand{\bphibar}{\bar{\bphi}}
+\newcommand{\bchibar}{\bar{\bchi}}      \newcommand{\bpsibar}{\bar{\bpsi}}
+\newcommand{\bomegabar}{\bar{\bomega}}
+
+% Bar notation for bold uppercase Greek letters
+\newcommand{\bGammabar}{\bar{\bGamma}}  \newcommand{\bDeltabar}{\bar{\bDelta}}
+\newcommand{\bThetabar}{\bar{\bTheta}}  \newcommand{\bLambdabar}{\bar{\bLambda}}
+\newcommand{\bXibar}{\bar{\bXi}}        \newcommand{\bPibar}{\bar{\bPi}}
+\newcommand{\bSigmabar}{\bar{\bSigma}}  \newcommand{\bUpsilonbar}{\bar{\bUpsilon}}
+\newcommand{\bPhibar}{\bar{\bPhi}}      \newcommand{\bPsibar}{\bar{\bPsi}}
+\newcommand{\bOmegabar}{\bar{\bOmega}}
+
+% Underbar notation for lowercase letters
+\newcommand{\aunderbar}{\underline{a}}          \newcommand{\bunderbar}{\underline{b}}
+\newcommand{\cunderbar}{\underline{c}}          \newcommand{\dunderbar}{\underline{d}}
+\newcommand{\eunderbar}{\underline{e}}          \newcommand{\funderbar}{\underline{f}}
+\newcommand{\gunderbar}{\underline{g}}          \newcommand{\hunderbar}{\underline{h}}
+\newcommand{\iunderbar}{\underline{i}}          \newcommand{\junderbar}{\underline{j}}
+\newcommand{\kunderbar}{\underline{k}}          \newcommand{\lunderbar}{\underline{l}}
+\newcommand{\munderbar}{\underline{m}}          \newcommand{\nunderbar}{\underline{n}}
+\newcommand{\ounderbar}{\underline{o}}          \newcommand{\punderbar}{\underline{p}}
+\newcommand{\qunderbar}{\underline{q}}          \newcommand{\runderbar}{\underline{r}}
+\newcommand{\sunderbar}{\underline{s}}          \newcommand{\tunderbar}{\underline{t}}
+\newcommand{\uunderbar}{\underline{u}}          \newcommand{\vunderbar}{\underline{v}}
+\newcommand{\wunderbar}{\underline{w}}          \newcommand{\xunderbar}{\underline{x}}
+\newcommand{\yunderbar}{\underline{y}}          \newcommand{\zunderbar}{\underline{z}}
+
+% Underbar notation for uppercase letters
+\newcommand{\Aunderbar}{\underline{A}}          \newcommand{\Bunderbar}{\underline{B}}
+\newcommand{\Cunderbar}{\underline{C}}          \newcommand{\Dunderbar}{\underline{D}}
+\newcommand{\Eunderbar}{\underline{E}}          \newcommand{\Funderbar}{\underline{F}}
+\newcommand{\Gunderbar}{\underline{G}}          \newcommand{\Hunderbar}{\underline{H}}
+\newcommand{\Iunderbar}{\underline{I}}          \newcommand{\Junderbar}{\underline{J}}
+\newcommand{\Kunderbar}{\underline{K}}          \newcommand{\Lunderbar}{\underline{L}}
+\newcommand{\Munderbar}{\underline{M}}          \newcommand{\Nunderbar}{\underline{N}}
+\newcommand{\Ounderbar}{\underline{O}}          \newcommand{\Punderbar}{\underline{P}}
+\newcommand{\Qunderbar}{\underline{Q}}          \newcommand{\Runderbar}{\underline{R}}
+\newcommand{\Sunderbar}{\underline{S}}          \newcommand{\Tunderbar}{\underline{T}}
+\newcommand{\Uunderbar}{\underline{U}}          \newcommand{\Vunderbar}{\underline{V}}
+\newcommand{\Wunderbar}{\underline{W}}          \newcommand{\Xunderbar}{\underline{X}}
+\newcommand{\Yunderbar}{\underline{Y}}          \newcommand{\Zunderbar}{\underline{Z}}
+
+% Underbar notation for Greek letters
+\newcommand{\alphaunderbar}{\underline{\alpha}} \newcommand{\betaunderbar}{\underline{\beta}}
+\newcommand{\gammaunderbar}{\underline{\gamma}} \newcommand{\deltaunderbar}{\underline{\delta}}
+\newcommand{\epsilonunderbar}{\underline{\epsilon}} \newcommand{\varepsilonunderbar}{\underline{\varepsilon}}
+\newcommand{\zetaunderbar}{\underline{\zeta}}    \newcommand{\etaunderbar}{\underline{\eta}}
+\newcommand{\thetaunderbar}{\underline{\theta}} \newcommand{\varthetaunderbar}{\underline{\vartheta}}
+\newcommand{\iotaunderbar}{\underline{\iota}}    \newcommand{\kappaunderbar}{\underline{\kappa}}
+\newcommand{\lambdaunderbar}{\underline{\lambda}} \newcommand{\muunderbar}{\underline{\mu}}
+\newcommand{\nuunderbar}{\underline{\nu}}        \newcommand{\xiunderbar}{\underline{\xi}}
+\newcommand{\omicronunderbar}{\underline{\omicron}} \newcommand{\piunderbar}{\underline{\pi}}
+\newcommand{\varpiunderbar}{\underline{\varpi}} \newcommand{\rhounderbar}{\underline{\rho}}
+\newcommand{\varrhounderbar}{\underline{\varrho}} \newcommand{\sigmaunderbar}{\underline{\sigma}}
+\newcommand{\varsigmaunderbar}{\underline{\varsigma}} \newcommand{\tauunderbar}{\underline{\tau}}
+\newcommand{\upsilonunderbar}{\underline{\upsilon}} \newcommand{\phiunderbar}{\underline{\phi}}
+\newcommand{\varphiunderbar}{\underline{\varphi}} \newcommand{\chiunderbar}{\underline{\chi}}
+\newcommand{\psiunderbar}{\underline{\psi}}      \newcommand{\omegunderbar}{\underline{\omega}}
+
+% Underbar notation for uppercase Greek letters
+\newcommand{\Gammaunderbar}{\underline{\Gamma}} \newcommand{\Deltaunderbar}{\underline{\Delta}}
+\newcommand{\Thetaunderbar}{\underline{\Theta}} \newcommand{\Lambdaunderbar}{\underline{\Lambda}}
+\newcommand{\Xiunderbar}{\underline{\Xi}}        \newcommand{\Piunderbar}{\underline{\Pi}}
+\newcommand{\Sigmaunderbar}{\underline{\Sigma}} \newcommand{\Upsilonunderbar}{\underline{\Upsilon}}
+\newcommand{\Phiunderbar}{\underline{\Phi}}      \newcommand{\Psiunderbar}{\underline{\Psi}}
+\newcommand{\Omegaunderbar}{\underline{\Omega}}
+
+% Underbar notation for bold lowercase letters
+\newcommand{\baunderbar}{\underline{\ba}}       \newcommand{\bbunderbar}{\underline{\bb}}
+\newcommand{\bcunderbar}{\underline{\bc}}       \newcommand{\bdunderbar}{\underline{\bd}}
+\newcommand{\beunderbar}{\underline{\be}}       \newcommand{\bfunderbar}{\underline{\bff}}
+\newcommand{\bgunderbar}{\underline{\bg}}       \newcommand{\bhunderbar}{\underline{\bh}}
+\newcommand{\biunderbar}{\underline{\bi}}       \newcommand{\bjunderbar}{\underline{\bj}}
+\newcommand{\bkunderbar}{\underline{\bk}}       \newcommand{\blunderbar}{\underline{\bl}}
+\newcommand{\bmunderbar}{\underline{\bm}}       \newcommand{\bnunderbar}{\underline{\bn}}
+\newcommand{\bounderbar}{\underline{\bo}}       \newcommand{\bpunderbar}{\underline{\bp}}
+\newcommand{\bqunderbar}{\underline{\bq}}       \newcommand{\brunderbar}{\underline{\br}}
+\newcommand{\bsunderbar}{\underline{\bs}}       \newcommand{\btunderbar}{\underline{\bt}}
+\newcommand{\buunderbar}{\underline{\bu}}       \newcommand{\bvunderbar}{\underline{\bv}}
+\newcommand{\bwunderbar}{\underline{\bw}}       \newcommand{\bxunderbar}{\underline{\bx}}
+\newcommand{\byunderbar}{\underline{\by}}       \newcommand{\bzunderbar}{\underline{\bz}}
+
+% Underbar notation for bold uppercase letters
+\newcommand{\bAunderbar}{\underline{\bA}}       \newcommand{\bBunderbar}{\underline{\bB}}
+\newcommand{\bCunderbar}{\underline{\bC}}       \newcommand{\bDunderbar}{\underline{\bD}}
+\newcommand{\bEunderbar}{\underline{\bE}}       \newcommand{\bFunderbar}{\underline{\bF}}
+\newcommand{\bGunderbar}{\underline{\bG}}       \newcommand{\bHunderbar}{\underline{\bH}}
+\newcommand{\bIunderbar}{\underline{\bI}}       \newcommand{\bJunderbar}{\underline{\bJ}}
+\newcommand{\bKunderbar}{\underline{\bK}}       \newcommand{\bLunderbar}{\underline{\bL}}
+\newcommand{\bMunderbar}{\underline{\bM}}       \newcommand{\bNunderbar}{\underline{\bN}}
+\newcommand{\bOunderbar}{\underline{\bO}}       \newcommand{\bPunderbar}{\underline{\bP}}
+\newcommand{\bQunderbar}{\underline{\bQ}}       \newcommand{\bRunderbar}{\underline{\bR}}
+\newcommand{\bSunderbar}{\underline{\bS}}       \newcommand{\bTunderbar}{\underline{\bT}}
+\newcommand{\bUunderbar}{\underline{\bU}}       \newcommand{\bVunderbar}{\underline{\bV}}
+\newcommand{\bWunderbar}{\underline{\bW}}       \newcommand{\bXunderbar}{\underline{\bX}}
+\newcommand{\bYunderbar}{\underline{\bY}}       \newcommand{\bZunderbar}{\underline{\bZ}}
+
+% Underbar notation for bold Greek letters
+\newcommand{\balphaunderbar}{\underline{\balpha}} \newcommand{\bbetaunderbar}{\underline{\bbeta}}
+\newcommand{\bgammaunderbar}{\underline{\bgamma}} \newcommand{\bdeltaunderbar}{\underline{\bdelta}}
+\newcommand{\bepsilonunderbar}{\underline{\bepsilon}} \newcommand{\bzetaunderbar}{\underline{\bzeta}}
+\newcommand{\bfetaunderbar}{\underline{\bfeta}} \newcommand{\bthetaunderbar}{\underline{\btheta}}
+\newcommand{\biotaunderbar}{\underline{\biota}} \newcommand{\bkappaunderbar}{\underline{\bkappa}}
+\newcommand{\blambdaunderbar}{\underline{\blambda}} \newcommand{\bmuunderbar}{\underline{\bmu}}
+\newcommand{\bnuunderbar}{\underline{\bnu}}      \newcommand{\bxiunderbar}{\underline{\bxi}}
+\newcommand{\bpiunderbar}{\underline{\bpi}}      \newcommand{\brhounderbar}{\underline{\brho}}
+\newcommand{\bsigmaunderbar}{\underline{\bsigma}} \newcommand{\btauunderbar}{\underline{\btau}}
+\newcommand{\bupsilonunderbar}{\underline{\bupsilon}} \newcommand{\bphiunderbar}{\underline{\bphi}}
+\newcommand{\bchiunderbar}{\underline{\bchi}}    \newcommand{\bpsiunderbar}{\underline{\bpsi}}
+\newcommand{\bomegunderbar}{\underline{\bomega}}
+
+% Underbar notation for bold uppercase Greek letters
+\newcommand{\bGammaunderbar}{\underline{\bGamma}} \newcommand{\bDeltaunderbar}{\underline{\bDelta}}
+\newcommand{\bThetaunderbar}{\underline{\bTheta}} \newcommand{\bLambdaunderbar}{\underline{\bLambda}}
+\newcommand{\bXiunderbar}{\underline{\bXi}}      \newcommand{\bPiunderbar}{\underline{\bPi}}
+\newcommand{\bSigmaunderbar}{\underline{\bSigma}} \newcommand{\bUpsilonunderbar}{\underline{\bUpsilon}}
+\newcommand{\bPhiunderbar}{\underline{\bPhi}}    \newcommand{\bPsiunderbar}{\underline{\bPsi}}
+\newcommand{\bOmegaunderbar}{\underline{\bOmega}}
+\endinput

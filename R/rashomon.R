@@ -1,63 +1,132 @@
+#' Theory-justified Rashomon tolerance epsilon_n
+#'
+#' @description
+#' Returns the fixed, deterministic Rashomon tolerance
+#' \eqn{\varepsilon_n = c \cdot \log(n) / n}: a sample-size-dependent rate that
+#' shrinks the Rashomon set as \eqn{n} grows. This rate is \eqn{o(n^{-1/2})}
+#' (since \eqn{\varepsilon_n / n^{-1/2} = c \log(n) / \sqrt{n} \to 0}).
+#'
+#' @details
+#' The \eqn{o(n^{-1/2})} order is the condition required by downstream
+#' Rashomon-DML inference (e.g. the doubletree structural-margin resolution): a
+#' single fixed tolerance of this order yields both a non-empty cross-fold
+#' intersection (under a structural-margin assumption) and the \eqn{o(n^{-1/2})}
+#' validity rate, with no data-adaptive tuning. Prefer this fixed value over
+#' data-adaptive selection of \eqn{\varepsilon_n} (e.g.
+#' \code{auto_tune_intersecting = TRUE}), which is a post-selection device not
+#' covered by that validity theory; when the intersection is empty at this
+#' tolerance, the correct escape is to fall back to fold-specific trees rather
+#' than to enlarge \eqn{\varepsilon_n}.
+#'
+#' @param n Sample size (integer \eqn{\ge 2}).
+#' @param c Positive constant multiplier (default 1).
+#' @return A single numeric: \eqn{c \cdot \log(n) / n}.
+#' @examples
+#' select_epsilon_n(1000)      # 0.00691...
+#' select_epsilon_n(1000, c = 2)
+#' @export
+select_epsilon_n <- function(n, c = 1) {
+  if (!is.numeric(n) || length(n) != 1 || n < 2) {
+    stop("`n` must be a single number >= 2, got: ", n, call. = FALSE)
+  }
+  if (!is.numeric(c) || length(c) != 1 || c <= 0) {
+    stop("`c` must be a single positive number, got: ", c, call. = FALSE)
+  }
+  c * log(n) / n
+}
+
+#' Count leaves in a single tree node
+#'
+#' @description
+#' Returns the number of leaf nodes in a raw tree node (list or JSON string).
+#' Unlike \code{count_tree_leaves()} which dispatches on an \code{OptimalTreesModel},
+#' this function operates directly on a tree node (list).
+#' Used for \code{max_leaves} sieve in \code{get_rashomon_trees}.
+#'
+#' @param tree A single tree as list or JSON string
+#' @return Integer number of leaves
+#' @export
+count_leaves_node <- function(tree) {
+  if (is.character(tree)) {
+    tree <- jsonlite::fromJSON(tree, simplifyVector = FALSE)
+  }
+  if (!is.list(tree)) return(0L)
+  if (!is.null(tree$prediction)) return(1L)
+  n <- 0L
+  if (!is.null(tree$true))  n <- n + count_leaves_node(tree$true)
+  if (!is.null(tree$false)) n <- n + count_leaves_node(tree$false)
+  as.integer(n)
+}
+
 #' Extract Trees from Rashomon Set
 #'
 #' @description
 #' Extract all trees from a trained TreeFARMS model's Rashomon set.
+#' Optionally restrict to trees with at most \code{max_leaves} leaves (sieve for
+#' theory-consistent complexity; see \file{docs/Implementation-requirements-Rashomon-DML.md}).
 #'
 #' @param model A trained TreeFARMS model object (class `treefarms_model`)
+#' @param max_leaves Optional integer. If set, only trees with number of leaves \eqn{\le}
+#'   \code{max_leaves} are returned (R-side sieve).
 #'
-#' @return A list of tree objects from the model's Rashomon set
+#' @return A list of tree objects from the model's Rashomon set (possibly filtered by \code{max_leaves})
 #'
 #' @examples
 #' \dontrun{
-#' model <- treefarms(X, y, regularization = 0.1)
+#' model <- optimaltrees(X, y, regularization = 0.1)
 #' trees <- get_rashomon_trees(model)
-#' cat("Number of trees:", length(trees), "\n")
+#' trees_small <- get_rashomon_trees(model, max_leaves = 5)
 #' }
 #'
 #' @export
-get_rashomon_trees <- function(model) {
-  if (!inherits(model, c("treefarms_model", "treefarms_logloss_model"))) {
-    stop("model must be a treefarms_model or treefarms_logloss_model object")
+get_rashomon_trees <- function(model, max_leaves = NULL) {
+  # Check for S7 or S3 objects
+  is_s7 <- S7::S7_inherits(model, OptimalTreesModel)
+  is_s3 <- inherits(model, c("treefarms_model", "treefarms_logloss_model", "optimaltrees_model", "optimaltrees_logloss_model"))
+
+  if (!is_s7 && !is_s3) {
+    stop("model must be a treefarms_model, treefarms_logloss_model, optimaltrees_model, optimaltrees_logloss_model object, or OptimalTreesModel (S7)")
   }
-  
-  if (inherits(model, "treefarms_logloss_model")) {
+
+  # Handle S7 objects
+  if (is_s7) {
+    if (model@n_trees == 0) {
+      warning("No trees in Rashomon set")
+      return(list())
+    }
+    trees <- model@trees
+  } else if (inherits(model, c("treefarms_logloss_model", "optimaltrees_logloss_model"))) {
     # For log_loss models, trees are stored in model$trees
     if (model$n_trees == 0) {
       warning("No trees in Rashomon set")
       return(list())
     }
-    return(model$trees)
+    trees <- model$trees
   } else {
-    # For regular models, extract from JSON structure
+    # For regular S3 models, extract from JSON structure
     # Note: Current implementation stores trees as JSON, not C++ objects
     # If C++ model_set exists in the future, we can add backward compatibility here
     {
       tree_json <- model$model$tree_json
-      
+
       if (is.null(tree_json)) {
         # Try result_data as fallback
         tree_json <- model$model$result_data
       }
-      
+
       if (is.null(tree_json)) {
         warning("No tree structure found in model")
-        return(list())
-      }
-      
-      # Check if it's a single tree or a rashomon set
-      if (is.list(tree_json)) {
-        # Check if it's a single tree (has feature or prediction directly)
+        trees <- list()
+      } else if (is.list(tree_json)) {
+        # Check if it's a single tree or a rashomon set
         if (!is.null(tree_json$feature) || !is.null(tree_json$prediction)) {
-          # Single tree - return as list with one element
-          return(list(tree_json))
+          trees <- list(tree_json)
         } else if (length(tree_json) > 0) {
           # Check if it's a list of trees
-          # If first element has feature or prediction, it's a list of trees
           if (length(tree_json) == 1 && 
               is.list(tree_json[[1]]) &&
               (!is.null(tree_json[[1]]$feature) || !is.null(tree_json[[1]]$prediction))) {
-            # Single tree in a list
-            return(list(tree_json[[1]]))
+            trees <- list(tree_json[[1]])
           } else if (length(tree_json) > 1) {
             # Multiple trees - check if they're valid tree structures
             valid_trees <- list()
@@ -68,17 +137,399 @@ get_rashomon_trees <- function(model) {
               }
             }
             if (length(valid_trees) > 0) {
-              return(valid_trees)
+              trees <- valid_trees
+            } else {
+              trees <- list()
             }
+          } else {
+            trees <- list()
           }
+        } else {
+          trees <- list()
         }
+      } else {
+        warning("Could not extract trees from model structure")
+        trees <- list()
       }
-      
-      # If we get here, couldn't extract trees
-      warning("Could not extract trees from model structure")
-      return(list())
     }
   }
+  if (!is.null(max_leaves) && length(trees) > 0) {
+    nleaves <- vapply(trees, count_leaves_node, integer(1))
+    trees <- trees[nleaves <= max_leaves]
+  }
+  trees
+}
+
+#' Tree structure to canonical form (splits only)
+#'
+#' @description
+#' Returns a canonical representation of a tree that includes only the split
+#' structure (feature, relation, reference, and recursive true/false branches).
+#' Leaf nodes are represented as a placeholder so that two trees with the same
+#' splits but different leaf values compare equal. Used for intersection by
+#' structure in DML.
+#'
+#' @param tree A tree as list (with \code{feature}/\code{prediction}) or JSON string
+#' @return A list with structure only (no prediction/probabilities/loss at leaves)
+#' @export
+tree_structure_to_canonical <- function(tree) {
+  if (is.character(tree)) {
+    tree <- jsonlite::fromJSON(tree, simplifyVector = FALSE)
+  }
+  if (!is.list(tree)) {
+    stop("tree must be a list or JSON string")
+  }
+  if (!is.null(tree$prediction)) {
+    return(list(leaf = TRUE))
+  }
+  if (!is.null(tree$feature)) {
+    return(list(
+      feature = tree$feature,
+      relation = if (is.null(tree$relation)) "==" else tree$relation,
+      reference = if (is.null(tree$reference)) "" else tree$reference,
+      true = tree_structure_to_canonical(tree$true),
+      false = tree_structure_to_canonical(tree$false)
+    ))
+  }
+  stop("Tree node has neither feature nor prediction")
+}
+
+#' Extract partition signature from tree (for binary features)
+#'
+#' @description
+#' For trees with binary features, extract which inputs go to which leaf IDs.
+#' Two trees with different split orders but the same partition structure
+#' (same grouping of inputs into leaves) will have equivalent signatures.
+#'
+#' This captures the STRUCTURE of the partition, not the leaf values, which
+#' is appropriate for DML where we want to use the same partition across folds
+#' but fit different leaf values per fold.
+#'
+#' @param tree A tree as list (with \code{feature}/\code{prediction}) or JSON string
+#' @param n_features Number of binary features (default: detect from tree)
+#' @return A sorted character vector mapping inputs to leaf IDs
+#' @export
+tree_to_partition_signature <- function(tree, n_features = NULL) {
+  if (is.character(tree)) {
+    tree <- jsonlite::fromJSON(tree, simplifyVector = FALSE)
+  }
+  if (!is.list(tree)) {
+    stop("tree must be a list or JSON string")
+  }
+
+  # Auto-detect number of features if not provided
+  if (is.null(n_features)) {
+    max_feat <- get_max_feature_index(tree)
+    if (is.null(max_feat)) {
+      # Tree is just a single leaf node
+      n_features <- 1
+    } else {
+      # max_feat is 0-indexed, so we need +1 to get count
+      n_features <- max_feat + 1
+    }
+  }
+
+  # Validate n_features
+  if (n_features < 1) {
+    stop("n_features must be at least 1, got: ", n_features)
+  }
+
+  if (n_features > 20) {
+    warning("n_features > 20: partition signature requires 2^n_features enumeration. ",
+            "Returning NULL to avoid exponential blowup.", call. = FALSE)
+    return(NULL)
+  }
+
+  # For binary features, enumerate all 2^n possible input combinations
+  # and determine which inputs are grouped together (same leaf)
+  n_combos <- 2^n_features
+
+  # Helper to get path to leaf (as string of features checked)
+  get_leaf_path <- function(node, feature_vec, path = character(0)) {
+    if (is.null(node)) return("NULL")
+
+    # Leaf node - return the path taken to get here
+    if (!is.null(node$prediction)) {
+      return(paste(sort(path), collapse=","))  # Sort for canonical form
+    }
+
+    # Internal node
+    if (!is.null(node$feature)) {
+      feat_idx <- node$feature + 1  # Convert to 1-indexed
+      if (feat_idx > length(feature_vec)) {
+        stop("Feature index out of range: tree uses feature ", node$feature,
+             " but only have ", length(feature_vec), " features in feature_vec. ",
+             "n_features=", n_features, ", max feature in tree might be higher.")
+      }
+
+      # Add this feature check to the path
+      feat_name <- paste0("X", node$feature)
+      feat_val <- feature_vec[feat_idx]
+      new_path <- c(path, paste0(feat_name, "=", feat_val))
+
+      # Follow the appropriate branch
+      if (feat_val == 1) {
+        return(get_leaf_path(node$true, feature_vec, new_path))
+      } else {
+        return(get_leaf_path(node$false, feature_vec, new_path))
+      }
+    }
+
+    stop("Node has neither feature nor prediction")
+  }
+
+  # Generate all binary combinations and group by leaf path
+  input_to_path <- character(n_combos)
+
+  for (i in 0:(n_combos-1)) {
+    # Convert i to binary vector
+    binary_vec <- as.integer(intToBits(i)[1:n_features])
+    input_str <- paste(binary_vec, collapse="")
+
+    # Get path to leaf for this input
+    leaf_path <- get_leaf_path(tree, binary_vec)
+
+    input_to_path[i+1] <- leaf_path
+  }
+
+  # Create partition signature: for each unique leaf path, list all inputs that go there
+  # This captures the partition structure independent of split order
+  unique_paths <- sort(unique(input_to_path))
+
+  partition_groups <- character(length(unique_paths))
+  for (i in seq_along(unique_paths)) {
+    path <- unique_paths[i]
+    # Find all inputs that reach this path
+    inputs <- which(input_to_path == path) - 1  # 0-indexed
+    # Convert to binary strings
+    input_strs <- purrr::map_chr(inputs, ~ {
+      paste(as.integer(intToBits(.x)[1:n_features]), collapse="")
+    })
+    # Sort and concatenate
+    partition_groups[i] <- paste(sort(input_strs), collapse="|")
+  }
+
+  # Return sorted partition groups
+  # Two trees with same partition will have same groups (maybe in different order)
+  return(sort(partition_groups))
+}
+
+#' Get maximum feature index referenced in tree structure
+#' @noRd
+get_max_feature_index <- function(node) {
+  if (is.null(node) || !is.list(node)) {
+    return(NULL)
+  }
+
+  max_idx <- NULL
+
+  # Check current node
+  if (!is.null(node$feature)) {
+    max_idx <- node$feature
+  }
+
+  # Recursively check children (handle both left/right and true/false naming)
+  if (!is.null(node$left)) {
+    left_max <- get_max_feature_index(node$left)
+    if (!is.null(left_max)) {
+      max_idx <- if (is.null(max_idx)) left_max else max(max_idx, left_max)
+    }
+  }
+
+  if (!is.null(node$right)) {
+    right_max <- get_max_feature_index(node$right)
+    if (!is.null(right_max)) {
+      max_idx <- if (is.null(max_idx)) right_max else max(max_idx, right_max)
+    }
+  }
+
+  # Also check true/false branches (used by log_loss trees)
+  if (!is.null(node$true)) {
+    true_max <- get_max_feature_index(node$true)
+    if (!is.null(true_max)) {
+      max_idx <- if (is.null(max_idx)) true_max else max(max_idx, true_max)
+    }
+  }
+
+  if (!is.null(node$false)) {
+    false_max <- get_max_feature_index(node$false)
+    if (!is.null(false_max)) {
+      max_idx <- if (is.null(max_idx)) false_max else max(max_idx, false_max)
+    }
+  }
+
+  return(max_idx)
+}
+
+#' Refit a tree structure on data (leaf values only)
+#'
+#' @description
+#' Given a tree structure (splits), route each row of \code{X} to a leaf and set
+#' leaf predictions and probabilities from the empirical class distribution in
+#' that leaf. Used for DML: the same structure is refit on \eqn{\mathcal{D}^{(-k)}}
+#' per fold to obtain \eqn{\tilde{\eta}^{(-k)}}.
+#'
+#' @param structure A tree (list or JSON string) with the same split structure;
+#'   leaf values are ignored and replaced.
+#' @param X Data.frame or matrix of features (binary 0/1)
+#' @param y Vector of binary class labels (0/1)
+#' @param allow_partial_leaves Logical. Controls behavior when a leaf receives no
+#'   observations from \code{(X, y)} (e.g. a small cross-fitting fold does not cover
+#'   every leaf of the structure). If \code{FALSE} (default), \code{refit_structure_on_data}
+#'   \code{stop()}s with a diagnostic. If \code{TRUE}, empty leaves are filled with the
+#'   overall mean of \code{y} (\eqn{P(Y=1)} for classification) and a single
+#'   \code{warning()} is emitted listing how many leaves were empty. This replaces the
+#'   previous silent 0.5 / 0 fallback, which could corrupt DML nuisance estimates without
+#'   any signal.
+#' @return A tree (list) with the same structure and leaf \code{prediction} and
+#'   \code{probabilities} fitted on \code{(X, y)}. The returned tree carries an
+#'   \code{"n_per_leaf"} attribute: a named integer vector of the number of \code{(X, y)}
+#'   observations that reached each leaf, keyed by leaf path (\code{"root"}, then
+#'   \code{"0"}/\code{"1"} for false/true branches, joined by \code{"-"}) --- the same
+#'   key convention as \code{\link{extract_leaf_values}}, so it can be passed directly as
+#'   the weights in \code{\link{average_trees}}. Empty leaves get count 0.
+#' @seealso \code{\link{refit_tree_structure}}, which performs the analogous refit but
+#'   takes a validated S7 \code{TreeStructure} (rather than a raw tree list/JSON) and
+#'   returns a \code{refit_result} with per-leaf counts; it shares the same
+#'   \code{allow_partial_leaves} contract.
+#' @export
+refit_structure_on_data <- function(structure, X, y, allow_partial_leaves = FALSE) {
+  # Validate structure input
+  if (is.null(structure)) {
+    stop("structure cannot be NULL", call. = FALSE)
+  }
+
+  if (is.character(structure)) {
+    structure <- jsonlite::fromJSON(structure, simplifyVector = FALSE)
+  }
+
+  if (!is.list(structure)) {
+    stop("structure must be a list or tree object, got: ",
+         class(structure)[1], call. = FALSE)
+  }
+
+  if (is.matrix(X)) {
+    X <- as.data.frame(X)
+  }
+
+  if (!is.data.frame(X)) {
+    stop("X must be a data.frame or matrix", call. = FALSE)
+  }
+
+  if (!is.numeric(y) && !is.logical(y)) {
+    stop("y must be numeric or logical", call. = FALSE)
+  }
+
+  n <- length(y)
+  if (nrow(X) != n) {
+    stop("nrow(X) must equal length(y)", call. = FALSE)
+  }
+
+  # Check that structure's feature indices don't exceed ncol(X). get_max_feature_index
+  # returns the raw 0-based node$feature, so the valid range is 0..(ncol(X)-1); a
+  # 0-based index of ncol(X) is out of range (would map to 1-based column ncol(X)+1).
+  max_feature <- get_max_feature_index(structure)
+  if (!is.null(max_feature) && max_feature + 1L > ncol(X)) {
+    stop("structure references feature index ", max_feature,
+         " (0-based) but X only has ", ncol(X), " columns", call. = FALSE)
+  }
+  row_indices <- seq_len(n)
+
+  is_regression <- !all(y %in% c(0L, 1L)) && is.numeric(y)
+  # Overall mean used to fill any leaf that receives no observations (empty leaf).
+  # For classification this is P(Y=1); for regression the mean outcome. Replaces the
+  # former silent 0.5/0 fallback with a principled default (and a loud signal below).
+  default_value <- mean(y, na.rm = TRUE)
+  # Mutable state for the closure: count of empty leaves, and per-leaf observation
+  # counts keyed by leaf path (same scheme as extract_leaf_values: "root", else the
+  # integer path 0=false/1=true joined by "-"). Enables sample-size-weighted averaging.
+  empty_state <- new.env(parent = emptyenv())
+  empty_state$n_empty <- 0L
+  empty_state$counts <- integer(0)
+
+  leaf_path_str <- function(path) if (length(path) == 0) "root" else paste(path, collapse = "-")
+
+  fill_leaf_values <- function(node, indices, path = integer(0)) {
+    if (is.null(node) || !is.list(node)) {
+      empty_state$n_empty <- empty_state$n_empty + 1L
+      empty_state$counts[leaf_path_str(path)] <- 0L
+      if (is_regression) return(list(prediction = default_value))
+      p1 <- max(0, min(1, default_value))
+      # `prediction` holds the leaf's continuous P(Y=1) here, matching
+      # reconstruct_tree_with_leaves()'s convention (tree_refit.R) -- NOT a
+      # hard-thresholded {0,1} class label as before. Every consumer that needs
+      # P(Y=1) already reads `probabilities[2]` (predict_averaged_tree(),
+      # extract_leaf_values()), never `prediction`'s value, for a classification
+      # leaf; thresholding `prediction` only mattered for
+      # get_probabilities_from_tree()'s missing-`probabilities` fallback
+      # (treefarms.R), and every leaf built here always carries `probabilities`.
+      return(list(prediction = p1, probabilities = c(1 - p1, p1)))
+    }
+    if (!is.null(node$prediction)) {
+      empty_state$counts[leaf_path_str(path)] <- length(indices)
+      if (length(indices) == 0) {
+        empty_state$n_empty <- empty_state$n_empty + 1L
+        if (is_regression) return(list(prediction = default_value))
+        p1 <- max(0, min(1, default_value))
+        return(list(prediction = p1, probabilities = c(1 - p1, p1)))
+      }
+      if (is_regression) {
+        return(list(prediction = mean(y[indices], na.rm = TRUE)))
+      }
+      p1 <- max(0, min(1, mean(y[indices], na.rm = TRUE)))
+      return(list(prediction = p1, probabilities = c(1 - p1, p1)))
+    }
+    if (!is.null(node$feature)) {
+      feat_idx <- node$feature + 1L
+      if (feat_idx < 1L || feat_idx > ncol(X)) {
+        stop("Tree feature index out of range for X")
+      }
+      col <- X[[feat_idx]]
+      if (is.null(col)) {
+        col <- X[, feat_idx]
+      }
+      # Subset the column to THIS node's observations before testing it. `col` is
+      # full-length (n) while `indices` holds only the rows that reached this node,
+      # so `indices[col == 1]` would index a length-|indices| vector with a length-n
+      # logical mask: correct at the root (where indices == seq_len(n)) but silently
+      # misaligned at every deeper node, yielding NA and duplicated rows. The NAs
+      # were then absorbed by `mean(y[indices], na.rm = TRUE)` below, so depth >= 2
+      # trees returned wrong leaf values with no error and no warning.
+      col_here <- col[indices]
+      true_idx <- indices[col_here == 1]
+      false_idx <- indices[col_here == 0]
+      # Path convention matches extract_leaf_values: false child appends 0, true appends 1.
+      false_child <- fill_leaf_values(node$false, false_idx, c(path, 0L))
+      true_child <- fill_leaf_values(node$true, true_idx, c(path, 1L))
+      return(list(
+        feature = node$feature,
+        relation = if (is.null(node$relation)) "==" else node$relation,
+        reference = if (is.null(node$reference)) "" else node$reference,
+        true = true_child,
+        false = false_child
+      ))
+    }
+    stop("Node has neither feature nor prediction")
+  }
+
+  out <- fill_leaf_values(structure, row_indices)
+  attr(out, "n_per_leaf") <- empty_state$counts
+
+  if (empty_state$n_empty > 0L) {
+    if (!allow_partial_leaves) {
+      stop(sprintf(
+        paste0("refit_structure_on_data: %d leaf(ves) received no observations from (X, y).\n",
+               "The data does not cover all leaves of this structure (covariate mismatch,\n",
+               "or a small cross-fitting fold). To fill empty leaves with the overall mean\n",
+               "(%.4f) instead of erroring, set allow_partial_leaves = TRUE."),
+        empty_state$n_empty, default_value), call. = FALSE)
+    }
+    warning(sprintf(
+      "refit_structure_on_data: %d empty leaf(ves) filled with overall mean (%.4f).",
+      empty_state$n_empty, default_value), call. = FALSE)
+  }
+
+  out
 }
 
 #' Convert Tree to JSON String
@@ -148,32 +599,38 @@ compare_trees <- function(tree1, tree2) {
   return(identical(json1, json2))
 }
 
-#' Find Intersection of Trees Across Rashomon Sets
+#' Find Intersection of Trees Across Rashomon Sets (by partition)
 #'
 #' @description
-#' Find trees that appear in ALL Rashomon sets from cross-fitting.
-#' This is the core function for identifying stable trees.
+#' Find tree *partitions* that appear in ALL Rashomon sets from cross-fitting.
+#' Comparison is by partition (leaf definitions), not split order. Trees that
+#' define the same leaves via different split orders are considered equivalent.
+#' This is critical for DML where fold-specific sampling variation causes
+#' different optimal split orders while maintaining functionally identical trees.
 #'
 #' @param rashomon_list A list of Rashomon sets, where each element is a list of trees
 #' @param verbose Logical. Print progress information. Default: TRUE
 #'
 #' @return A list containing:
-#'   \item{intersecting_trees}{List of tree objects appearing in all Rashomon sets}
-#'   \item{n_intersecting}{Number of intersecting trees}
-#'   \item{tree_jsons}{JSON representations of intersecting trees}
+#'   \item{intersecting_trees}{List of tree objects (from first set) with partitions in all sets}
+#'   \item{n_intersecting}{Number of intersecting partitions}
+#'   \item{tree_jsons}{JSON representations of those trees}
+#'   \item{intersecting_structures}{Same as intersecting_trees; full trees usable for \code{refit_structure_on_data}}
+#'   \item{tree_risks}{List of risk information for each intersecting tree}
 #'
 #' @details
-#' This function compares trees across K Rashomon sets by converting each tree
-#' to its JSON representation and finding common trees across all sets.
+#' Trees are compared by partition signature (predictions for all input combinations).
+#' Two trees with the same 16 leaves (for 4 binary features) but different split
+#' orders are considered equivalent. This addresses the common case where different
+#' folds find different optimal split orders due to sampling variation, but the
+#' underlying partition is the same. One representative full tree per partition
+#' (from the first set) is returned for refitting on fold-specific data.
 #'
 #' @examples
 #' \dontrun{
-#' # Get Rashomon sets from K models
 #' rashomon_sets <- lapply(models, get_rashomon_trees)
-#' 
-#' # Find trees in all sets
 #' result <- find_tree_intersection(rashomon_sets)
-#' cat("Found", result$n_intersecting, "stable trees\n")
+#' cat("Found", result$n_intersecting, "stable structure(s)\n")
 #' }
 #'
 #' @export
@@ -194,81 +651,184 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
     } else if (is.character(trees[[1]])) {
       tree_jsons <- trees
     } else {
-      tree_jsons <- sapply(trees, tree_to_json)
+      tree_jsons <- purrr::map_chr(trees, tree_to_json)
     }
-    
+    # Create placeholder tree_risks (no selection needed for single fold)
+    tree_risks <- purrr::map(seq_along(trees), ~ {
+      list(empirical_risk = NULL, complexity = NULL, penalized_risk = NULL)
+    })
     return(list(
       intersecting_trees = trees,
       n_intersecting = length(trees),
-      tree_jsons = tree_jsons
+      tree_jsons = tree_jsons,
+      intersecting_structures = trees,
+      tree_risks = tree_risks
     ))
   }
   
   if (verbose) {
-    cat(sprintf("Finding intersection across %d Rashomon sets...\n", K))
-    set_sizes <- sapply(rashomon_list, length)
+    cat(sprintf("Finding intersection across %d Rashomon sets (by partition)...\n", K))
+    set_sizes <- purrr::map_int(rashomon_list, length)
     cat(sprintf("Rashomon set sizes: %s\n", paste(set_sizes, collapse = ", ")))
+    cat("Note: Trees with same leaves but different split orders are considered equivalent\n")
   }
   
-  # Convert all trees to JSON for comparison
-  json_sets <- lapply(rashomon_list, function(trees) {
-    if (length(trees) == 0) {
-      return(character(0))
-    }
-    # Check if trees are already JSON strings
-    if (is.character(trees[[1]])) {
-      return(trees)
-    } else {
-      return(sapply(trees, tree_to_json))
-    }
+  # OPTIMIZATION: Use partition-based comparison instead of structural comparison
+  # For binary features, two trees are functionally equivalent if they define
+  # the same partition of the input space, even if they use different split orders.
+  # This is critical for DML where fold-specific sampling variation causes
+  # different optimal split orders while maintaining the same leaves.
+
+  # Extract partition signatures for each fold (digest of leaf predictions)
+  structure_hash_sets <- purrr::map(rashomon_list, ~ {
+    trees <- .x
+    if (length(trees) == 0) return(character(0))
+    vapply(trees, function(t) {
+      # Get partition signature (predictions for all input combinations)
+      # This captures functional equivalence, not structural equivalence
+      if (is.character(t)) {
+        partition_sig <- tree_to_partition_signature(jsonlite::fromJSON(t, simplifyVector = FALSE))
+      } else {
+        partition_sig <- tree_to_partition_signature(t)
+      }
+      if (is.null(partition_sig)) {
+        # Fallback to structural hash when partition signature unavailable (>20 features)
+        return(digest::digest(t, algo = "xxhash64"))
+      }
+      # Hash the sorted partition signature
+      # Trees with same leaves but different split orders will have same hash
+      digest::digest(partition_sig, algo = "xxhash64")
+    }, character(1))
   })
-  
-  # Start with first set as candidates
-  intersection_jsons <- json_sets[[1]]
-  
+
+  # Intersect by hash (much faster than string matching)
+  intersection_hashes <- structure_hash_sets[[1]]
   if (verbose) {
-    cat(sprintf("Starting with %d candidates from set 1\n", length(intersection_jsons)))
+    cat(sprintf("Starting with %d unique partition(s) from fold 1\n", length(unique(intersection_hashes))))
   }
-  
-  # Iteratively intersect with remaining sets
+
   for (k in 2:K) {
-    # Keep only JSON strings that appear in set k
-    intersection_jsons <- intersection_jsons[intersection_jsons %in% json_sets[[k]]]
-    
+    prev_size <- length(intersection_hashes)
+    intersection_hashes <- intersection_hashes[intersection_hashes %in% structure_hash_sets[[k]]]
+    curr_size <- length(intersection_hashes)
+
     if (verbose) {
-      cat(sprintf("After intersecting with set %d: %d trees remain\n", 
-                  k, length(intersection_jsons)))
+      cat(sprintf("After intersecting with fold %d: %d partitions remain\n", k, curr_size))
     }
-    
-    # Early exit if no intersection
-    if (length(intersection_jsons) == 0) {
+
+    if (curr_size == 0) {
       if (verbose) {
-        cat("No trees appear in all sets\n")
+        cat("No common partitions appear in all folds\n")
       }
       return(list(
         intersecting_trees = list(),
-        n_intersecting = 0,
-        tree_jsons = character(0)
+        n_intersecting = 0L,
+        tree_jsons = character(0),
+        intersecting_structures = list(),
+        tree_risks = list()
       ))
     }
   }
-  
-  # Get the actual tree objects from the first set
-  # (they're identical across sets, so we can use any)
-  first_set_jsons <- json_sets[[1]]
-  intersecting_indices <- which(first_set_jsons %in% intersection_jsons)
-  intersecting_trees <- rashomon_list[[1]][intersecting_indices]
-  
-  if (verbose) {
-    cat(sprintf("Found %d tree(s) in all %d Rashomon sets\n", 
-                length(intersecting_trees), K))
+
+  # One representative full tree per structure from set 1 (first occurrence of each hash)
+  first_hashes <- structure_hash_sets[[1]]
+  idx <- match(unique(intersection_hashes), first_hashes)
+  idx <- idx[!is.na(idx)]
+
+  # Early return if no intersection (idx is empty)
+  if (length(idx) == 0) {
+    if (verbose) {
+      cat("No tree structures appear in all K folds\n")
+    }
+    return(list(
+      intersecting_trees = list(),
+      n_intersecting = 0L,
+      tree_jsons = character(0),
+      intersecting_structures = list(),
+      tree_risks = list()
+    ))
   }
-  
-  return(list(
+
+  intersecting_trees <- rashomon_list[[1]][idx]
+
+  # Only serialize to JSON at the end for the final intersecting trees
+  tree_jsons <- purrr::map_chr(intersecting_trees, tree_to_json)
+
+  # Store penalized risk for each intersecting tree (for tree selection)
+  # Trees from GOSDT carry model_objective = empirical_loss + lambda * n_leaves.
+  # Fall back to model_objective when explicit penalized_risk field is absent.
+  tree_risks <- purrr::map(seq_along(intersecting_trees), ~ {
+    tree <- intersecting_trees[[.x]]
+    empirical_risk <- NULL
+    complexity <- NULL
+    penalized_risk <- NULL
+
+    if (is.list(tree)) {
+      empirical_risk <- tree$empirical_risk
+      complexity     <- tree$complexity
+      # Primary: use penalized_risk if available; fall back to model_objective
+      penalized_risk <- tree$penalized_risk %||% tree$model_objective
+    }
+
+    list(
+      empirical_risk = empirical_risk,
+      complexity     = complexity,
+      penalized_risk = penalized_risk
+    )
+  })
+
+  if (verbose) {
+    cat(sprintf("\n✓ Found %d unique partition(s) appearing in all %d folds\n", length(intersecting_trees), K))
+  }
+
+  # Select tree with minimum penalized risk (best model by penalized objective)
+  has_risk_info <- purrr::map_lgl(tree_risks, ~ !is.null(.x$penalized_risk))
+
+  if (any(has_risk_info)) {
+    risks <- purrr::map_dbl(tree_risks, ~ {
+      if (!is.null(.x$penalized_risk)) .x$penalized_risk else Inf
+    })
+
+    best_idx <- which.min(risks)
+
+    if (verbose) {
+      valid_risks <- risks[is.finite(risks)]
+      if (length(valid_risks) > 0) {
+        cat(sprintf("  Penalized risks (model_objective): min=%.4f, max=%.4f\n",
+                   min(valid_risks), max(valid_risks)))
+        cat(sprintf("  Selected tree %d with minimum penalized risk (R_pen = %.4f)\n",
+                   best_idx, risks[best_idx]))
+      }
+    }
+
+    # Reorder so best tree is first (used by predict.cf_rashomon which takes [[1]])
+    if (best_idx != 1 && is.finite(risks[best_idx])) {
+      intersecting_trees <- c(
+        intersecting_trees[best_idx],
+        intersecting_trees[-best_idx]
+      )
+      tree_jsons <- c(
+        tree_jsons[best_idx],
+        tree_jsons[-best_idx]
+      )
+      tree_risks <- c(
+        tree_risks[best_idx],
+        tree_risks[-best_idx]
+      )
+    }
+  } else {
+    if (verbose) {
+      cat("  No penalized risk information available, using first tree by fold order\n")
+    }
+  }
+
+  list(
     intersecting_trees = intersecting_trees,
     n_intersecting = length(intersecting_trees),
-    tree_jsons = intersection_jsons
-  ))
+    tree_jsons = tree_jsons,
+    intersecting_structures = intersecting_trees,
+    tree_risks = tree_risks
+  )
 }
 
 #' Get Number of Trees in Rashomon Set
@@ -282,17 +842,25 @@ find_tree_intersection <- function(rashomon_list, verbose = TRUE) {
 #'
 #' @examples
 #' \dontrun{
-#' model <- treefarms(X, y, regularization = 0.1)
+#' model <- optimaltrees(X, y, regularization = 0.1)
 #' n_trees <- count_trees(model)
 #' }
 #'
 #' @export
 count_trees <- function(model) {
-  if (!inherits(model, "treefarms_model")) {
-    stop("model must be a treefarms_model object")
+  # Check for S7 or S3 objects
+  is_s7 <- S7::S7_inherits(model, OptimalTreesModel)
+  is_s3 <- inherits(model, "treefarms_model")
+
+  if (!is_s7 && !is_s3) {
+    stop("model must be a treefarms_model object or OptimalTreesModel (S7)")
   }
-  
-  return(model$n_trees)
+
+  if (is_s7) {
+    return(model@n_trees)
+  } else {
+    return(model$n_trees)
+  }
 }
 
 #' Get Human-Readable Rules from Tree

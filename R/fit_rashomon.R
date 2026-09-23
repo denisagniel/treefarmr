@@ -6,14 +6,39 @@
 #' multiple models that are nearly as good as the optimal tree.
 #'
 #' @param X A data.frame or matrix of features. Must contain only binary (0/1) features.
-#' @param y A vector of binary class labels (0/1).
+#' @param y A vector of outcomes. Binary (0/1) for classification, or continuous for
+#'   regression (when `loss_function = "squared_error"`).
 #' @param loss_function Character string specifying the loss function to use.
-#'   Options: "misclassification" (default) or "log_loss".
+#'   Options: "misclassification" (default), "log_loss", or "squared_error".
+#'   Use "squared_error" for regression with continuous outcomes.
 #' @param regularization Numeric value controlling model complexity. Higher values
 #'   lead to simpler models. Default: 0.1. If NULL, will be auto-tuned.
-#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size.
-#'   Lower values lead to more trees. Default: 0.05. If NULL, will be auto-tuned.
+#'   The fitted objective is \strong{mean} empirical loss plus
+#'   \code{regularization * (number of leaves)} (see \code{\link{fit_tree}});
+#'   all loss functions are mean-normalized, so \code{regularization}
+#'   corresponds to \eqn{\lambda} in Xu et al. (2026), rate
+#'   \eqn{\lambda \propto (\log n)/n}.
+#' @param rashomon_bound_multiplier Numeric value controlling Rashomon set size (multiplicative). Default: 0.05.
+#'   The Rashomon set is \eqn{\{f : \mathrm{obj}(f) \le (1 + \varepsilon)\,\mathrm{obj}^*\}}.
+#'   Because the objective is now mean-scaled, this multiplicative bound is a
+#'   \emph{ratio} and is unchanged by the mean normalization. On complex DGPs at
+#'   larger \eqn{n}, the default 0.05 can admit very large (memory-bounding)
+#'   Rashomon sets; reduce it (e.g. 0.01) if enumeration is truncated.
+#' @param rashomon_bound_adder Numeric value for additive Rashomon bound. Default: 0. If non-zero, bound = optimum + adder.
+#'   \strong{Note:} interpreted on the \emph{mean}-loss scale (objective is mean
+#'   loss + \eqn{\lambda}*leaves); an adder calibrated to a summed objective must
+#'   be divided by \eqn{n}.
+#' @param rashomon_ignore_trivial_extensions Logical. If FALSE (default), keep all trees including trivial
+#'   extensions (same partition, different split order). This is CRITICAL for cross-fitted Rashomon workflows,
+#'   where folds may learn the same partition via different split sequences. Setting to TRUE prunes to one
+#'   representative per partition, which breaks fold intersection. Only set to TRUE if you explicitly want
+#'   partition-level uniqueness for single-fold analysis.
 #' @param worker_limit Integer: number of parallel workers to use (default: 1).
+#' @param model_limit Integer or NULL. Maximum number of models extracted during
+#'   Rashomon set enumeration. If NULL (default), resolved based on loss function:
+#'   200000 for all loss functions (sufficient for max_depth=4 with binary features).
+#' @param max_depth Integer. Maximum tree depth (0 = unlimited). Limits the depth
+#'   of trees in the Rashomon set. Default: 0 (no limit).
 #' @param verbose Logical. Whether to print training progress. Default: FALSE.
 #' @param store_training_data Logical. Whether to store training data in the model object.
 #'   Default: FALSE. Set to TRUE only if you need to access training data later.
@@ -33,7 +58,7 @@
 #'   \item{y_train}{Training labels (only if store_training_data=TRUE)}
 #'
 #' @details
-#' This function is a convenience wrapper around `treefarms()` with `single_tree = FALSE`.
+#' This function is a convenience wrapper around `optimaltrees()` with `single_tree = FALSE`.
 #' It computes a full rashomon set, which includes:
 #' - The optimal tree
 #' - All trees within the rashomon bound (nearly optimal trees)
@@ -47,6 +72,11 @@
 #' The size of the rashomon set is controlled by `rashomon_bound_multiplier`:
 #' - Smaller values (e.g., 0.01) → more trees in the set
 #' - Larger values (e.g., 0.1) → fewer trees in the set
+#'
+#' \strong{Theory-consistent defaults (DML):} Use small \eqn{\varepsilon}
+#' (e.g. \code{rashomon_bound_multiplier = 0.05}), \eqn{\lambda \propto (\log n)/n}
+#' (see \code{\link{cv_regularization}}). See
+#' \file{docs/Implementation-requirements-Rashomon-DML.md}.
 #'
 #' @examples
 #' \dontrun{
@@ -84,17 +114,24 @@
 #'
 #' @export
 fit_rashomon <- function(X, y, loss_function = "misclassification", regularization = 0.1,
-                        rashomon_bound_multiplier = 0.05, worker_limit = 1L, verbose = FALSE,
+                        rashomon_bound_multiplier = 0.05, rashomon_bound_adder = 0,
+                        rashomon_ignore_trivial_extensions = FALSE,
+                        worker_limit = 1L, model_limit = NULL, max_depth = 0L,
+                        verbose = FALSE,
                         store_training_data = NULL, compute_probabilities = FALSE, ...) {
-  
-  # Call treefarms with single_tree = FALSE to compute rashomon set
-  result <- treefarms(
+
+  # Call optimaltrees with single_tree = FALSE to compute rashomon set
+  result <- optimaltrees(
     X = X,
     y = y,
     loss_function = loss_function,
     regularization = regularization,
     rashomon_bound_multiplier = rashomon_bound_multiplier,
+    rashomon_bound_adder = rashomon_bound_adder,
+    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
     worker_limit = worker_limit,
+    model_limit = model_limit,
+    max_depth = max_depth,
     verbose = verbose,
     store_training_data = store_training_data,
     compute_probabilities = compute_probabilities,
@@ -103,10 +140,16 @@ fit_rashomon <- function(X, y, loss_function = "misclassification", regularizati
   )
   
   # Verify that we got at least one tree
-  if (result$n_trees < 1) {
+  # Handle both S7 and S3 objects
+  n_trees <- if (S7::S7_inherits(result, OptimalTreesModel)) {
+    result@n_trees
+  } else {
+    result$n_trees
+  }
+  if (n_trees < 1) {
     warning("No trees found in rashomon set. Consider adjusting regularization or rashomon_bound_multiplier.")
   }
-  
+
   return(result)
 }
 

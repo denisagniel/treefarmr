@@ -24,33 +24,45 @@ void Optimizer::rash_models(key_type const & identifier, results_t & results, fl
 
     models_calls++;
 
-    auto stored_models_accessor = this->state.graph.models.find(identifier);
-    if (stored_models_accessor != this->state.graph.models.end()) {
-        scoped_result_t stored_models = stored_models_accessor->second;
-        float stored_scope = std::get<0>(stored_models);
-        if (stored_scope >= scope) {
-            auto& stored_models_set = std::get<1>(stored_models);
-            auto& key_set = stored_models_set.first;
-            // TODO: exclude out of scope stuff here
-            results = stored_models_set;
-            // for (std::shared_ptr<Model> model : stored_models_set) {
-            //     if (model->loss() + model->complexity() <= scope) {
-            //         results.insert(model);
-            //     }
-            // }
-            return;
-        } else {
-            // Result already cached, continue without updating
+    // Lock graph for models access (check for cached results)
+    {
+        std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
+        auto stored_models_accessor = this->state.graph.models.find(identifier);
+        if (stored_models_accessor != this->state.graph.models.end()) {
+            scoped_result_t stored_models = stored_models_accessor->second;
+            float stored_scope = std::get<0>(stored_models);
+            if (stored_scope >= scope) {
+                auto& stored_models_set = std::get<1>(stored_models);
+                auto& key_set = stored_models_set.first;
+                // TODO: exclude out of scope stuff here
+                results = stored_models_set;
+                // for (std::shared_ptr<Model> model : stored_models_set) {
+                //     if (model->loss() + model->complexity() <= scope) {
+                //         results.insert(model);
+                //     }
+                // }
+                return;
+            } else {
+                // Result already cached, continue without updating
+            }
         }
-    } 
+    } // Release lock before calling rash_models_inner (which will acquire its own locks)
 
     rash_models_inner(identifier, results, scope);
 
-    auto new_models = std::make_pair(identifier, std::make_pair(scope, results));
-    this->state.graph.models.insert(new_models);
+    // Lock graph for models insert
+    {
+        std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
+        auto new_models = std::make_pair(identifier, std::make_pair(scope, results));
+        this->state.graph.models.insert(new_models);
+    }
 }
 
 void Optimizer::rash_models_inner(key_type const & identifier, results_t & results, float scope) {
+    // Lock graph for all accesses (vertices, bounds, children)
+    // Using recursive_mutex so recursive calls to rash_models are safe
+    std::lock_guard<std::recursive_mutex> lock(this->state.graph.graph_mutex);
+
     auto task_accessor = this->state.graph.vertices.find(identifier);
     if (task_accessor == this->state.graph.vertices.end()) { return; }
     Task & task = task_accessor -> second;

@@ -4,7 +4,14 @@
 \alias{predict.cf_rashomon}
 \title{Predict method for cf_rashomon objects}
 \usage{
-\method{predict}{cf_rashomon}(object, newdata, type = c("class", "prob"), ensemble = TRUE, ...)
+\method{predict}{cf_rashomon}(
+  object,
+  newdata,
+  type = c("class", "prob"),
+  ensemble = TRUE,
+  fold_indices = NULL,
+  ...
+)
 }
 \arguments{
 \item{object}{A cf_rashomon object}
@@ -13,12 +20,15 @@
 
 \item{type}{Character: "class" or "prob"}
 
-\item{ensemble}{Logical: whether to ensemble across all intersecting trees}
+\item{ensemble}{Logical: whether to ensemble across all intersecting trees (ignored if \code{fold_indices} is provided)}
+
+\item{fold_indices}{Optional integer vector of length \code{nrow(newdata)} giving the fold id for each row.
+When provided, predictions use the fold-specific refit \eqn{\tilde{\eta}^{(-k)}} (valid DML). When \code{NULL}, uses fold 1 model (backward compatible).}
 
 \item{...}{Additional arguments}
 }
 \value{
-Predictions based on type
+Predictions based on type. If \code{fold_indices} is provided, each row gets \eqn{\tilde{\eta}^{(-k(i))}(X_i)}.
 }
 \description{
 Predict method for cf_rashomon objects

@@ -52,11 +52,15 @@ public:
     Queue(void);
     ~Queue(void);
 
+    // Delete copy constructor and assignment operator (mutexes are not copyable)
+    Queue(const Queue&) = delete;
+    Queue& operator=(const Queue&) = delete;
+
     // @param message: a message to be sent from one vertex to another
     // @returns true if the message was successfully enqueued and not rejected by the membership filter
     // @note higher priority comes before lower priority
     bool push(Message const & message);
-    
+
     // @returns whether queue is empty
     bool empty(void) const;
 
@@ -69,14 +73,21 @@ public:
     // @modifes message: message will be overwritten with a copy the content of the received message
     bool pop(Message & message);
 
+    // Get pool statistics for debugging/monitoring
+    size_t pool_size() const { return message_pool.pool_size(); }
+    size_t total_allocated() const { return message_pool.total_allocated(); }
+
 private:
     // map containing uniquely identified messages that are currently in queue
     membership_table_type membership;
 
     queue_type queue; // queue containing pending messages
-    
+
     // Mutex for thread safety since we're using std::priority_queue
     mutable std::mutex queue_mutex;
+
+    // Message pool for reducing allocation overhead
+    MessagePool message_pool;
 };
 
 #endif
