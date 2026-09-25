@@ -499,6 +499,11 @@ Bitmask::Bitmask(bitblock * source_blocks, unsigned int size, bitblock * local_b
 //}
 
 Bitmask::Bitmask(Bitmask const & source, bitblock * local_buffer) {
+    // depth_budget has no NSDMI (unlike content/_size/etc.) and is read by hash(),
+    // operator==, operator<, and Dataset::subset()'s decrement, so it must be set
+    // before the size==0 early return below, not only on the path that reaches the
+    // end of this constructor.
+    this -> set_depth_budget(source.get_depth_budget());
     if (source._size == 0) { return; }
     if (Bitmask::integrity_check && !source.valid()) {
         std::stringstream reason;
@@ -508,8 +513,6 @@ Bitmask::Bitmask(Bitmask const & source, bitblock * local_buffer) {
     initialize(source.size(), local_buffer);
     memcpy(this -> content, source.data(), this -> _used_blocks * sizeof(bitblock));
     Bitmask::clean(this->content, this->_used_blocks, this->_offset);
-    
-    this -> set_depth_budget(source.get_depth_budget());
 }
 
 Bitmask::~Bitmask(void) {

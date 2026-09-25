@@ -176,6 +176,19 @@ private:
 
     void models_inner(key_type const & identifier, std::unordered_set< std::shared_ptr<Model> > & results, float scope = 0);
 
+    // Vertices on single_model()'s current recursion stack, for cycle detection.
+    typedef std::unordered_set<key_type, std::hash<key_type>, std::equal_to<key_type>> key_set;
+
+    // @param identifier: root node from which to extract a single optimal model
+    // @returns one deterministically chosen optimal model, or nullptr if none exists
+    // @note used by models(std::unordered_set<Model>&); see models.hpp for the tie-break rules
+    std::shared_ptr<Model> single_model(key_type const & identifier);
+
+    // @param in_progress: vertices already on the current recursion stack (cycle guard)
+    // @param depth: current recursion depth (bounded by dataset height + 1)
+    // @throws IntegrityViolation if a cycle is detected or depth exceeds the dataset height
+    std::shared_ptr<Model> single_model(key_type const & identifier, key_set & in_progress, unsigned int depth);
+
     void rash_models(key_type const & identifier, results_t & results, float scope = 0);
 
     void rash_models_inner(key_type const & identifier, results_t & results, float scope = 0);

@@ -279,7 +279,17 @@ float Dataset::distance(Bitmask const & set, unsigned int i, unsigned int j, uns
 void Dataset::subset(unsigned int feature_index, bool positive, Bitmask & set) const {
     // Performs bit-wise and between feature and set with possible bit-flip if performing negative test
     this -> features[feature_index].bit_and(set, !positive);
-    if (Configuration::depth_budget != 0){ set.set_depth_budget(set.get_depth_budget()-1);} //subproblems have one less depth_budget than their parent
+    if (Configuration::depth_budget != 0) {
+        // get_depth_budget() returns unsigned char; decrementing an already-exhausted
+        // (0) budget wraps to 255 instead of erroring. single_model()'s synthesized-leaf
+        // branch reaches subproblems models_inner() never walked this far into, so this
+        // silent wraparound is newly reachable -- fail loudly instead (Constitution #1).
+        unsigned char const budget = set.get_depth_budget();
+        if (budget == 0) {
+            throw IntegrityViolation("Dataset::subset", "depth budget already exhausted");
+        }
+        set.set_depth_budget(budget - 1);
+    }
 }
 
 void Dataset::subset(unsigned int feature_index, Bitmask & negative, Bitmask & positive) const {
