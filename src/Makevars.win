@@ -36,9 +36,19 @@ OBJECTS = $(SOURCES:.cpp=.o) \
           lib/ckmeans/fill_SMAWK.o
 
 # Build standalone executable for process isolation (Windows)
-# Create inst/bin directory if it doesn't exist
+# Create inst/bin directory if it doesn't exist.
+#
+# NOTE: this recipe is executed by `sh` (Rtools/MSYS2), not cmd.exe -- R's
+# Windows build system runs every Makevars.win recipe line through the same
+# shell as Makevars, it does not switch to cmd.exe just because the file is
+# named .win. `if not exist X mkdir X` is cmd.exe batch syntax; sh cannot
+# parse it and fails with "syntax error: unexpected end of file" (an
+# unterminated `if` from sh's point of view), which aborted the ENTIRE
+# install here, after the actual .dll had already linked successfully.
+# `mkdir -p` is understood by MSYS2's sh/coreutils and is a no-op if the
+# directory already exists, matching the original's intent portably.
 all: $(SHLIB)
-	@if not exist ..\inst\bin mkdir ..\inst\bin
+	@mkdir -p ../inst/bin
 	@echo Building standalone gosdt executable...
 	$(CXX) $(PKG_CPPFLAGS) $(PKG_CXXFLAGS) $(CXXFLAGS) -o ../inst/bin/gosdt.exe \
 		main.cpp $(filter-out rcpp_treefarms.cpp RcppExports.cpp, $(wildcard *.cpp)) \
