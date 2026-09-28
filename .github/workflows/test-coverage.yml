@@ -79,7 +79,7 @@ jobs:
           "
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: |
@@ -127,7 +127,7 @@ jobs:
           r-version: 'release'
 
       - name: Download coverage report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: coverage-report
           path: ./
@@ -147,7 +147,7 @@ jobs:
           "
 
       - name: Upload detailed coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: detailed-coverage-report
           path: detailed-coverage.html
