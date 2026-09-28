@@ -47,10 +47,30 @@ OBJECTS = $(SOURCES:.cpp=.o) \
 # install here, after the actual .dll had already linked successfully.
 # `mkdir -p` is understood by MSYS2's sh/coreutils and is a no-op if the
 # directory already exists, matching the original's intent portably.
+#
+# Two further bugs surfaced once the mkdir fix let this recipe actually run
+# (see inst/optimaltrees-server-error.md, master a70efdc):
+#
+# 1. `main.cpp` was passed twice: once explicitly and again via
+#    `$(wildcard *.cpp)`, which the filter-out list did not exclude. g++
+#    compiled it into two separate temp objects, both defining `main`, so
+#    the linker failed with "multiple definition of `main`". Fixed by adding
+#    `main.cpp` to the filter-out list.
+# 2. `$(wildcard *.cpp)` only globs this directory, not `lib/ckmeans/`, so
+#    the standalone build never linked the ckmeans sources -- unlike the
+#    library build below, which adds them explicitly via $(OBJECTS). Any
+#    caller path that reaches compute_kmeans_lower_bound() (used from
+#    dataset.cpp) needs fill_dp_matrix_dynamic_stop() et al. from
+#    lib/ckmeans/dynamic_prog.cpp, so linking failed with "undefined
+#    reference" -> collect2.exe error. Fixed by listing the ckmeans .cpp
+#    sources explicitly, same set as $(OBJECTS)'s lib/ckmeans/*.o above.
 all: $(SHLIB)
 	@mkdir -p ../inst/bin
 	@echo Building standalone gosdt executable...
 	$(CXX) $(PKG_CPPFLAGS) $(PKG_CXXFLAGS) $(CXXFLAGS) -o ../inst/bin/gosdt.exe \
-		main.cpp $(filter-out rcpp_treefarms.cpp RcppExports.cpp, $(wildcard *.cpp)) \
+		main.cpp $(filter-out rcpp_treefarms.cpp RcppExports.cpp main.cpp, $(wildcard *.cpp)) \
+		lib/ckmeans/Ckmeans.1d.dp.cpp lib/ckmeans/dynamic_prog.cpp \
+		lib/ckmeans/fill_log_linear.cpp lib/ckmeans/fill_quadratic.cpp \
+		lib/ckmeans/fill_SMAWK.cpp \
 		$(PKG_LIBS) $(LDFLAGS)
 	@echo Standalone executable built: ../inst/bin/gosdt.exe
