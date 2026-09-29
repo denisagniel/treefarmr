@@ -580,7 +580,68 @@ test_that("refine_tree_cuts validates r_n/M_n and rejects a half-specified pair"
   expect_error(refine_tree_cuts(fixture, X, y, M_n = 4), "TOGETHER")
 })
 
+test_that("refine_tree_cuts rejects rho_n = M_n/r_n >= 0.5 (window would span the whole support)", {
+  # Regression for r-reviewer 2026-09-29 Issue 1: rho_n is a quantile-space
+  # (probability) radius since the Stage-B units fix, so unlike the old
+  # raw-covariate-unit reading it now has a meaningful admissible range.
+  # rho_n >= 0.5 makes the window the ENTIRE support for a mid-distribution
+  # anchor -- a silent reversion to the structural-only bracket -- and must
+  # be refused, not silently saturated. The package's own documented default
+  # M_n = sqrt(r_n) reaches this whenever r_n <= 4 (fit_twostage.R's "log"
+  # bin schedule, ceiling(log(n)/3), is 3 at n = 2000 -- squarely in range).
+  fixture <- list(kind = "split", id = 1L, coord = "x1", cut = 0.5,
+                   grid_cuts = 0.5, collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
+                   left = list(kind = "leaf", id = 2L),
+                   right = list(kind = "leaf", id = 3L))
+  X <- data.frame(x1 = seq(0, 1, length.out = 40))
+  y <- ifelse(X$x1 <= 0.37, 0, 2)
+
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 2, M_n = 1),   "0.5")  # rho_n = 0.5 exactly
+  expect_error(refine_tree_cuts(fixture, X, y, r_n = 3, M_n = 2),   "0.5")  # rho_n = 0.667
+  # Just under the boundary must still work (no error).
+  expect_no_error(refine_tree_cuts(fixture, X, y, r_n = 10, M_n = 4.9))    # rho_n = 0.49
+})
+
+test_that("refine_tree_cuts records bracket_saturated when the (valid, <0.5) rho_n window still clamps at 0 or 1", {
+  # A window can clamp at the support boundary (anchor near an edge) even
+  # with a perfectly valid rho_n < 0.5 -- distinct from the rho_n >= 0.5
+  # rejection above, and worth recording the same way "no_candidates_in_
+  # bracket" already records a different failure-adjacent outcome (r-reviewer
+  # 2026-09-29 Issue 1's bracket_saturated column).
+  X <- data.frame(x1 = seq(0, 1, length.out = 200))
+
+  # anchor near the LOW edge of the support (grid cut at the 5th percentile):
+  # rho_n = 0.3 means lo_q = max(0, 0.05-0.3) = 0 -- clamped.
+  edge_fixture <- list(kind = "split", id = 1L, coord = "x1",
+                        cut = quantile(X$x1, 0.05, names = FALSE),
+                        grid_cuts = quantile(X$x1, 0.05, names = FALSE),
+                        collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
+                        left = list(kind = "leaf", id = 2L),
+                        right = list(kind = "leaf", id = 3L))
+  y_edge <- ifelse(X$x1 <= quantile(X$x1, 0.05, names = FALSE), 0, 2)
+  edge <- refine_tree_cuts(edge_fixture, X, y_edge, r_n = 10, M_n = 3)  # rho_n = 0.3
+  expect_true(isTRUE(edge$refined$bracket_saturated))
+
+  # anchor at the MIDDLE of the support with the same rho_n: neither side clamps.
+  mid_fixture <- edge_fixture
+  mid_fixture$cut <- mid_fixture$grid_cuts <- 0.5
+  y_mid <- ifelse(X$x1 <= 0.5, 0, 2)
+  mid <- refine_tree_cuts(mid_fixture, X, y_mid, r_n = 10, M_n = 3)     # rho_n = 0.3
+  expect_false(isTRUE(mid$refined$bracket_saturated))
+
+  # No rho_n window at all: bracket_saturated is NA, not FALSE -- it is not
+  # a meaningful concept without a rho_n radius to saturate.
+  structural <- refine_tree_cuts(mid_fixture, X, y_mid)
+  expect_true(is.na(structural$refined$bracket_saturated))
+})
+
 test_that("r_n/M_n narrow the bracket to anchor +/- M_n/r_n, anchored at the grid cut", {
+  # x1 is uniform on [0,1], so its empirical quantile function is (up to
+  # finite-sample interpolation) the identity: quantile-space and raw-space
+  # radii coincide numerically here. This test therefore cannot by itself
+  # distinguish the quantile-space window (correct) from a literal
+  # raw-unit window (the units bug fixed below) -- see the next test for
+  # a coordinate where they differ.
   fixture <- list(kind = "split", id = 1L, coord = "x1", cut = 0.5,
                    grid_cuts = 0.5, collapsed = FALSE, k_lo = 1L, k_hi = NA_integer_,
                    left = list(kind = "leaf", id = 2L),
@@ -601,6 +662,59 @@ test_that("r_n/M_n narrow the bracket to anchor +/- M_n/r_n, anchored at the gri
   # never-worse-than-grid guarantee is preserved under narrowing.
   expect_gte(tight$refined$bracket_hi, 0.5)
   expect_lte(tight$refined$bracket_lo, 0.5)
+})
+
+test_that("r_n/M_n narrow the bracket in QUANTILE space, so the raw-unit window widens where the design is sparse", {
+  # Regression test for the Stage-B units bug (story.md S5): the grid
+  # compute_thresholds() (R/discretize.R) builds is spaced at equal
+  # PROBABILITY mass, not equal raw width, so rho_n = M_n/r_n is a
+  # quantile-space radius. Applying it as a raw-unit radius collapses the
+  # search window in low-density regions, where the quantile grid's own
+  # cells are widest.
+  #
+  # x1 here is exponential-quantile-spaced: dense near 0, sparse in the
+  # tail. The grid cut sits at the 0.90 quantile (in the sparse region);
+  # the true boundary sits at the 0.93 quantile, a RAW distance an order
+  # of magnitude larger than the nominal radius -- reachable only because
+  # the radius is applied in quantile space and mapped back through the
+  # empirical quantile function, not applied directly as a raw offset.
+  n <- 4000
+  x1 <- qexp(ppoints(n))
+  X <- data.frame(x1 = x1)
+  cut_q  <- 0.90
+  true_q <- 0.93
+  incumbent_cut <- as.numeric(quantile(x1, cut_q,  type = 7, names = FALSE))
+  true_cut      <- as.numeric(quantile(x1, true_q, type = 7, names = FALSE))
+  y <- ifelse(x1 <= true_cut, 0, 5)
+
+  fixture <- list(kind = "split", id = 1L, coord = "x1", cut = incumbent_cut,
+                   grid_cuts = incumbent_cut, collapsed = FALSE,
+                   k_lo = 1L, k_hi = NA_integer_,
+                   left = list(kind = "leaf", id = 2L),
+                   right = list(kind = "leaf", id = 3L))
+
+  fit <- refine_tree_cuts(fixture, X, y, r_n = 100, M_n = 5)   # rho_n = 0.05
+
+  # A raw-unit radius of 0.05 anchored at incumbent_cut would span
+  # [incumbent_cut - 0.05, incumbent_cut + 0.05], nowhere near true_cut --
+  # confirming this case actually exercises the bug, not a case where the
+  # two interpretations coincide.
+  expect_gt(abs(true_cut - incumbent_cut), 0.05)
+
+  # The bracket must equal the QUANTILE-mapped window: [0.85, 0.95] mapped
+  # back through x1's own empirical quantile function, not
+  # incumbent_cut +/- 0.05 raw units.
+  expected_lo <- as.numeric(quantile(x1, max(0, cut_q - 0.05), type = 7, names = FALSE))
+  expected_hi <- as.numeric(quantile(x1, min(1, cut_q + 0.05), type = 7, names = FALSE))
+  expect_equal(fit$refined$bracket_lo, expected_lo)
+  expect_equal(fit$refined$bracket_hi, expected_hi)
+
+  # With the bracket correctly widened, refinement reaches the true
+  # boundary exactly (up to the local observed-value gap around it) --
+  # the unique zero-SSE candidate is the largest observed x1 <= true_cut.
+  expected_refined_cut <- max(x1[x1 <= true_cut])
+  expect_equal(fit$tree$cut, expected_refined_cut)
+  expect_equal(fit$refined$reason, "refined")
 })
 
 test_that("refine_tree(collapse = TRUE) still runs the legacy collapse-then-refine path", {

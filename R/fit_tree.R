@@ -207,21 +207,47 @@ fit_tree <- function(X, y, loss_function = "misclassification", regularization =
     model_limit <- user_model_limit
   }
 
-  # Call optimaltrees with single_tree = TRUE to guarantee exactly one tree
-  result <- optimaltrees(
-    X = X,
-    y = y,
-    loss_function = loss_function,
-    regularization = regularization,
-    rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
-    worker_limit = worker_limit,
-    verbose = verbose,
-    store_training_data = store_training_data,
-    compute_probabilities = compute_probabilities,
-    single_tree = TRUE,  # Force single tree
-    model_limit = model_limit,
-    ...
-  )
+  # Call optimaltrees with single_tree = TRUE to guarantee exactly one tree.
+  # model_limit is already resolved above (respecting a user-supplied value
+  # in `...`, or falling back to the dimensionality heuristic) and, together
+  # with single_tree, must be stripped from the raw `...` splice below --
+  # otherwise a caller who explicitly passes either (single_tree is the more
+  # likely mistake of the two: a caller wanting more than one tree should get
+  # fit_rashomon(), not a cryptic argument-matching error) gets "formal
+  # argument ... matched by multiple actual arguments", since the original
+  # `...` still carries their value and dots <- list(...) above only READ it,
+  # never removed it. model_limit's instance was latent since `dots$model_limit`
+  # was introduced: nothing in this package's own test suite called fit_tree()
+  # with an explicit model_limit= (grep confirmed) until the regression test
+  # added alongside this fix. single_tree is not merely stripped -- a caller
+  # asking for single_tree = FALSE from fit_tree() has a clear, wrong intent
+  # (this function's entire contract is exactly one tree) that deserves an
+  # actionable error pointing at the function that actually does what they
+  # want, not a stripped-silently override of their explicit request.
+  owned <- c("model_limit", "single_tree")
+  if ("single_tree" %in% names(dots)) {
+    cli::cli_abort(c(
+      "fit_tree: {.arg single_tree} cannot be overridden -- fit_tree() fits exactly one tree by definition.",
+      "i" = "Use {.fn fit_rashomon} to obtain more than one tree."
+    ))
+  }
+  extra_args <- dots[setdiff(names(dots), owned)]
+  result <- do.call(optimaltrees, c(
+    list(
+      X = X,
+      y = y,
+      loss_function = loss_function,
+      regularization = regularization,
+      rashomon_ignore_trivial_extensions = rashomon_ignore_trivial_extensions,
+      worker_limit = worker_limit,
+      verbose = verbose,
+      store_training_data = store_training_data,
+      compute_probabilities = compute_probabilities,
+      single_tree = TRUE,  # Force single tree
+      model_limit = model_limit
+    ),
+    extra_args
+  ))
   
   # If auto-tuning was used, result is a list with 'model' field and other auto-tuning metadata
   if (is.list(result) && ("iterations" %in% names(result) || "converged" %in% names(result))) {
