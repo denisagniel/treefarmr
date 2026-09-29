@@ -701,30 +701,17 @@ fit_twostage <- function(X, y, leaf_budget,
              would otherwise only catch it after the first rung's full fit."
     ))
   }
-  # rho_n = M_n/r_n (Stage-B's search-interval radius) is computed in RAW
-  # covariate units, and M_n's default (sqrt(r_n)) presumes those units are
-  # roughly unit-scale -- the standard nonparametric normalization the
-  # theory's own exposition assumes, nowhere enforced by this package. Off
-  # that scale the radius silently does the wrong thing in either
-  # direction: negligible (every candidate excluded, Stage B becomes a
-  # no-op) on a covariate ranging in the hundreds, or vacuous (no
-  # restriction at all, silently reverting to the legacy structural-only
-  # bracket) on one ranging in the thousandths. Warn rather than guess a
-  # rescaling -- rescaling is the caller's job and depends on choices
-  # (which quantile, which reference range) this function has no basis for.
-  rng <- vapply(X, function(col) diff(range(col, na.rm = TRUE)), numeric(1))
-  off_scale <- names(rng)[rng > 10 | rng < 0.1]
-  if (isTRUE(verbose) && length(off_scale) > 0L) {
-    cli::cli_warn(c(
-      "fit_twostage: Stage-B's search radius rho_n = M_n/r_n is computed in RAW covariate units.",
-      "i" = "Coordinate(s) {.val {off_scale}} have range far from the unit scale the \\
-             default {.arg M_n} = sqrt(r_n) assumes; the radius will be either \\
-             negligible or effectively unrestricted for them, not the theory's \\
-             intended few-mesh-widths window.",
-      "i" = "Rescale {.arg X} to roughly [0, 1] per coordinate, or pass an explicit \\
-             {.arg M_n} sized to your own covariate scale."
-    ))
-  }
+  # rho_n = M_n/r_n (Stage-B's search-interval radius) is applied by
+  # refine_tree_cuts() in QUANTILE space -- the anchor is converted to its
+  # rank in the coordinate's own empirical distribution, widened by rho_n
+  # there, then mapped back through the empirical quantile function --
+  # matching compute_thresholds()'s own equal-probability-mass grid
+  # (R/discretize.R). This is scale-invariant by construction: no
+  # rescaling of X, and no covariate-range check, is needed here (an
+  # earlier version of this comment warned about exactly that, before
+  # refine_tree_cuts() applied rho_n in raw covariate units -- see
+  # quality_reports/reviews/2026-09-08_repro_single_tree_tie_blowup.md's
+  # sibling finding, S5 in inst/paper/story.md, for the fixed bug).
 
   n <- nrow(X)
   budgets <- .twostage_resolve_budgets(leaf_budget, depth_budget, n)

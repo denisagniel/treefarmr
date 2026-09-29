@@ -996,6 +996,29 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L, r_n = NULL, M_n = NULL
       cli::cli_abort("refine_tree_cuts: {.arg M_n} must be a single positive number.")
     }
     rho_n <- M_n / r_n
+    # rho_n is a QUANTILE-SPACE (probability) radius (see the anchor/ecdf/quantile
+    # block below) -- unlike the old raw-covariate-unit reading this fix replaced,
+    # it now has a meaningful admissible range, and rho_n >= 0.5 makes the search
+    # window span the coordinate's ENTIRE support for a mid-distribution anchor --
+    # i.e. a silent reversion to the legacy structural-only bracket, voiding the
+    # search-interval guarantee this function exists to provide. The package's own
+    # documented default `M_n = sqrt(r_n)` (fit_twostage.R) reaches this whenever
+    # r_n <= 4, which includes the entire "log" bin schedule
+    # (compute_bin_count("log", n) = ceiling(log(n)/3) = 3 at n = 2000) -- exactly
+    # the failure mode an earlier version of this fix's own removed warning in
+    # fit_twostage.R used to name (under a different, now-fixed, cause). Caught
+    # here instead of silently saturating, per r-reviewer 2026-09-29 Issue 1.
+    if (rho_n >= 0.5) {
+      cli::cli_abort(c(
+        "refine_tree_cuts: {.arg M_n}/{.arg r_n} = {round(rho_n, 3)} is not a usable \\
+         quantile-space radius (must be < 0.5).",
+        "i" = "The search interval would span the coordinate's entire support, \\
+               silently reverting to the structural-only bracket.",
+        "i" = "The default {.arg M_n} = sqrt({.arg r_n}) gives rho_n = 1/sqrt(r_n), \\
+               which exceeds this whenever r_n <= 4 -- pass an explicit {.arg M_n}, \\
+               or use a finer grid."
+      ))
+    }
   }
 
   y <- as.numeric(y)
@@ -1064,9 +1087,45 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L, r_n = NULL, M_n = NULL
       # theory's I_n(N) is defined for the uncollapsed case, and collapse
       # is off by default under the revised architecture (see
       # refine_tree()'s roxygen).
-      anchor <- if (length(node$grid_cuts) == 1L) node$grid_cuts[[1L]] else node$cut
-      br$lo <- max(br$lo, anchor - rho_n)
-      br$hi <- min(br$hi, anchor + rho_n)
+      #
+      # rho_n = M_n / r_n is a QUANTILE-SPACE (probability) radius: r_n is
+      # the grid resolution compute_thresholds() (R/discretize.R) used to
+      # place cutpoints at equal PROBABILITY mass, not equal raw width --
+      # a grid cell's raw width therefore varies inversely with local
+      # design density (narrow where data are dense, wide where sparse).
+      # Applying rho_n as a raw-unit radius directly against `anchor`
+      # (as an earlier version of this block did) silently collapses the
+      # search window in exactly the low-density regions where the
+      # quantile grid itself is widest, because a fixed raw radius has no
+      # relationship to a quantile grid's locally-varying raw width --
+      # the off-grid scan then finds zero observed candidates there and
+      # keeps the grid cut, with only the "no_candidates_in_bracket"
+      # diagnostic column recording that it happened. Fix: convert the
+      # anchor to its rank in this coordinate's GLOBAL empirical
+      # distribution (the same distribution compute_thresholds() used to
+      # place the grid -- not this node's local row subset `idx`, which
+      # can be too small to invert a quantile function reliably), widen
+      # by rho_n THERE, then map the two endpoints back through the
+      # empirical quantile function. This makes the raw-unit window
+      # automatically as wide as the local quantile-grid cell, by
+      # construction, everywhere the coordinate is defined.
+      anchor      <- if (length(node$grid_cuts) == 1L) node$grid_cuts[[1L]] else node$cut
+      xj_global   <- X[[node$coord]]
+      anchor_q    <- stats::ecdf(xj_global)(anchor)
+      lo_q        <- max(0, anchor_q - rho_n)
+      hi_q        <- min(1, anchor_q + rho_n)
+      # Auditable the same way "no_candidates_in_bracket" already is: clamping
+      # at 0/1 means this node's window silently reverted to the whole support
+      # (r-reviewer 2026-09-29 Issue 1) -- recorded in base_row() below rather
+      # than only inferable after the fact from bracket_lo/bracket_hi matching
+      # the coordinate's min/max.
+      bracket_saturated <- (lo_q <= 0) || (hi_q >= 1)
+      rho_lo <- as.numeric(stats::quantile(xj_global, probs = lo_q, type = 7, names = FALSE))
+      rho_hi <- as.numeric(stats::quantile(xj_global, probs = hi_q, type = 7, names = FALSE))
+      br$lo <- max(br$lo, rho_lo)
+      br$hi <- min(br$hi, rho_hi)
+    } else {
+      bracket_saturated <- NA  # meaningful only when a rho_n window was applied
     }
 
     grid_lo <- if (length(node$grid_cuts) >= 1L) node$grid_cuts[[1L]] else NA_real_
@@ -1076,7 +1135,7 @@ refine_tree_cuts <- function(tree, X, y, min_leaf_n = 1L, r_n = NULL, M_n = NULL
         path = paste(p, collapse = "/"), coord = node$coord,
         grid_cut_lo = grid_lo, grid_cut_hi = grid_hi,
         incumbent_cut = node$cut, refined_cut = refined_cut,
-        bracket_lo = br$lo, bracket_hi = br$hi,
+        bracket_lo = br$lo, bracket_hi = br$hi, bracket_saturated = bracket_saturated,
         n_node = length(idx), n_candidates = n_cand,
         sse_before = sse_before, sse_after = sse_after,
         collapsed = isTRUE(node$collapsed), refined = refined, reason = reason,
