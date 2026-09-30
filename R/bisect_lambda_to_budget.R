@@ -250,10 +250,25 @@ classify_lambda_fit <- function(fit, lambda, n_leaves, feasible, lambda_n,
 #'   = 0`).
 #' @param loss_function Passed to [fit_tree()].
 #' @param hi_init,hi_growth,tol_iter Bisection controls: the upper bound
-#'   tried if `lambda_n` overshoots the budget (default `max(2 * lambda_n,
-#'   0.01)`), the multiplicative factor by which that bound is grown if it
-#'   also overshoots, and the maximum number of additional fits allowed in
-#'   the bisection phase (growth and bisection share this budget).
+#'   tried if `lambda_n` overshoots the budget (default `2 * lambda_n`,
+#'   PURELY RELATIVE as of 2026-09-30 -- the previous `max(2 * lambda_n,
+#'   0.01)` had an absolute `0.01` floor that dominated `2 * lambda_n`
+#'   whenever `lambda_n` itself was small in absolute terms, which is exactly
+#'   what happens for a loss on a fine relative scale (e.g. a propensity
+#'   tree's `squared_error` loss on a near-balanced sample: root loss
+#'   `pi*(1-pi)` around 0.09 gives `2*lambda_n` two to three orders of
+#'   magnitude below `0.01`, so the floor -- not the analyst's own
+#'   `lambda_n` -- silently set the bisection's starting bracket width, at a
+#'   cost of up to `tol_iter` wasted escalations before the bracket even
+#'   reached the right scale). Callers computing `lambda_n` as a root-loss-
+#'   relative penalty (see `doubletree::estimate_att()`) already land on the
+#'   right absolute scale, so no floor is needed here now; a degenerate
+#'   `lambda_n <= 0` is the caller's problem to catch upstream, not this
+#'   function's to paper over with a floor), the multiplicative factor by
+#'   which that bound is grown if it also overshoots, and the maximum number
+#'   of additional fits allowed in the bisection phase (growth and bisection
+#'   share this budget, though bisection now typically exits well before
+#'   exhausting it -- see the bracket-tightening note in the function body).
 #' @param max_depth Integer or `NULL` (default). The search depth passed to
 #'   [fit_tree()]. **A feasible tree with exactly `leaf_budget` leaves can be
 #'   as deep as `leaf_budget - 1`** (a chain-shaped topology), NOT
@@ -390,7 +405,7 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
                                      m_n = 1L, group = NULL, group_value = 0,
                                      m_n_group = m_n,
                                      loss_function = "misclassification",
-                                     hi_init = max(2 * lambda_n, 0.01),
+                                     hi_init = 2 * lambda_n,
                                      hi_growth = 4, tol_iter = 40,
                                      max_depth = NULL, depth_restricted = FALSE,
                                      fit_time_limit = NULL, deadline = NULL,
@@ -654,6 +669,18 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
     r_hi <- fit_and_check(hi)
     budget_iter <- budget_iter + 1L
   }
+  # Tighten `lo` from the escalation phase itself (2026-09-30): every `hi`
+  # tried and rejected above (n_leaves > effective_budget) is, by the same
+  # monotone-leaf-count lemma, a VALID lower bracket -- lambda_n need not
+  # remain the bisection's lower endpoint once a larger value has already
+  # been shown to overshoot too. The last value tried before the current
+  # (accepted) `hi` is `hi / hi_growth`; using it caps the bisection's
+  # opening bracket ratio at `hi_growth` instead of leaving it unbounded
+  # (previously as wide as `hi_init` itself, e.g. up to 1000x+ when
+  # `hi_init` needed many escalations to reach the right scale).
+  if (budget_iter > 0L) {
+    lo <- hi / hi_growth
+  }
   if (r_hi$n_leaves > effective_budget) {
     warning("bisect_lambda_to_budget: could not reach leaf_budget = ",
             leaf_budget, " by growing lambda up to ", hi, "; returning the ",
@@ -669,6 +696,16 @@ bisect_lambda_to_budget <- function(X, y, leaf_budget, lambda_n = 0.1,
 
   best <- r_hi
   for (i in seq_len(tol_iter)) {
+    # Early exit once the bracket is already tight (2026-09-30): with the
+    # lo-tightening above, a typical bracket ratio is now hi_growth (default
+    # 4), not the unbounded ratio possible before. tol_iter = 40 remains the
+    # right DEFENSIVE cap (it is shared with the escalation loop above, which
+    # genuinely can need many steps to find ANY hi that overshoots), but
+    # once lo and hi already agree to within 5%, further geometric
+    # bisection between them is pure wasted fit_tree() calls -- `best`
+    # (the best feasible fit seen, i.e. hi's own fit) is already the
+    # answer this loop would converge to.
+    if (hi / lo < 1.05) break
     mid <- sqrt(lo * hi)  # geometric bisection; scale is multiplicative
     r_mid <- fit_and_check(mid)
     if (r_mid$n_leaves == effective_budget) {
